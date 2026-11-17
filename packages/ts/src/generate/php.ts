@@ -1,8 +1,8 @@
 // The PHP binding (ext-php-rs 0.16): the extension crate, its stub and the generated PHPUnit tests (G-5).
 
 import { type Contract, type Name, type Type, type Unit, variantPattern } from '../contract.ts';
-import { ownerClasses } from './model.ts';
-import { convert } from '../names.ts';
+import { conversionsOf, convertedFn, ownerClasses, ownerErrorClasses } from './model.ts';
+import { convert, sameName } from '../names.ts';
 import { defaultAsserts, declaredValue } from './defaults.ts';
 import { absentInits, categoryClass,classKinds, DRIVEN, cancelsAny, cleanupAsserts, cleanupMade, cleanupWarning, drivenCall, waitsAsync, type Arg, type CallbackUnit, type Fn, type ErrorProperty, type ErrorUnit, errorProperties, type Model, isInternal, interfaceOf, implementorsOf, Unsupported, argType, leftOut, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, recordLocal, recordInit, rustIdent, rustType, rustVariant, unitOf, usesNative, takesFunction, keepsAny, keptCallbacks, keptModel, nativeRoundTrip, traitParam, keepsThrown, boxed, type Variant, type VariantCase, caseFields, caseRead, caseStruct, caseType, caseUnits, caseValue, caseWritten, implementsClause, UNIT_CASE_ALLOW, tupleIn, narrows, narrowed, tupleOut, propertyValue, errorMatched, recognizedFn, recognizedMatch, unitFn, libraryBlocks, machineFunction, countsThrown, takenCallbacks, lentCallbacks, convertsKept, callStruct , anchorCalls, lentRust} from './model.ts';
 import { PHP_NATIVE, aliasPhp, foreignFailurePhp, phpCaseTestEntries, phpHost, phpMaking } from './alias_php.ts';
@@ -1016,7 +1016,9 @@ function entryRust(model: Model, layout: PhpLayout, fn: Fn): string {
   // GN-6n: the calling thread blocks on the future of an async member, on the runtime of binding_core.
   const call = waitsAsync(fn) ? drivenCall(model, fn, core, (wait) => wait, 'binding_error') : armedCall(model, fn, core);
   if (fn.fallible) {
-    lines.push(`        ${resultLet(fn)} = match ${call} {\n            Ok(value) => value,\n            Err(error) => return Err(${fn.failure ? 'failure_error' : 'core_error'}(error)),\n        };`);
+    // B2.489 (GN-7c): a member with a conversion table converts an exception of another library's package.
+    const failed = conversionsOf(model, fn).length > 0 ? convertedFn(fn) : fn.failure ? 'failure_error' : 'core_error';
+    lines.push(`        ${resultLet(fn)} = match ${call} {\n            Ok(value) => value,\n            Err(error) => return Err(${failed}(error)),\n        };`);
   } else {
     // E-1c: a core that returns nothing is bound as the unit, so a Result that it returns does not compile.
     lines.push(`        ${resultLet(fn)} = ${call};`);
@@ -1380,6 +1382,192 @@ fn called(function: &Zval, args: Vec<&dyn ext_php_rs::convert::IntoZvalDyn>) -> 
 `;
 }
 
+// B2.489 (GN-7c): the unit of a library's contract that declares a property of the unit `from` or of one of its
+// parents, by the name of the property.
+export const declaringUnit = (owner: Contract, from: Unit, name: Name): Unit | undefined => {
+  for (let unit: Unit | undefined = from; unit !== undefined; unit = owner.units.find((u) => u.id === unit?.parent && u.kind === 'error')) {
+    if ((unit.members ?? []).some((m) => m.kind === 'property' && sameName(m.name, name))) return unit;
+  }
+  return undefined;
+};
+
+// B2.489 (GN-7a): the internal maker of a contract with a callback unit, the static polyspec_make of each category
+// class, which a unit inherits: it makes the class that it is called on with the kind, the message, the status and the
+// errno, judged as the constructor judges them, and the value of each property that the array names.
+function makerPhp(model: Model): string {
+  const unitIndex = (unit: ErrorUnit): number => model.classes.length + model.errorUnits.indexOf(unit);
+  const rows = model.errorUnits.filter((u) => errorProperties(u).length > 0).map((u) =>
+    `    (${unitIndex(u)}, &[${errorProperties(u).map(({ owner, property }) => `(${rustString(langName('php', property.member.name, 'variable'))}, ${unitIndex(owner)})`).join(', ')}]),`);
+  return `
+/// B2.489: the properties of each error unit, by their PHP names, with the class that declares each.
+const MADE_PROPERTIES: &[(usize, &[(&str, usize)])] = &[
+${rows.join('\n')}
+];
+
+/// B2.489 (GN-7a): the instance that polyspec_make makes, or the exception that judging its arguments gave.
+fn made_error(ex: &mut ExecuteData) -> Result<Zval, Fail> {
+    let mut kind = Arg::new("kind", DataType::Mixed);
+    let mut message = Arg::new("message", DataType::Mixed);
+    let mut status = Arg::new("status", DataType::Mixed);
+    let mut errno = Arg::new("errno", DataType::Mixed);
+    let mut properties = Arg::new("properties", DataType::Array);
+    if ex.parser().arg(&mut kind).arg(&mut message).arg(&mut status).arg(&mut errno).arg(&mut properties).parse().is_err() {
+        return Err(PhpException::from_message(String::from("B2.489: polyspec_make takes the kind, the message, the status, the errno and the properties")));
+    }
+    // SAFETY: the This of a static call holds the class that the method was called on.
+    let called = unsafe { ex.This.value.ce.as_ref() };
+    let Some(class) = called else {
+        return Err(PhpException::from_message(String::from("B2.489: polyspec_make is called on a class")));
+    };
+    let (message, kind, status, errno) = error_arguments(class, message.zval(), kind.zval(), status.zval(), errno.zval())?;
+    let mut object = ZendObject::new(class);
+    with_scope(${model.errorUnits.length === 0 ? 'class' : 'category_scope(class)'}, || -> ext_php_rs::error::Result<()> {
+        object.set_property("message", message)?;
+        object.set_property("kind", kind)?;
+        object.set_property("status", status)?;
+        object.set_property("errno", errno)?;
+        Ok(())
+    })
+    .map_err(|error| PhpException::from_message(format!("B-4: the error could not be made: {error}")))?;
+    let index = CLASSES.iter().position(|registered| registered.get().is_some_and(|registered| std::ptr::eq(registered.0, class)));
+    let declared: &[(&str, usize)] = match MADE_PROPERTIES.iter().find(|(unit, _names)| Some(*unit) == index) {
+        Some((_unit, names)) => names,
+        None => &[],
+    };
+    if let Some(given) = properties.zval().and_then(Zval::array) {
+        for (key, value) in given {
+            let name = key.to_string();
+            let Some((_name, owner)) = declared.iter().find(|(declared, _owner)| *declared == name) else {
+                return Err(binding_error(BindingError::InvalidArgumentType { subject: name, expected: String::from("a property of the class") }));
+            };
+            let Some(Class(scope)) = CLASSES.get(*owner).and_then(OnceLock::get).copied() else {
+                return Err(PhpException::from_message(format!("B-4: the class that declares {name} is not registered")));
+            };
+            with_scope(scope, || object.set_property(&format!("polyspec_{name}"), value.shallow_clone()))
+                .map_err(|error| PhpException::from_message(format!("B-4: the property {name} could not be written: {error}")))?;
+        }
+    }
+    object.into_zval(false).map_err(|error| PhpException::from_message(format!("B-4: the error could not be made: {error}")))
+}
+
+ext_php_rs::zend_fastcall! {
+    extern fn make_method(ex: &mut ExecuteData, retval: &mut Zval) {
+        ext_php_rs::zend::run_handler(AssertUnwindSafe(|| match made_error(ex) {
+            Ok(made) => *retval = made,
+            Err(fail) => fail.throw(),
+        }));
+    }
+}
+`;
+}
+
+// B2.489 (GN-7c): the function of each member with a conversion table, and the helper that converts an exception of
+// another library's package: the row of its kind gives the class, and the message, the status, the errno and the
+// forwarded properties are read from the exception, which is the previous of the converted one.
+function convertedRust(model: Model): string {
+  const fns = [...model.functions, ...model.objects.flatMap((o) => o.members)].filter((fn) => conversionsOf(model, fn).length > 0);
+  if (fns.length === 0) return '';
+  const failure = `binding_core::Failure<${model.coreError ?? '()'}>`;
+  const unitIndex = (unit: ErrorUnit): number => model.classes.length + model.errorUnits.indexOf(unit);
+  const classIndex = (category: string): number => model.classes.findIndex((c) => c.category === category);
+  const stored = (name: Name): string => `polyspec_${langName('php', name, 'variable')}`;
+  const gone = takesFunction(model) || keepsAny(model) ? 'elsewhere(&raised)' : 'binding_error(BindingError::Internal { detail: String::from("U-3: the exception of the callback is gone") })';
+  const tables = fns.map((fn) => {
+    const conversions = conversionsOf(model, fn);
+    const classes = conversions.flatMap((c) => {
+      const namespace = (c.owner.packages['php'] as { namespace?: string } | undefined)?.namespace;
+      if (namespace === undefined) throw new Unsupported(`${fn.member.id}: ${c.library} names no PHP namespace (packages.php.namespace), and the PHP extension finds its classes by that name (GN-7c)`);
+      return ownerErrorClasses(c.owner, 'php').map((k) => {
+        const category = c.owner.errors.classes[k.category]?.['php'] ?? '';
+        const name = k.unit === undefined ? category : `${phpNamespace({ namespace, extension: '' }, k.unit.module)}\\${langName('php', k.unit.name, 'class')}`;
+        return `(${rustString(name)}, ${rustString(category)})`;
+      });
+    });
+    const arms = conversions.flatMap((c) => c.rows.map((row) => {
+      const namespace = (c.owner.packages['php'] as { namespace?: string } | undefined)?.namespace ?? '';
+      const properties = row.properties.map(({ owner, property, from }) => {
+        const declaring = declaringUnit(c.owner, from, property.member.name);
+        if (declaring === undefined) throw new Unsupported(`${fn.member.id}: ${c.library} ${from.id} declares no property ${property.member.name.join('_')} (CK-107)`);
+        return `(${rustString(`${phpNamespace({ namespace, extension: '' }, declaring.module)}\\${langName('php', declaring.name, 'class')}`)}, ${rustString(stored(property.member.name))}, ${unitIndex(owner)})`;
+      });
+      const target = row.kind.unit === undefined ? classIndex(row.kind.category) : unitIndex(row.kind.unit);
+      return row.kinds.map((kind) => `            ${rustString(kind)} => Some((${target}, ${rustString(kind)}, &[${properties.join(', ')}])),`).join('\n');
+    }));
+    return `
+/// B2.489 (GN-7c): the failure of ${fn.member.id}. An exception of ${conversions.map((c) => c.library).join(', ')} of a kind that it names in raises is
+/// the class of that row; every other failure is as failure_error gives it, and every other exception is thrown again.
+fn ${convertedFn(fn)}(failure: ${failure}) -> Fail {
+    let raised = match failure {
+        binding_core::Failure::Raised(raised) => raised,
+        other => return failure_error(other),
+    };
+    match take_thrown(&raised) {
+        Some(Thrown::Php(exception)) => converted_exception(exception, &[${classes.join(', ')}], |kind| match kind {
+${arms.join('\n')}
+            _ => None,
+        }),
+        Some(Thrown::Binding(fail)) => fail,
+        None => ${gone},
+    }
+}
+`;
+  });
+  return `${tables.join('')}
+/// B2.489: the row of a converted kind: the index of its class in CLASSES, the kind, and for each property the class of
+/// the other library that declares it, its stored name and the index of the class of this library that declares it.
+type ConvertedRow = (usize, &'static str, &'static [(&'static str, &'static str, usize)]);
+
+/// B2.489 (GN-7c): an exception of another library's package, as the class of the row of its kind with its message,
+/// status, errno and properties, and the exception as its previous; an exception of no row is thrown again unchanged.
+fn converted_exception(exception: ZBox<ZendObject>, classes: &[(&str, &str)], row: fn(&str) -> Option<ConvertedRow>) -> Fail {
+    let made = match read_converted(&exception, classes, row) {
+        Ok(made) => made,
+        Err(error) => return binding_error(BindingError::Internal { detail: format!("B2.489: the exception of another library could not be read: {error}") }),
+    };
+    let Some((mut object, kind)) = made else {
+        return match exception.into_zval(false) {
+            Ok(object) => PhpException::from_message(String::new()).with_object(object),
+            Err(error) => binding_error(BindingError::Internal { detail: error.to_string() }),
+        };
+    };
+    // SAFETY: both are live exception objects; zend_exception_set_previous takes over the reference to the previous.
+    unsafe { ext_php_rs::ffi::zend_exception_set_previous(&raw mut *object, exception.into_raw()) };
+    error_exception(object, kind)
+}
+
+/// B2.489: the converted object of an exception of one of the classes, each given with its category class, which
+/// declares kind, status and errno; None for an exception of no class or of a kind of no row.
+fn read_converted(exception: &ZendObject, classes: &[(&str, &str)], row: fn(&str) -> Option<ConvertedRow>) -> Result<Option<(ZBox<ZendObject>, &'static str)>, String> {
+    for (name, category) in classes {
+        let (Some(class), Some(scope)) = (ClassEntry::try_find(name), ClassEntry::try_find(category)) else {
+            continue;
+        };
+        if !exception.instance_of(class) {
+            continue;
+        }
+        let read = |property: &str| with_scope(scope, || exception.get_property::<Option<i64>>(property)).map_err(|error| error.to_string());
+        let kind = with_scope(scope, || exception.get_property::<String>("kind")).map_err(|error| error.to_string())?;
+        let Some((target, kind, properties)) = row(&kind) else {
+            return Ok(None);
+        };
+        let message = with_scope(scope, || exception.get_property::<String>("message")).map_err(|error| error.to_string())?;
+        let status = read("status")?.and_then(|status| u16::try_from(status).ok());
+        let errno = read("errno")?.and_then(|errno| i32::try_from(errno).ok());
+        let mut object = error_object(target, &message, kind, status, errno).map_err(|_fail| format!("B-4: the error {kind} could not be made"))?;
+        for (declaring, property, ours) in properties {
+            let (Some(owner), Some(Class(entry))) = (ClassEntry::try_find(declaring), CLASSES.get(*ours).and_then(OnceLock::get).copied()) else {
+                return Err(format!("B2.489: the class that declares {property} is not loaded"));
+            };
+            let value = with_scope(owner, || exception.get_property::<&Zval>(property).map(Zval::shallow_clone)).map_err(|error| error.to_string())?;
+            with_scope(entry, || object.set_property(property, value)).map_err(|error| error.to_string())?;
+        }
+        return Ok(Some((object, kind)));
+    }
+    Ok(None)
+}
+`;
+}
+
 // E-1c, U-3: what a callback threw, kept under the handle of its Raised until the generated caller throws it again; and
 // the failure of a core that calls back, as the error of its kind or that exception.
 function failureRust(model: Model): string {
@@ -1560,6 +1748,7 @@ function libRust(model: Model, layout: PhpLayout): string {
     takenCallbacks(model).some((c) => c.library === undefined && c.members.some((m) => m.recognized !== undefined)) ? RECOGNIZED_KIND : '',
     model.foreignCallbacks.some((c) => c.members.some((m) => m.recognized !== undefined)) ? OWNER_RECOGNIZED_KIND : '',
     failureRust(model),
+    convertedRust(model),
     passingRust(model),
     foreignFailurePhp(model),
     ...model.aliases.filter((a) => a.library === undefined).map((a) => aliasPhp(model, a)),
@@ -1694,7 +1883,17 @@ ${unitProperties}`;
         )
         .method(FunctionBuilder::new("kind", kind_method).returns(DataType::String, false, false), MethodFlags::Public)
         .method(FunctionBuilder::new("status", status_method).returns(DataType::Long, false, true), MethodFlags::Public)
-        .method(FunctionBuilder::new("errno", errno_method).returns(DataType::Long, false, true), MethodFlags::Public)
+        .method(FunctionBuilder::new("errno", errno_method).returns(DataType::Long, false, true), MethodFlags::Public)${model.callbacks.length === 0 ? '' : `
+        // B2.489 (GN-7a): the internal maker, which the units inherit and which makes the class that it is called on.
+        .method(
+            FunctionBuilder::new("polyspec_make", make_method)
+                .arg(Arg::new("kind", DataType::Mixed))
+                .arg(Arg::new("message", DataType::Mixed))
+                .arg(Arg::new("status", DataType::Mixed))
+                .arg(Arg::new("errno", DataType::Mixed))
+                .arg(Arg::new("properties", DataType::Array)),
+            MethodFlags::Public | MethodFlags::Static,
+        )`}
         .registration(|class, tables| {
             remember(${i}, class);
             std::mem::forget(tables);
@@ -2021,6 +2220,7 @@ ext_php_rs::zend_fastcall! {
     }
 }
 
+${model.callbacks.length === 0 ? '' : makerPhp(model)}
 ext_php_rs::zend_fastcall! {
     extern fn kind_method(ex: &mut ExecuteData, retval: &mut Zval) {
         ext_php_rs::zend::run_handler(AssertUnwindSafe(|| read_property(ex, retval, "kind")));

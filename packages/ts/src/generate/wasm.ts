@@ -4,6 +4,7 @@
 // entry with the conditions of P-5 chooses it in the browser.
 
 import type { Type, Unit } from '../contract.ts';
+import { conversionsOf, convertedClassBase, convertedClassCount, convertedFn, convertedLibraries, convertsAny, ownerErrorClasses } from './model.ts';
 import { variantPattern } from '../contract.ts';
 import { absentInits, armedEntry, categoryClass,type Arg, type CallbackUnit, type Fn, type KeptClass, type Model, isInternal, interfaceOf, implementorsOf, type ObjectClass, RECEIVER_GUARD, cleanupAsserts, cleanupMade, cleanupWarning, Unsupported, ownerRecognizedUnits, type ErrorUnit, keepsThrown, usesNative, nativeRoundTrip, aliasKindsRust, aliasOf, aliasesWithKinds, argType, leftOut, borrowedItem, coreCallArgs, guardBorrows, errorProperties, armedCall, faultRust, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, objectUnit, recordFn, rustField, rustType, rustVariant, takesHeld, takesObject, traitParam, boxed, unitOf, type CaseField, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, implementsClause, UNIT_CASE_ALLOW, tupleIn, caseLeftOut, narrows, narrowed, tupleOut, propertyValue, waitsAsync, awaits, futureOf, errorMatched, recognizedFn, recognizedMatch, awaitsNone, machineFunction, unitFn, libraryBlocks, countsThrown, keepsAny, keptCallbacks, keptModel, takenCallbacks, lentCallbacks, convertsKept, callStruct, recordLocal, recordInit, byValue , anchorCalls, lentRust} from './model.ts';
 import { declaredValue, defaultAsserts } from './defaults.ts';
@@ -684,7 +685,8 @@ function functionRust(model: Model, fn: Fn): string {
   // G-5: the core call runs with the faults that a test armed for the member (GN-8a).
   const call = armedCall(model, fn, core);
   // E-1c: a member that takes a callback fails with a Failure: a kind, or the exception that the callback threw.
-  const failed = fn.failure ? 'failure_error' : 'core_error';
+  // B2.489 (GN-7c): a member with a conversion table converts an exception of another library's package.
+  const failed = conversionsOf(model, fn).length > 0 ? convertedFn(fn) : fn.failure ? 'failure_error' : 'core_error';
   if (fn.machine === true) {
     // GN-6ab: the machine owns the converted arguments. Each advance gives it the output of its last wait, makes its
     // calls on the JavaScript thread and gives the promise of its next wait, whose future the event loop polls, or its
@@ -939,7 +941,110 @@ const kindClass = (model: Model, k: Model['kinds'][number]): number =>
   k.unit === undefined ? model.classes.findIndex((c) => c.category === k.category) : model.classes.length + model.errorUnits.indexOf(k.unit);
 
 // I-3: whether an error unit of the contract has a property, which the failure then carries.
-const hasProperties = (model: Model): boolean => model.errorUnits.some((u) => errorProperties(u).length > 0);
+// B2.489: a converted error carries its cause and the properties read from the exception as properties too.
+const hasProperties = (model: Model): boolean => model.errorUnits.some((u) => errorProperties(u).length > 0) || convertsAny(model);
+
+// B2.489 (GN-7c): the function of each member with a conversion table, and the helper that converts an exception of
+// another library's package: the row of its kind gives the class, the message, the status, the errno and the
+// forwarded properties are read from the exception, and the exception is the own property cause of the converted one.
+function convertedRust(model: Model): string {
+  const fns = [...model.functions, ...model.objects.flatMap((o) => o.members)].filter((fn) => conversionsOf(model, fn).length > 0);
+  if (fns.length === 0) return '';
+  const failure = `binding_core::Failure<${model.coreError ?? '()'}>`;
+  const unitIndex = (unit: ErrorUnit): number => model.classes.length + model.errorUnits.indexOf(unit);
+  const classIndex = (category: string): number => model.classes.findIndex((c) => c.category === category);
+  const tables = fns.map((fn) => {
+    const lookups = conversionsOf(model, fn).map((c) => {
+      const base = convertedClassBase(model, c.library, 'wasm');
+      const arms = c.rows.flatMap((row) => {
+        const target = row.kind.unit === undefined ? classIndex(row.kind.category) : unitIndex(row.kind.unit);
+        const properties = row.properties.map(({ property }) => rustString(langName('wasm', property.member.name, 'variable')));
+        return row.kinds.map((kind) => `            ${rustString(kind)} => Some((${target}, ${rustString(kind)}, &[${properties.join(', ')}])),`);
+      });
+      return `read_converted(&value, ${base}..${base + ownerErrorClasses(c.owner, 'wasm').length}, |kind| match kind {
+${arms.join('\n')}
+            _ => None,
+        })`;
+    });
+    return `
+/// B2.489 (GN-7c): the failure of ${fn.member.id}. An exception of ${conversionsOf(model, fn).map((c) => c.library).join(', ')} of a kind that it names in raises is
+/// the class of that row; every other failure is as failure_error gives it, and every other exception is thrown again.
+fn ${convertedFn(fn)}(failure: ${failure}) -> Fail {
+    let raised = match failure {
+        binding_core::Failure::Raised(raised) => raised,
+        other => return failure_error(other),
+    };
+    let value = match raised.native().downcast::<ThrownKey>().and_then(|thrown| THROWN.with_borrow_mut(|map| map.remove(&thrown.key))) {
+        Some(Thrown::Js(value)) => value,
+        Some(Thrown::Binding(fail)) => return fail,
+        None => return binding_error(BindingError::Internal { detail: String::from("U-3: the exception of the callback is gone") }),
+    };
+${lookups.map((lookup) => `    match ${lookup} {
+        Ok(Some(fail)) => return fail,
+        Ok(None) => {}
+        Err(thrown) => return Fail { thrown: Some(thrown), ..binding_error(BindingError::Internal { detail: String::new() }) },
+    }`).join('\n')}
+    Fail { thrown: Some(value), ..binding_error(BindingError::Internal { detail: String::new() }) }
+}
+`;
+  });
+  return `${tables.join('')}
+/// B2.489: the row of a converted kind: the index of its class in CLASSES, the kind, and the name of each property,
+/// which the class of the other library and this one both define.
+type ConvertedRow = (usize, &'static str, &'static [&'static str]);
+
+/// B2.489: an integer of a converted exception, or None for null, undefined or a value outside the range.
+fn converted_integer<T: TryFrom<i64>>(value: &JsValue) -> Option<T> {
+    let number = value.as_f64()?;
+    if number.fract() != 0.0 || !(-9_007_199_254_740_991.0..=9_007_199_254_740_991.0).contains(&number) {
+        return None;
+    }
+    #[allow(clippy::cast_possible_truncation, reason = "B2.489: a safe integer, checked above")]
+    let whole = number as i64;
+    T::try_from(whole).ok()
+}
+
+/// B2.489 (GN-7c): the failure of an exception that is an instance of one of the registered classes of another
+/// library's package, as the class of the row of its kind with its message, status, errno, properties and cause; None
+/// for an exception of no class or of a kind of no row.
+fn read_converted(value: &JsValue, classes: std::ops::Range<usize>, row: fn(&str) -> Option<ConvertedRow>) -> Result<Option<Fail>, JsValue> {
+    if !value.is_object() {
+        return Ok(None);
+    }
+    for index in classes {
+        let Some(prototype) = CLASSES.with(|registered| registered.borrow().get(index).map(|class| Reflect::get(class, &JsValue::from_str("prototype")))) else {
+            return Ok(None);
+        };
+        let prototype = prototype?;
+        let mut current = Object::get_prototype_of(value);
+        let mut found = false;
+        while !current.is_null() {
+            if Object::is(&current, &prototype) {
+                found = true;
+                break;
+            }
+            current = Object::get_prototype_of(&current);
+        }
+        if !found {
+            continue;
+        }
+        let Some((class, kind, names)) = Reflect::get(value, &JsValue::from_str("kind"))?.as_string().as_deref().and_then(row) else {
+            return Ok(None);
+        };
+        let message = Reflect::get(value, &JsValue::from_str("message"))?.as_string().unwrap_or_default();
+        let status = converted_integer::<u16>(&Reflect::get(value, &JsValue::from_str("status"))?);
+        let errno = converted_integer::<i32>(&Reflect::get(value, &JsValue::from_str("errno"))?);
+        let mut properties = Vec::new();
+        for name in names {
+            properties.push((*name, Reflect::get(value, &JsValue::from_str(name))?));
+        }
+        properties.push(("cause", value.clone()));
+        return Ok(Some(Fail { class, message, kind, status, errno, thrown: None, properties }));
+    }
+    Ok(None)
+}
+`;
+}
 
 // U-3, U-7: whether a failure may carry an exception of JavaScript code (of a callback, of a function of a function
 // type or of a machine, or of a value that the core walks), which the call throws again unchanged.
@@ -1406,7 +1511,7 @@ function libRust(model: Model): string {
   const constants = model.constants.map((c) => `const _: () = assert!(${c.member.core as string} == ${String(c.member.value)});`).join('\n') + defaultAsserts(model);
   const exported = [...model.functions.map((fn) => functionRust(model, fn)), ...model.objects.map((o) => objectRust(model, o)), keptExportsWasm(model), machineRust(model)].join('');
   // U-3, U-7: the callbacks and the failures that carry an exception, which the conversions outside the exports use.
-  const callbacks = [...takenCallbacks(model).map((c) => callbackRust(model, c)), ...keptCallbacks(model).map((c) => keptCallbackRust(model, c)), ...model.interfaces.map((i) => interfaceRust(model, i)), takenCallbacks(model).some((c) => c.members.some((m) => m.recognized !== undefined)) ? RECOGNIZED_KIND : '', failureRust(model), passingRust(model)].join('');
+  const callbacks = [...takenCallbacks(model).map((c) => callbackRust(model, c)), ...keptCallbacks(model).map((c) => keptCallbackRust(model, c)), ...model.interfaces.map((i) => interfaceRust(model, i)), takenCallbacks(model).some((c) => c.members.some((m) => m.recognized !== undefined)) ? RECOGNIZED_KIND : '', failureRust(model), convertedRust(model), passingRust(model)].join('');
   const functions = `${exported}${callbacks}`;
   const objectUnits = model.objects.length === 0 ? [] : [OBJECT_HELPERS, ...model.objects.map((o, index) => objectHelpers(model, o, index))];
   // U-7: the conversions of a value alias and what describes a JavaScript value, used as far as the functions use them.
@@ -1531,8 +1636,8 @@ mod exports {
     /// B-4: the module keeps the library classes when it loads; a missing class fails the load.
     #[wasm_bindgen(js_name = "__register")]
     pub fn register(classes: Vec<Function>${model.objects.length === 0 ? '' : ', makers: Vec<Function>, readers: Vec<Function>'}) -> Result<(), JsValue> {
-        if classes.len() != ${model.classes.length + model.errorUnits.length + ownerRecognizedUnits(model).length} {
-            return Err(JsValue::from_str(&format!("B-4: ${model.classes.length + model.errorUnits.length + ownerRecognizedUnits(model).length} library classes, {} given", classes.len())));
+        if classes.len() != ${model.classes.length + model.errorUnits.length + ownerRecognizedUnits(model).length + convertedClassCount(model, 'wasm')} {
+            return Err(JsValue::from_str(&format!("B-4: ${model.classes.length + model.errorUnits.length + ownerRecognizedUnits(model).length + convertedClassCount(model, 'wasm')} library classes, {} given", classes.len())));
         }
         CLASSES.with(|registered| registered.replace(classes));${registered}
         Ok(())
@@ -1796,7 +1901,7 @@ const url = new URL('./${glue}_bg.wasm', import.meta.url);
 const source = url.protocol === 'file:' ? (await import('node:fs/promises')).readFile(url) : fetch(url);
 await load({ module_or_path: await source });
 // B-4: the module throws instances of these classes; it keeps them from here on.
-glue.__register([${[...model.classes.map((c) => c.name), ...model.errorUnits.map((u) => langName('wasm', u.unit.name, 'class')), ...ownerRecognizedUnits(model).map((o) => `foreign_${o.library.replaceAll('-', '_')}.${langName('wasm', o.unit.name, 'class')}`)].join(', ')}]${model.objects.length === 0 ? '' : ', makers, readers'});
+glue.__register([${[...model.classes.map((c) => c.name), ...model.errorUnits.map((u) => langName('wasm', u.unit.name, 'class')), ...ownerRecognizedUnits(model).map((o) => `foreign_${o.library.replaceAll('-', '_')}.${langName('wasm', o.unit.name, 'class')}`), ...convertedLibraries(model).flatMap((c) => ownerErrorClasses(c.owner, 'wasm').map((k) => `foreign_${c.library.replaceAll('-', '_')}.${k.name}`))].join(', ')}]${model.objects.length === 0 ? '' : ', makers, readers'});
 ${kept === '' ? '' : `${kept}
 ${model.aliases.length === 0 ? '' : `// GN-6af: the module knows the instances of the value classes by these prototypes.
 glue.__registerValues([${model.kept.map((k) => `${langName('wasm', k.unit.name, 'class')}.prototype`).join(', ')}]);

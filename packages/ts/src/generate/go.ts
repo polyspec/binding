@@ -10,6 +10,8 @@
 // a value alias a Go value of type any, which package binding describes to the core one level at a time (U-7).
 
 import { libraryParts } from '../check.ts';
+import { type CoreKind, type ErrorProperty, conversionsOf, convertsAny, errorProperties } from './model.ts';
+import type { Category } from '../contract.ts';
 import { CATEGORIES, type Contract, type Default, type Member, type Name, type Type, type Unit } from '../contract.ts';
 import { convert, libraryName } from '../names.ts';
 import { type CallbackMember, type CallbackUnit, classKinds, type Constant, type ErrorUnit, type Fn, type Model, isInternal, interfaceOf, implementorsOf, cleanupWarning, type ObjectClass, type Refusals, type Variant, Unsupported, aliasOf, aliasesWithKinds, langName, libraryOf, nativeRoundTrip, objectUnit, pointed, poisoned, unitOf, variantOf, waitsIo, waitsAsync, machineFunction, type KeptClass, type KeptField, keptModel, keptRecognizes, cancelsAny, takesCancel , anchorCalls, lentRust, knownCategory} from './model.ts';
@@ -604,7 +606,46 @@ export const goResultCount = (fn: Fn): number => {
 // context, and the others in the order of the contract.
 export const goOrder = <T extends { type: Type }>(params: readonly T[]): T[] => [...params.filter((p) => takesCancel(p.type)), ...params.filter((p) => !takesCancel(p.type))];
 
+// B2.489 (GN-7c): the function of the package of a member with a conversion table, which gives an error of another
+// library of a kind that the member names in raises as the type of its row, made in package binding, and every other
+// error as it is.
+function goConvertedFn(scope: GoScope, fn: Fn): { name: string; text: string } | undefined {
+  const conversions = conversionsOf(scope.model, fn);
+  if (conversions.length === 0) return undefined;
+  const model = scope.model;
+  const name = `converted${fn.kind === 'function' ? '' : goName(fn.unit.name)}${goMemberName(fn)}`;
+  const blocks = conversions.map((c) => {
+    const pkg = ownerErrors(scope, c.library);
+    const types = [...goErrorTypes(c.owner).map(([, type]) => type), ...c.owner.units.filter((u) => u.kind === 'error').map((u) => goName(u.name))];
+    const finds = types.map((type, i) => `${i === 0 ? '\tif' : ' else if'} found, ok := binding.FailedOf[*${pkg}.${type}](err); ok {\n\t\tfrom = found\n\t}`).join('');
+    const cases = c.rows.map((row) => {
+      const target = row.kind.unit === undefined ? categoryType(model, row.kind.category) : goName(row.kind.unit.unit.name);
+      const head = `\tcase ${row.kinds.map(goString).join(', ')}:`;
+      if (row.properties.length === 0) return `${head}\n\t\treturn binding.Converted${target}(err, from)`;
+      // CK-107: the properties are read from the error unit of the other library that the wrapped row forwards.
+      const from = row.properties[0]?.from;
+      return `${head}\n\t\tunit, ok := binding.FailedOf[*${pkg}.${goName(from?.name ?? [])}](err)\n\t\tif !ok {\n\t\t\treturn err\n\t\t}\n\t\treturn binding.Converted${target}(err, from${row.properties.map(({ property }) => `, unit.${langName('go', property.member.name, 'callable')}()`).join('')})`;
+    });
+    return `\tvar from binding.Failed\n${finds}\n\tif from != nil {\n\t\tswitch from.Kind() {\n${cases.map((k) => k.replace(/\n/g, '\n\t')).map((k) => `\t${k}`).join('\n')}\n\t\t}\n\t}`;
+  });
+  return {
+    name,
+    text: `
+// ${name} is err as the error of its row when it is an error of ${conversions.map((c) => c.library).join(', ')} of a kind that ${fn.member.id}
+// names in raises, and err otherwise (B2.489, GN-7c).
+func ${name}(err error) error {
+${blocks.join('\n')}
+	return err
+}
+`,
+  };
+}
+
 function goCallable(scope: GoScope, fn: Fn): string {
+  return goCallableEntry(scope, fn) + (goConvertedFn(scope, fn)?.text ?? '');
+}
+
+function goCallableEntry(scope: GoScope, fn: Fn): string {
   const model = scope.model;
   // T-1 cancel, GN-6aq: a cancel is the first argument ctx, as Go passes a context, wherever the contract places it;
   // the encoding, which the core reads, keeps the order of the contract.
@@ -632,7 +673,9 @@ function goCallable(scope: GoScope, fn: Fn): string {
   const alive = [...(fn.receiver === undefined ? [] : ['this']), ...fn.params.filter((p) => holdsClass(model, p.type)).map((p) => paramOf(p.name, scope.model))];
   for (const value of alive) lines.push(`\truntime.KeepAlive(${value})`);
   if (alive.length > 0) scope.usesRuntime = true;
-  lines.push('\tif err != nil {', `\t\t${fail('err')}`, '\t}');
+  // B2.489 (GN-7c): a member with a conversion table converts an error of another library at its entry.
+  const converted = goConvertedFn(scope, fn);
+  lines.push('\tif err != nil {', `\t\t${fail(converted === undefined ? 'err' : `${converted.name}(err)`)}`, '\t}');
   if (fn.kind === 'iterate') {
     // N-4 iterate: the items are converted when the call returns, and the iterator gives them in order.
     const yields = fn.yields ?? { value: 'none' };
@@ -1673,7 +1716,10 @@ func (e *${name}) Status() (int, bool) { return e.status, e.hasStatus }
 
 // Errno is the OS error number of an I/O failure, when there is one (B-4).
 func (e *${name}) Errno() (int, bool) { return e.errno, e.hasErrno }
-`).join('');
+${convertsAny(model) ? `
+// Cause is the error of another library that the error was converted from, nil for every other error (GN-15d).
+func (e *${name}) Cause() error { return e.cause }
+` : ''}`).join('');
   const recognizedUnits = goRecognizedUnits(model);
   const ownerRecognizes = recognizesOwner(model);
   const units = model.errorUnits.map((u) => goErrorUnit(model, u)).join('') + (recognizedUnits.length === 0 && !ownerRecognizes ? '' : `
@@ -1744,7 +1790,7 @@ func RecognizeAs[T interface {
     ...(back ? [`void ${p}__alloc(size_t len, ${p}_buffer *result);`] : []),
     ...(cancelsAny(model) ? [`uint64_t ${p}__cancel_new(void);`, `void ${p}__cancel_fire(uint64_t key);`, `void ${p}__cancel_release(uint64_t key);`] : []),
   ];
-  const std = ['encoding/binary', 'fmt', 'math', 'runtime', 'unsafe', ...(model.objects.some((o) => o.cleanup !== undefined) ? ['log'] : []), ...(back ? ['math/big', 'reflect', 'runtime/cgo', 'slices', 'strconv', 'strings'] : []), ...(recognizedUnits.length > 0 || ownerRecognizes ? ['errors'] : []), ...(recognizedUnits.length > 0 ? ['unicode/utf8'] : []), ...(passes(model) || keeps(model) ? ['sync'] : []), ...(cancelsAny(model) ? ['context'] : [])].sort();
+  const std = ['encoding/binary', 'fmt', 'math', 'runtime', 'unsafe', ...(model.objects.some((o) => o.cleanup !== undefined) ? ['log'] : []), ...(back ? ['math/big', 'reflect', 'runtime/cgo', 'slices', 'strconv', 'strings'] : []), ...(recognizedUnits.length > 0 || ownerRecognizes || convertsAny(model) ? ['errors'] : []), ...(recognizedUnits.length > 0 || model.callbacks.length > 0 ? ['unicode/utf8'] : []), ...(passes(model) || keeps(model) ? ['sync'] : []), ...(cancelsAny(model) ? ['context'] : [])].sort();
   return `${goHeader()}
 
 // Package binding is the C ABI layer of the Go binding of ${model.contract.library} (B-8): the calls into the static
@@ -1928,7 +1974,9 @@ type failure struct {
 	status    int
 	hasStatus bool
 	errno     int
-	hasErrno  bool
+	hasErrno  bool${convertsAny(model) ? `
+	// B2.489: the error of another library that this one was converted from (GN-7c).
+	cause error` : ''}
 }
 
 // Malformed is the error of a result that does not follow the encoding, which only a fault of the generated code
@@ -1990,7 +2038,138 @@ ${back ? '' : `
 func raisedError(call, index uint64) error {
 	return internalError(fmt.Sprintf("U-3: no call runs Go code (%d, %d)", call, index))
 }
-`}${types}${units}`;
+`}${types}${units}${goConvertedBinding(model)}${goMakers(model)}`;
+}
+
+// B2.489 (GN-15d): the types that have a maker: each category type, and each error unit with its properties and
+// those of its parents.
+const goMade = (model: Model): { name: string; unit?: ErrorUnit; category: string }[] => [
+  ...goErrorTypes(model.contract).map(([category, name]) => ({ name, category })),
+  ...model.errorUnits.map((unit) => ({ name: goName(unit.unit.name), unit, category: unit.category })),
+];
+
+// B2.489 (GN-7a, GN-15d): Make<Type> of package binding for a contract with a callback unit, which makes an error with
+// the kind, the message, the status, the errno and the value of each property, judged as Raised<Unit> judges them.
+function goMakers(model: Model): string {
+  if (model.callbacks.length === 0) return '';
+  const scope: GoScope = { model, module: '', imports: new Set() };
+  const made = (unit: ErrorUnit): string => {
+    const parent = unit.parent === undefined ? `&${categoryType(model, unit.category)}{f}` : made(unit.parent);
+    const field = unit.parent === undefined ? categoryType(model, unit.category) : goName(unit.parent.unit.name);
+    return `&${goName(unit.unit.name)}{${field}: ${parent}}`;
+  };
+  return goMade(model).map(({ name, unit, category }) => {
+    const kinds = classKinds(model, unit ?? (category as Category));
+    const properties = unit === undefined ? [] : errorProperties(unit);
+    const options = properties.length === 0 ? '' : `
+// ${name}Property is the value of a property of a ${name} that Make${name} sets (B2.489, GN-15d).
+type ${name}Property func(*${name})
+${properties.map(({ property }) => `
+// ${name}${goName(property.member.name)} sets the property ${property.member.id} of the ${name} that Make${name} makes.
+func ${name}${goName(property.member.name)}(value ${goType(scope, property.returns)}) ${name}Property {
+	return func(e *${name}) { e.p${goName(property.member.name)} = value }
+}
+`).join('')}`;
+    return `${options}
+// Make${name} is a ${name} of the kind, the message, the status, the errno${properties.length === 0 ? '' : ' and the properties'}, which a test of another
+// repository raises from a callback unit of ${model.contract.library} (B2.489, GN-15d). A kind that is no kind of ${name} is kind
+// invalid_argument_type, and a message that is not UTF-8 kind invalid_text (GN-7a).
+func Make${name}(kind, message string, status, errno *int${properties.length === 0 ? '' : `, properties ...${name}Property`}) (*${name}, error) {
+	if !utf8.ValidString(message) {
+		return nil, &${categoryType(model, 'value')}{failure{message: ${goString(`the message of ${name} is not UTF-8`)}, kind: "invalid_text"}}
+	}
+	f := failure{message: message, kind: kind}
+	if status != nil {
+		f.status, f.hasStatus = *status, true
+	}
+	if errno != nil {
+		f.errno, f.hasErrno = *errno, true
+	}${kinds.length === 0 ? '' : `
+	switch kind {
+	case ${kinds.map(goString).join(', ')}:
+		e := ${unit === undefined ? `&${name}{f}` : made(unit)}${properties.length === 0 ? '' : `
+		for _, property := range properties {
+			property(e)
+		}`}
+		return e, nil
+	}`}
+	return nil, &${categoryType(model, 'type')}{failure{message: fmt.Sprintf(${goString(`%q is no kind of ${name}`)}, kind), kind: "invalid_argument_type"}}
+}
+`;
+  }).join('');
+}
+
+// B2.489 (GN-15d): Make<Type> in package errors, the public API that a test of another Go module calls.
+function goErrorsMakers(model: Model): string {
+  if (model.callbacks.length === 0) return '';
+  const scope: GoScope = { model, module: '', imports: new Set() };
+  return goMade(model).map(({ name, unit }) => {
+    const properties = unit === undefined ? [] : errorProperties(unit);
+    return `${properties.length === 0 ? '' : `
+// ${name}Property is the value of a property of a ${name} that Make${name} sets (GN-15d).
+type ${name}Property = binding.${name}Property
+${properties.map(({ property }) => `
+// ${name}${goName(property.member.name)} sets the property ${property.member.id} of the ${name} that Make${name} makes.
+func ${name}${goName(property.member.name)}(value ${goType(scope, property.returns)}) ${name}Property {
+	return binding.${name}${goName(property.member.name)}(value)
+}
+`).join('')}`}
+// Make${name} is a ${name} with values, which a test of another module raises from a callback unit of
+// ${model.contract.library} (B2.489, GN-15d).
+func Make${name}(kind, message string, status, errno *int${properties.length === 0 ? '' : `, properties ...${name}Property`}) (*${name}, error) {
+	return binding.Make${name}(kind, message, status, errno${properties.length === 0 ? '' : ', properties...'})
+}
+`;
+  }).join('');
+}
+
+// B2.489 (GN-7c, GN-15d): the conversion of an error of another library in package binding: Failed, the methods that
+// the error types of every library have, FailedOf, which finds one in the chain of an error, and Converted<Type> for
+// each class that a row of a conversion table names, which makes it with the message, the kind, the status, the errno
+// and the properties of the error and the error as its cause.
+function goConvertedBinding(model: Model): string {
+  if (!convertsAny(model)) return '';
+  const scope: GoScope = { model, module: '', imports: new Set() };
+  const targets = new Map<string, { kind: CoreKind; props: { owner: ErrorUnit; property: ErrorProperty }[] }>();
+  for (const fn of callablesOf(model)) {
+    for (const c of conversionsOf(model, fn)) {
+      for (const row of c.rows) {
+        const name = row.kind.unit === undefined ? categoryType(model, row.kind.category) : goName(row.kind.unit.unit.name);
+        if (!targets.has(name)) targets.set(name, { kind: row.kind, props: row.properties });
+      }
+    }
+  }
+  const made = (unit: ErrorUnit): string => {
+    const parent = unit.parent === undefined ? `&${categoryType(model, unit.category)}{f}` : made(unit.parent);
+    const field = unit.parent === undefined ? categoryType(model, unit.category) : goName(unit.parent.unit.name);
+    const own = unit.properties.map((p) => `, p${goName(p.member.name)}: ${goParam(p.member.name, model)}`).join('');
+    return `&${goName(unit.unit.name)}{${field}: ${parent}${own}}`;
+  };
+  return `
+// Failed is an error of a category or an error unit of a library, as its package errors gives it (B2.489, GN-7c).
+type Failed interface {
+	error
+	Kind() string
+	Status() (int, bool)
+	Errno() (int, bool)
+}
+
+// FailedOf is the first error in the chain of err that is a T, an error type of another library (B2.489, GN-7c).
+func FailedOf[T Failed](err error) (T, bool) {
+	var found T
+	ok := errors.As(err, &found)
+	return found, ok
+}
+${[...targets].map(([name, { kind, props }]) => `
+// Converted${name} is the ${name} of an error of another library of a kind that a member names in raises: the
+// message, the kind, the status and the errno of from, ${props.length === 0 ? '' : 'the properties that it forwards, '}and cause as its Cause (B2.489, GN-7c).
+func Converted${name}(cause error, from Failed${props.map(({ property }) => `, ${goParam(property.member.name, model)} ${goType(scope, property.returns)}`).join('')}) *${name} {
+	f := failure{message: from.Error(), kind: from.Kind(), cause: cause}
+	f.status, f.hasStatus = from.Status()
+	f.errno, f.hasErrno = from.Errno()
+	return ${kind.unit === undefined ? `&${name}{f}` : made(kind.unit)}
+}
+`).join('')}`;
 }
 
 // U-3, U-7: the call of a Go function that runs Go code during its core call: the Go values that the core walks, the
@@ -3409,7 +3588,7 @@ type ${goName(u.unit.name)} = binding.${goName(u.unit.name)}
 func Raised${goName(u.unit.name)}(kind, message string) (*${goName(u.unit.name)}, error) {
 	return binding.Raised${goName(u.unit.name)}(kind, message)
 }
-`).join('')}`;
+`).join('')}${goErrorsMakers(model)}`;
 }
 
 // GW-4, T-2, U-7: the Go side of the codec test entry points, with the build tag polyspec_codec_test.

@@ -4,6 +4,7 @@
 import type { Type, Unit } from '../contract.ts';
 import { variantPattern } from '../contract.ts';
 import { raisesAssertions } from './raises.ts';
+import { conversionsOf, convertedFn, ownerErrorClasses } from './model.ts';
 import { TAKES_PYTHON, functionGiven, givenRust, memberGiven, placeSubject } from './callback_arguments.ts';
 import { type Files, header, pyHeader, pyString, rustString, closure, optionRef, withUsedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
 import { defaultAsserts, declaredValue } from './defaults.ts';
@@ -721,7 +722,9 @@ function entryRust(model: Model, fn: Fn): string {
   const settled = onLoop ? `|value| settled(py_, value, ${ON_LOOP}, ${rustString(functionArgs(fn).map((a) => langName('python', a.name, 'variable')).join(' or '))}, ${rustString(awaitedName(fn))})` : undefined;
   const call = waitsAsync(fn) ? drivenCall(model, fn, core, (wait) => `py_.detach(|| ${wait})`, '|error| binding_error(py_, error)', settled) : waitsIo(fn) ? `py_.detach(|| ${armed})` : armed;
   if (fn.fallible) {
-    lines.push(`        ${resultLet(fn)} = match ${call} {\n            Ok(value) => value,\n            Err(error) => return Err(${fn.failure ? 'failure_error' : 'core_error'}(py_, error)),\n        };`);
+    // B2.489 (GN-7c): a member with a conversion table converts an exception of another library's package.
+    const failed = conversionsOf(model, fn).length > 0 ? convertedFn(fn) : fn.failure ? 'failure_error' : 'core_error';
+    lines.push(`        ${resultLet(fn)} = match ${call} {\n            Ok(value) => value,\n            Err(error) => return Err(${failed}(py_, error)),\n        };`);
   } else {
     // E-1c: a core that returns nothing is bound as the unit, so a Result that it returns does not compile.
     lines.push(`        ${resultLet(fn)} = ${call};`);
@@ -1236,6 +1239,90 @@ fn settled<'py>(py_: Python<'py>, value: binding_core::Passthrough, event_loop: 
 ` : ''}`;
 }
 
+// B2.489 (GN-7c): the function of each member with a conversion table, and the helper that converts an exception of
+// another library's package: the row of its kind gives the class, the message, the status, the errno and the
+// forwarded properties are read from the exception, and the exception is the __cause__ of the converted one.
+function convertedRust(model: Model): string {
+  const fns = [...model.functions, ...model.objects.flatMap((o) => o.members)].filter((fn) => conversionsOf(model, fn).length > 0);
+  if (fns.length === 0) return '';
+  const failure = `binding_core::Failure<${model.coreError ?? '()'}>`;
+  const tables = fns.map((fn) => {
+    const conversions = conversionsOf(model, fn);
+    const lookups = conversions.map((c) => {
+      const module = (c.owner.packages['python'] as { module?: string } | undefined)?.module;
+      if (module === undefined) throw new Unsupported(`${fn.member.id}: ${c.library} names no Python module (packages.python.module), whose _errors holds its classes (GN-7c)`);
+      const classes = ownerErrorClasses(c.owner, 'python').map((k) => rustString(k.name));
+      const arms = c.rows.flatMap((row) => {
+        const target = row.kind.unit === undefined ? categoryClass(model, row.kind.category) : langName('python', row.kind.unit.unit.name, 'class');
+        const properties = row.properties.map(({ property }) => rustString(`_${langName('python', property.member.name, 'variable')}`));
+        return row.kinds.map((kind) => `            ${rustString(kind)} => Some((${rustString(target)}, ${rustString(kind)}, &[${properties.join(', ')}])),`);
+      });
+      return `converted_exception(py_, &exception, ${rustString(`${module}._errors`)}, &[${classes.join(', ')}], |kind| match kind {
+${arms.join('\n')}
+            _ => None,
+        })`;
+    });
+    return `
+/// B2.489 (GN-7c): the failure of ${fn.member.id}. An exception of ${conversions.map((c) => c.library).join(', ')} of a kind that it names in raises is
+/// the class of that row; every other failure is as failure_error gives it, and every other exception is raised again.
+fn ${convertedFn(fn)}(py_: Python<'_>, failure: ${failure}) -> PyErr {
+    let raised = match failure {
+        binding_core::Failure::Raised(raised) => raised,
+        other => return failure_error(py_, other),
+    };
+    let Some(object) = raised.native().downcast::<ThrownKey>().and_then(|thrown| thrown_map().remove(&thrown.key)) else {
+        return binding_error(py_, BindingError::Internal { detail: String::from("U-3: the exception of the callback is gone") });
+    };
+    let exception = object.into_bound(py_);
+${lookups.map((lookup) => `    if let Some(converted) = ${lookup} {
+        return converted;
+    }`).join('\n')}
+    PyErr::from_value(exception)
+}
+`;
+  });
+  return `${tables.join('')}
+/// B2.489: the row of a converted kind: the name of its class in _errors, the kind, and the private attribute of each
+/// property, which the class of the other library and this one both name.
+type ConvertedRow = (&'static str, &'static str, &'static [&'static str]);
+
+/// B2.489 (GN-7c): an exception of one of the classes of the module of another library's package, as the class of the
+/// row of its kind with its message, status, errno and properties, and the exception as its __cause__; None for an
+/// exception of no class or of a kind of no row, which the caller raises again unchanged.
+fn converted_exception(py_: Python<'_>, exception: &Bound<'_, PyAny>, module: &str, classes: &[&str], row: fn(&str) -> Option<ConvertedRow>) -> Option<PyErr> {
+    match read_converted(py_, exception, module, classes, row) {
+        Ok(converted) => converted,
+        Err(error) => Some(error),
+    }
+}
+
+/// B2.489: what converted_exception gives, or the Python error that reading the exception met.
+fn read_converted(py_: Python<'_>, exception: &Bound<'_, PyAny>, module: &str, classes: &[&str], row: fn(&str) -> Option<ConvertedRow>) -> PyResult<Option<PyErr>> {
+    let module = py_.import(module)?;
+    for name in classes {
+        if !exception.is_instance(&module.getattr(*name)?)? {
+            continue;
+        }
+        let kind = exception.getattr("kind")?.extract::<String>()?;
+        let Some((target, kind, properties)) = row(&kind) else {
+            return Ok(None);
+        };
+        let message = exception.str()?.to_string();
+        let status = exception.getattr("status")?.extract::<Option<u16>>()?;
+        let errno = exception.getattr("errno")?.extract::<Option<i32>>()?;
+        let converted = library_error(py_, target, message, kind, status, errno);
+        let object = converted.value(py_);
+        for property in properties {
+            object.setattr(*property, exception.getattr(*property)?)?;
+        }
+        object.setattr("__cause__", exception)?;
+        return Ok(Some(converted));
+    }
+    Ok(None)
+}
+`;
+}
+
 // E-1c, U-3: the exceptions that callbacks raised, kept under the handles of their Raised until the generated caller
 // throws them again; and the failure of a core that calls back, as the error of its kind or that exception.
 function failureRust(model: Model): string {
@@ -1409,7 +1496,7 @@ function libRust(model: Model, layout: PythonLayout): string {
   // GN-6z: a function that the core may keep; the function parameter of a member with machine has its own helper (GN-6ae).
   const takesFunction = [...model.functions, ...model.objects.flatMap((o) => o.members)].some((fn) => fn.args.some((a) => holdsFunction(a.type) && !machineFunction(a.type)));
   const recognizes = takenCallbacks(model).some((c) => c.members.some((m) => m.recognized !== undefined));
-  const rest = takenCallbacks(model).map((c) => callbackRust(model, c)).join('') + model.interfaces.map((i) => interfaceRust(model, i)).join('') + (takesFunction ? FUNCTION_IN : '') + (recognizes ? RECOGNIZED_KIND : '') + failureRust(model) + passingRust(model, layout);
+  const rest = takenCallbacks(model).map((c) => callbackRust(model, c)).join('') + model.interfaces.map((i) => interfaceRust(model, i)).join('') + (takesFunction ? FUNCTION_IN : '') + (recognizes ? RECOGNIZED_KIND : '') + failureRust(model) + convertedRust(model) + passingRust(model, layout);
   const draft = (functions + enums + model.objects.map((o) => objectRust(model, layout, o, true)).join('') + rest).replace(/\/\/[^\n]*/g, '');
   const givesOut = (o: ObjectClass): boolean => new RegExp(`(?<!fn |::)\\bout_${rustField(o.unit.name)}\\b`).test(draft);
   const objects = model.objects.map((o) => objectRust(model, layout, o, givesOut(o))).join('') + model.kept.map((k) => keptPython(moduleOf(layout, k.unit.module), k)).join('') + rest;
@@ -1650,7 +1737,19 @@ def _check_error(name: str, kinds: frozenset[str], message: object, kind: object
     for part, value in (("status", status), ("errno", errno)):
         if value is not None and (not isinstance(value, int) or isinstance(value, bool)):
             raise ${categoryClass(model, 'type')}(f"the {part} of {name} is not an int or None", "invalid_argument_type")
-`;
+${model.callbacks.length === 0 ? '' : `
+
+def _polyspec_make(cls: type[BaseException], kind: str, message: str, status: int | None, errno: int | None, properties: dict[str, object]) -> BaseException:
+    """GN-7a (B2.489): an instance of the class with the message, the kind, the status, the errno and a value for each
+    of its properties, which the constructor judges as it judges them. It is no API for users: the test of another
+    repository raises it from a callback unit of ${model.contract.library}."""
+    error = cls(message, kind, status, errno)
+    for name, value in properties.items():
+        if not isinstance(getattr(cls, name, None), property):
+            raise ${categoryClass(model, 'type')}(f"{name!r} is no property of {cls.__name__}", "invalid_argument_type")
+        setattr(error, f"_{name}", value)
+    return error
+`}`;
 }
 
 const pythonBase = (category: string): string =>

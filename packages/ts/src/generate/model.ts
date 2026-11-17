@@ -2511,6 +2511,122 @@ export function classKinds(model: Model, of: Category | ErrorUnit): string[] {
   return [...new Set(kinds)];
 }
 
+// B2.489 (GN-7c, CK-105, CK-107): a row of the conversion table of a member for a library L: the kinds of the inner
+// variant in L's contract, the row of this contract that gives the class, and each property of the row's unit with
+// the name of the property of L's unit that the wrapped row forwards to it.
+export interface ConvertedRow {
+  kinds: string[];
+  kind: CoreKind;
+  properties: { owner: ErrorUnit; property: ErrorProperty; from: Unit }[];
+}
+
+// B2.489: the conversion table of a member for one library L, and the classes of L's package that an exception of L
+// is an instance of: its six category classes and its error units.
+export interface Conversion {
+  library: string;
+  owner: Contract;
+  rows: ConvertedRow[];
+}
+
+// B2.489 (GN-6s): whether a type holds a callback unit of the library, at any depth of this contract's records.
+const holdsCallbackOf = (model: Model, type: Type, library: string, seen: ReadonlySet<string> = new Set()): boolean => {
+  if (typeof type === 'string') return false;
+  if ('optional' in type) return holdsCallbackOf(model, type.optional, library, seen);
+  if ('list' in type) return holdsCallbackOf(model, type.list, library, seen);
+  if (!('unit' in type)) return false;
+  if (type.library !== undefined) return type.library === library && model.foreignCallbacks.some((c) => c.library === library && c.unit.id === type.unit);
+  if (seen.has(type.unit)) return false;
+  const unit = model.contract.units.find((u) => u.id === type.unit);
+  return unit?.kind === 'record' && (unit.fields ?? []).some((f) => holdsCallbackOf(model, f.type, library, new Set([...seen, type.unit])));
+};
+
+// B2.489 (GN-7c, CK-105): the conversion tables of a member, one for each library L of whose callback units the member
+// takes one at any depth of its parameters: the rows with library L that the member names in raises. A member without
+// a Failure has none. Two rows of one member with the same inner kind under different outer variants are refused by
+// name (CK-105 (a)), and a row whose unit has a property that L's row of the same kind does not give (CK-107).
+export function conversionsOf(model: Model, fn: Fn): Conversion[] {
+  if (!fn.failure) return [];
+  const libraries = [...new Set(model.foreignCallbacks.flatMap((c) => (c.library === undefined ? [] : [c.library])))];
+  const out: Conversion[] = [];
+  for (const library of libraries) {
+    if (!fn.params.some((p) => holdsCallbackOf(model, p.type, library))) continue;
+    const owner = model.foreign.get(library);
+    if (owner === undefined) continue;
+    const rows: ConvertedRow[] = [];
+    for (const variant of fn.member.raises ?? []) {
+      const row = model.contract.errors.kinds.find((r) => r.variant === variant && r.library === library);
+      const kind = model.kinds.find((k) => k.variant === variant);
+      if (row === undefined || kind === undefined) continue;
+      const inner = innerVariant(variant);
+      const theirs = owner.errors.kinds.find((k) => k.variant === inner);
+      if (theirs === undefined) continue;
+      const kinds = kindsOf(theirs);
+      const twice = rows.find((r) => r.kinds.some((k) => kinds.includes(k)));
+      if (twice !== undefined) {
+        throw new Unsupported(`the member ${fn.member.id} names ${twice.kind.variant} and ${variant} of ${library}, whose inner kind ${kinds.find((k) => twice.kinds.includes(k)) ?? ''} converts to two classes (CK-105)`);
+      }
+      const properties = kind.unit === undefined ? [] : errorProperties(kind.unit).map(({ owner: declaring, property }) => {
+        const wrapped = model.contract.errors.wrapped.find((w) => w.library === library && w.unit === theirs.class && w.forward !== undefined && sameName(w.property, property.member.name));
+        const from = wrapped === undefined ? undefined : owner.units.find((u) => u.id === wrapped.unit && u.kind === 'error');
+        if (from === undefined) {
+          throw new Unsupported(`the row ${variant} names ${kind.unit?.unit.id ?? ''} with the property ${property.member.name.join('_')}, which the class of ${library} for ${kinds.join(', ')} does not have (CK-107)`);
+        }
+        return { owner: declaring, property, from };
+      });
+      rows.push({ kinds, kind, properties });
+    }
+    if (rows.length > 0) out.push({ library, owner, rows });
+  }
+  return out;
+}
+
+// B2.489: whether a member of the contract converts an exception of another library (GN-7c).
+export const convertsAny = (model: Model): boolean =>
+  [...model.functions, ...model.objects.flatMap((o) => o.members)].some((fn) => conversionsOf(model, fn).length > 0);
+
+// B2.489: the name of the function of the crate that holds the conversion table of a member (GN-7c).
+export const convertedFn = (fn: Fn): string => `converted_${fn.member.id.replace(/[^A-Za-z0-9]+/g, '_')}`;
+
+// B2.489 (GN-7c): the libraries whose exceptions a member of the contract converts, in the order of their callbacks.
+// Node and WASM register the error classes of each after the library classes and the recognized units of GN-6s.
+export const convertedLibraries = (model: Model): Conversion[] => {
+  const out: Conversion[] = [];
+  for (const fn of [...model.functions, ...model.objects.flatMap((o) => o.members)]) {
+    for (const c of conversionsOf(model, fn)) if (!out.some((o) => o.library === c.library)) out.push(c);
+  }
+  return out.sort((a, b) => model.foreignCallbacks.findIndex((cb) => cb.library === a.library) - model.foreignCallbacks.findIndex((cb) => cb.library === b.library));
+};
+
+// B2.489: the index in the registered classes of Node and WASM of the first error class of a converted library.
+export const convertedClassBase = (model: Model, library: string, lang: Lang): number => {
+  let base = model.classes.length + model.errorUnits.length + ownerRecognizedUnits(model).length;
+  for (const c of convertedLibraries(model)) {
+    if (c.library === library) return base;
+    base += ownerErrorClasses(c.owner, lang).length;
+  }
+  throw new Unsupported(`${library}: no member converts an exception of it (GN-7c)`);
+};
+
+// B2.489: the count of the error classes of the converted libraries that Node and WASM register.
+export const convertedClassCount = (model: Model, lang: Lang): number =>
+  convertedLibraries(model).reduce((sum, c) => sum + ownerErrorClasses(c.owner, lang).length, 0);
+
+// B2.489: the error classes of a library's package that an exception of it may be an instance of, as the language
+// names them: its six category classes, then its error units, a parent before the units that extend it.
+export function ownerErrorClasses(owner: Contract, lang: Lang): { category: Category; unit?: Unit; name: string }[] {
+  const named = (category: Category): string | undefined => {
+    const row = (owner.errors.classes as Record<string, Partial<Record<Lang, string>>>)[category];
+    return lang === 'wasm' ? (row?.wasm ?? row?.node) : row?.[lang];
+  };
+  const categories = CATEGORIES.map((category) => {
+    const name = named(category);
+    if (name === undefined) throw new Unsupported(`${owner.library} names no ${lang} class of the category ${category}, so its exception is not converted (GN-7c)`);
+    return { category, name: simple(name) };
+  });
+  const units = owner.units.filter((u) => u.kind === 'error').map((unit) => ({ category: unit.category as Category, unit, name: langName(lang, unit.name, 'class') }));
+  return [...categories, ...units];
+}
+
 // GN-5, GN-6ae: whether the crates of a contract keep a table of what was thrown, whose entries the entry point of
 // thrown-count-test counts: a member takes a callback unit, of this contract or of another, or a function type, or the
 // contract has a value alias with core, whose walk keeps what the language code threw. The contract and the contracts

@@ -3,6 +3,7 @@
 
 import type { Type, Unit } from '../contract.ts';
 import { variantPattern } from '../contract.ts';
+import { conversionsOf, convertedClassBase, convertedClassCount, convertedFn, convertedLibraries, convertsAny, ownerErrorClasses } from './model.ts';
 import { NODE_NATIVE, aliasNode, foreignFailureNode, foreignRegistration, keptCheckNode, nodeHost } from './alias_node.ts';
 import { THREAD_THROWN, elsewhereRust } from './alias_shared.ts';
 import { TAKES_NODE, jsArguments, functionGiven, givenRust, memberGiven, placeSubject } from './callback_arguments.ts';
@@ -786,7 +787,7 @@ function entryRust(model: Model, fn: Fn): string {
     // GN-6ab: a result that the output conversion does not read, as of none, is checked and not bound.
     const given = convertOut(model, fn.returns, 'result');
     const reads = /\bresult\b/.test(given);
-    const done = fn.fallible ? `${reads ? 'let result = ' : ''}result.map_err(${fn.failure ? 'failure_error' : 'core_error'})?;\n                    ` : '';
+    const done = fn.fallible ? `${reads ? 'let result = ' : ''}result.map_err(${failedFn(model, fn)})?;\n                    ` : '';
     const wait = futureOf(model, fn, `let output = io.await;\n                        let mut slot = given.lock().map_err(|_poisoned| binding_error(BindingError::Internal { detail: String::from("GN-6ab: the output of a wait") }))?;\n                        *slot = Some(output);\n                        Ok(())`, true);
     // GN-6ae: an advance takes the outcome of the value that the machine awaited, and only after that value.
     const settles = passes(fn) ? `
@@ -824,7 +825,7 @@ function entryRust(model: Model, fn: Fn): string {
   } else if (waitsAsync(fn)) {
     // GN-6n: the future owns the converted arguments and the guards and runs on the tokio runtime of napi; its result
     // is converted on the JavaScript thread.
-    const body = `${borrows}${fn.fallible ? `${core}.await.map_err(${fn.failure ? 'failure_error' : 'core_error'})` : `Ok(${core}.await)`}`;
+    const body = `${borrows}${fn.fallible ? `${core}.await.map_err(${failedFn(model, fn)})` : `Ok(${core}.await)`}`;
     const give = convertOut(model, fn.returns, 'result');
     lines.push(`        driving(env_, ${futureOf(model, fn, body)}, ${closure(['env_', /\bresult\b/.test(give) ? 'result' : '_result'], give)})`);
   } else if (pooled(fn)) {
@@ -833,11 +834,11 @@ function entryRust(model: Model, fn: Fn): string {
     const faults = model.faults.length > 0;
     if (faults) lines.push(`        let faults = faults_of(${JSON.stringify(fn.member.id)});`);
     const armed = faults ? `faults.run(|| ${core})` : core;
-    const work = fn.fallible ? `${armed}.map_err(${fn.failure ? 'failure_error' : 'core_error'})` : `Ok(${armed})`;
+    const work = fn.fallible ? `${armed}.map_err(${failedFn(model, fn)})` : `Ok(${armed})`;
     const give = convertOut(model, fn.returns, 'result');
     lines.push(`        ${pooledBy(fn)}(env_, move || ${borrows === '' ? work : `{ ${borrows}${work} }`}, ${closure(['env_', /\bresult\b/.test(give) ? 'result' : '_result'], give)})`);
   } else if (fn.fallible) {
-    lines.push(`        ${resultLet(fn)} = match ${call} {\n            Ok(value) => value,\n            Err(error) => return Err(${fn.failure ? 'failure_error' : 'core_error'}(error)),\n        };`);
+    lines.push(`        ${resultLet(fn)} = match ${call} {\n            Ok(value) => value,\n            Err(error) => return Err(${failedFn(model, fn)}(error)),\n        };`);
   } else {
     // E-1c: a core that returns nothing is bound as the unit, so a Result that it returns does not compile.
     lines.push(`        ${resultLet(fn)} = ${call};`);
@@ -1434,7 +1435,122 @@ impl Drop for Owned {
 // classes the entry registers after the library classes.
 function recognizedOwners(model: Model): string {
   const libraries = [...new Set(ownerRecognizedUnits(model).map((o) => o.library))];
-  return libraries.map((library) => `\nconst recognized_${library.replaceAll('-', '_')} = require(${jsString((model.foreign.get(library)?.packages['node'] as { package: string } | undefined)?.package ?? library)});`).join('');
+  return libraries.map((library) => `\nconst recognized_${library.replaceAll('-', '_')} = require(${jsString((model.foreign.get(library)?.packages['node'] as { package: string } | undefined)?.package ?? library)});`).join('') +
+    // B2.489 (GN-7c): the packages whose exceptions a member converts, whose error classes follow.
+    convertedLibraries(model).map((c) => `\nconst converted_${c.library.replaceAll('-', '_')} = require(${jsString((c.owner.packages['node'] as { package: string } | undefined)?.package ?? c.library)});`).join('');
+}
+
+// B2.489 (GN-7c): the error path of a member: its conversion, the failure of a callback, or the core error.
+const failedFn = (model: Model, fn: Fn): string => (conversionsOf(model, fn).length > 0 ? convertedFn(fn) : fn.failure ? 'failure_error' : 'core_error');
+
+// B2.489 (GN-7c): the function of each member with a conversion table, which gives the failure of failure_error the
+// conversion of the member, and the conversion itself, which runs where the failure is thrown: the one place that
+// holds the environment and the pending exception.
+function convertedRust(model: Model): string {
+  const fns = [...model.functions, ...model.objects.flatMap((o) => o.members)].filter((fn) => conversionsOf(model, fn).length > 0);
+  if (fns.length === 0) return '';
+  const failure = `binding_core::Failure<${model.coreError ?? '()'}>`;
+  const unitIndex = (unit: ErrorUnit): number => model.classes.length + model.errorUnits.indexOf(unit);
+  const classIndex = (category: string): number => model.classes.findIndex((c) => c.category === category);
+  const tables = fns.map((fn) => {
+    const lookups = conversionsOf(model, fn).map((c) => {
+      const base = convertedClassBase(model, c.library, 'node');
+      const arms = c.rows.flatMap((row) => {
+        const target = row.kind.unit === undefined ? classIndex(row.kind.category) : unitIndex(row.kind.unit);
+        const properties = row.properties.map(({ property }) => rustString(langName('node', property.member.name, 'variable')));
+        return row.kinds.map((kind) => `            ${rustString(kind)} => Some((${target}, ${rustString(kind)}, &[${properties.join(', ')}])),`);
+      });
+      return `    if let Some(error) = converted_from(env_, value, ${base}..${base + ownerErrorClasses(c.owner, 'node').length}, |kind| match kind {
+${arms.join('\n')}
+            _ => None,
+        })? {
+        return Ok(Some(error));
+    }`;
+    });
+    const name = convertedFn(fn).slice('converted_'.length);
+    const libraries = conversionsOf(model, fn).map((c) => c.library).join(', ');
+    return `
+/// B2.489 (GN-7c): the failure of ${fn.member.id}, which converts an exception of ${libraries} where it is thrown.
+fn ${convertedFn(fn)}(failure: ${failure}) -> Fail {
+    let fail = failure_error(failure);
+    if fail.thrown.is_none() {
+        return fail;
+    }
+    Fail { converts: Some(converts_${name}), ..fail }
+}
+
+/// B2.489 (GN-7c): an exception of ${libraries} of a kind that ${fn.member.id} names in raises, as the class of that row.
+fn converts_${name}<'env>(env_: &'env Env, value: &Unknown<'env>) -> napi::Result<Option<napi::Error>> {
+${lookups.join('\n')}
+    Ok(None)
+}
+`;
+  });
+  return `${tables.join('')}
+/// B2.489: the row of a converted kind: the index of its class in CLASSES, the kind, and the name of each property,
+/// which the class of the other library and this one both define.
+type ConvertedRow = (usize, &'static str, &'static [&'static str]);
+
+/// B2.489 (GN-7c): the error that the call throws for a pending exception that a callback threw: its conversion, or the
+/// exception itself, pending again.
+fn converted_thrown(env_: &Env, thrown: napi::Error, converts: Converts) -> napi::Error {
+    if thrown.status != napi::Status::PendingException {
+        return thrown;
+    }
+    let mut exception = std::ptr::null_mut();
+    // SAFETY: the exception that a callback threw is pending on the thread of env_, where the call returns.
+    if unsafe { napi::sys::napi_get_and_clear_last_exception(env_.raw(), &mut exception) } != napi::sys::Status::napi_ok {
+        return thrown;
+    }
+    // SAFETY: the exception is a value of env_.
+    let value = unsafe { Unknown::from_raw_unchecked(env_.raw(), exception) };
+    if let Ok(Some(error)) = converts(env_, &value) {
+        return error;
+    }
+    // SAFETY: the exception that this took is thrown again on the same thread, so the caller gets the same object.
+    if unsafe { napi::sys::napi_throw(env_.raw(), exception) } != napi::sys::Status::napi_ok {
+        return napi::Error::from_reason("U-3: the exception of the callback could not be thrown again");
+    }
+    thrown
+}
+
+/// B2.489: the converted error of an exception that is an instance of one of the registered classes of another
+/// library's package, with the message, status, errno and properties of the exception and the exception as its cause;
+/// None for an exception of no class or of a kind of no row.
+fn converted_from<'env>(env_: &'env Env, value: &Unknown<'env>, classes: std::ops::Range<usize>, row: fn(&str) -> Option<ConvertedRow>) -> napi::Result<Option<napi::Error>> {
+    let Some(registered) = CLASSES.get() else {
+        return Ok(None);
+    };
+    for index in classes {
+        let Some(class) = registered.get(index) else {
+            return Ok(None);
+        };
+        if !value.instanceof(class.borrow_back(env_)?)? {
+            continue;
+        }
+        let object: Object<'_> = value.coerce_to_object()?;
+        let kind: String = object.get_named_property("kind")?;
+        let Some((target, kind, names)) = row(&kind) else {
+            return Ok(None);
+        };
+        let Some(made) = registered.get(target) else {
+            return Ok(None);
+        };
+        let message: String = object.get_named_property("message")?;
+        let status: Option<u32> = object.get_named_property("status")?;
+        let errno: Option<i32> = object.get_named_property("errno")?;
+        let args: ClassArgs = FnArgs::from((message, String::from(kind), status, errno));
+        let mut converted = made.borrow_back(env_)?.new_instance(args)?.coerce_to_object()?;
+        for name in names {
+            let property: Unknown<'_> = object.get_named_property(name)?;
+            read_only(&mut converted, name, property)?;
+        }
+        read_only(&mut converted, "cause", *value)?;
+        return Ok(Some(napi::Error::from(converted.to_unknown())));
+    }
+    Ok(None)
+}
+`;
 }
 
 // U-3, GN-6d: the kind and the message of an exception that is an instance of one of the error classes, for the
@@ -1785,7 +1901,7 @@ function libRust(model: Model): string {
   const classIndex = (category: string): string => String(model.classes.findIndex((c) => c.category === category));
   const constants = model.constants.map((c) => `const _: () = assert!(${c.member.core as string} == ${String(c.member.value)});`).join('\n') + defaultAsserts(model);
   const functions = model.functions.map((fn) => functionRust(model, fn)).join('') + model.objects.map((o) => objectRust(model, o)).join('') +
-    takenCallbacks(model).map((c) => callbackRust(model, c)).join('') + keptCallbacks(model).map((c) => keptCallbackRust(model, c)).join('') + model.interfaces.map((i) => interfaceRust(model, i)).join('') + (holdsThrown(model) ? owned(ownsAny(model)) : '') + passingRust(model) + (takenCallbacks(model).some((c) => c.members.some((m) => m.recognized !== undefined)) ? RECOGNIZED_KIND : '') + model.kept.map(keptCheckNode).join('') + failureRust(model) + poisonRust(model) +
+    takenCallbacks(model).map((c) => callbackRust(model, c)).join('') + keptCallbacks(model).map((c) => keptCallbackRust(model, c)).join('') + model.interfaces.map((i) => interfaceRust(model, i)).join('') + (holdsThrown(model) ? owned(ownsAny(model)) : '') + passingRust(model) + (takenCallbacks(model).some((c) => c.members.some((m) => m.recognized !== undefined)) ? RECOGNIZED_KIND : '') + model.kept.map(keptCheckNode).join('') + failureRust(model) + convertedRust(model) + poisonRust(model) +
     machineRust(model);
   const enums = [
     ...model.enums.map(enumRust),
@@ -1846,14 +1962,20 @@ struct Fail {
     thrown: Option<napi::Error>,${model.errorUnits.length > 0 ? `
     // I-3: the properties of an error unit, which the instance takes where the call returns.
     // Boxed again, so that the failure stays small (a thin pointer).
-    properties: Option<Box<Properties>>,` : ''}
+    properties: Option<Box<Properties>>,` : ''}${convertsAny(model) ? `
+    // B2.489 (GN-7c): the conversion of the member, which the exception that was thrown takes where the call returns.
+    converts: Option<Converts>,` : ''}
 }
+${convertsAny(model) ? `
+/// B2.489: the conversion of a member: the converted error of an exception of another library's package, or None.
+type Converts = for<'env> fn(&'env Env, &Unknown<'env>) -> napi::Result<Option<napi::Error>>;
+` : ''}
 ${model.errorUnits.length > 0 ? `
 /// I-3: writes the properties of an error unit on its instance. It is Send, because the failure of a call that waits
 /// moves from the libuv pool to the JavaScript thread (GN-6m).
 type Properties = Box<dyn for<'env> FnOnce(&'env Env, &mut Object<'env>) -> napi::Result<()> + Send>;
 
-` : ''}${model.errorUnits.some((u) => errorProperties(u).length > 0) ? `
+` : ''}${model.errorUnits.some((u) => errorProperties(u).length > 0) || convertsAny(model) ? `
 /// I-3: a property of an error is read-only, as kind, status and errno are (E-3).
 fn read_only(object: &mut Object<'_>, name: &str, value: Unknown<'_>) -> napi::Result<()> {
     object.define_properties(&[Property::new().with_utf8_name(name)?.with_value(&value).with_property_attributes(PropertyAttributes::Enumerable)])
@@ -1868,8 +1990,8 @@ static CLASSES: OnceLock<Vec<FunctionRef<ClassArgs, ()>>> = OnceLock::new();
 /// B-4: the module keeps a reference to each library class when it loads; a missing class fails the load.
 #[napi(js_name = "__register")]
 pub fn register(classes: Vec<Function<'_, ClassArgs, ()>>) -> napi::Result<()> {
-    if classes.len() != ${model.classes.length + model.errorUnits.length + ownerRecognizedUnits(model).length} {
-        return Err(napi::Error::from_reason(format!("B-4: ${model.classes.length + model.errorUnits.length + ownerRecognizedUnits(model).length} library classes, {} given", classes.len())));
+    if classes.len() != ${model.classes.length + model.errorUnits.length + ownerRecognizedUnits(model).length + convertedClassCount(model, 'node')} {
+        return Err(napi::Error::from_reason(format!("B-4: ${model.classes.length + model.errorUnits.length + ownerRecognizedUnits(model).length + convertedClassCount(model, 'node')} library classes, {} given", classes.len())));
     }
     let references = classes.iter().map(Function::create_ref).collect::<napi::Result<Vec<_>>>()?;
     CLASSES.set(references).map_err(|_registered| napi::Error::from_reason("B-4: the library classes are registered once"))
@@ -1877,7 +1999,10 @@ pub fn register(classes: Vec<Function<'_, ClassArgs, ()>>) -> napi::Result<()> {
 
 /// The instance of the library class of a failure, as the error that the call throws (B-4).
 fn throw(env_: &Env, fail: Fail) -> napi::Error {
-    if let Some(thrown) = fail.thrown {
+    if let Some(thrown) = fail.thrown {${convertsAny(model) ? `
+        if let Some(converts) = fail.converts {
+            return converted_thrown(env_, thrown, converts);
+        }` : ''}
         return thrown;
     }
     let Some(class) = CLASSES.get().and_then(|classes| classes.get(fail.class)) else {
@@ -1900,7 +2025,7 @@ ${model.errorUnits.length > 0 ? `    let properties = fail.properties;
 }
 
 fn library_error(class: usize, message: String, kind: &'static str, status: Option<u16>, errno: Option<i32>) -> Fail {
-    Fail { class, message, kind, status, errno, thrown: None${model.errorUnits.length > 0 ? ', properties: None' : ''} }
+    Fail { class, message, kind, status, errno, thrown: None${model.errorUnits.length > 0 ? ', properties: None' : ''}${convertsAny(model) ? ', converts: None' : ''} }
 }
 
 /// E-1a: an error that the binding raises itself, in the class of its fixed category.
@@ -2056,6 +2181,34 @@ function tsType(model: Model, type: Type, input: boolean): string {
 // (export 'export '). The constructor of a category class, which every error unit calls, judges its arguments against
 // the kinds of the class that is made, the nearest generated class of new.target (GN-10); an error that the binding
 // raises has a kind of its class.
+// B2.489 (GN-7a): the internal maker of a contract with a callback unit, under Symbol.for('polyspec.binding.make') on
+// each class: it makes the class with the kind, the message, the status and the errno, which the constructor judges,
+// and defines each property that the object names, as the addon or the module defines the properties of an error unit.
+function jsMaker(model: Model, lang: 'node' | 'wasm'): string {
+  const unitName = (u: ErrorUnit): string => langName(lang, u.unit.name, 'class');
+  const properties = model.errorUnits.map((u) => `PROPERTIES.set(${unitName(u)}, new Set([${errorProperties(u).map(({ property }) => jsString(langName(lang, property.member.name, 'variable'))).join(', ')}]));`);
+  return `
+// B2.489 (GN-7a): the properties of each class, which the maker defines. It is no API for users: the test of another
+// repository throws what it makes from a callback unit of ${model.contract.library}.
+const PROPERTIES = new Map();
+${properties.join('\n')}
+const MAKE = Symbol.for('polyspec.binding.make');
+for (const made of [${[...model.classes.map((c) => c.name), ...model.errorUnits.map(unitName)].join(', ')}]) {
+  Object.defineProperty(made, MAKE, {
+    value: function make(kind, message, status, errno, properties = {}) {
+      const error = new this(message, kind, status, errno);
+      const names = PROPERTIES.get(this) ?? new Set();
+      for (const [name, value] of Object.entries(properties)) {
+        if (!names.has(name)) throw new ${categoryClass(model, 'type')}(\`\${JSON.stringify(name)} is no property of \${this.name}\`, 'invalid_argument_type');
+        Object.defineProperty(error, name, { value, enumerable: true });
+      }
+      return error;
+    },
+  });
+}
+`;
+}
+
 export function jsErrorClasses(model: Model, lang: 'node' | 'wasm', exported: string, base: (category: string) => string): { classes: string; units: string } {
   const typeClass = categoryClass(model, 'type');
   const valueClass = categoryClass(model, 'value');
@@ -2110,7 +2263,7 @@ ${exported}class ${name} extends ${parent} {
 }`;
   }).join('\n')}
 ${kinds.join('\n')}
-`;
+${model.callbacks.length === 0 ? '' : jsMaker(model, lang)}`;
   return { classes, units };
 }
 
@@ -2230,7 +2383,7 @@ ${classes}
 ${units}
 
 // B-4: the addon throws instances of these classes; it keeps them from here on, and a missing one fails the load.${recognizedOwners(model)}
-addon.__register([${[...model.classes.map((c) => c.name), ...model.errorUnits.map((u) => langName('node', u.unit.name, 'class')), ...ownerRecognizedUnits(model).map((o) => `recognized_${o.library.replaceAll('-', '_')}.${langName('node', o.unit.name, 'class')}`)].join(', ')}]);
+addon.__register([${[...model.classes.map((c) => c.name), ...model.errorUnits.map((u) => langName('node', u.unit.name, 'class')), ...ownerRecognizedUnits(model).map((o) => `recognized_${o.library.replaceAll('-', '_')}.${langName('node', o.unit.name, 'class')}`), ...convertedLibraries(model).flatMap((c) => ownerErrorClasses(c.owner, 'node').map((k) => `converted_${c.library.replaceAll('-', '_')}.${k.name}`))].join(', ')}]);
 ${foreignRegistration(model)}
 ${[...model.functions, ...model.objects.flatMap((o) => o.members)].some((fn) => fn.machine === true) ? `// GN-6ab: advances the state machine of a call until it ends: the addon makes its calls on this thread and gives the
 // promise of each of its waits (step 0), which this function awaits; a rejection of it is a failure of the binding and
