@@ -38,6 +38,7 @@ import { BINDING_CORE, bindingCoreFinding, casePointLibraries, componentBase, ex
 import { goCommand } from './go-command.ts';
 import { goModUnusedOf, goStaticBuildArgs, nativeStaticLibs, Refused, rehearsalReport, releaseGoModule } from './release/go-module.ts';
 import { cargoFindings, releaseRecipes, releaseSettingFindings } from './release/recipes.ts';
+import { assetSizesCommand } from './release/asset-sizes.ts';
 
 function libraries(contract: unknown): Set<string> {
   const found = new Set<string>();
@@ -320,6 +321,7 @@ const [command, ...rest] = process.argv.slice(2);
 if (command === 'go-link') goLinkCommand(rest);
 if (command === 'release-go-module') releaseGoModuleCommand(rest);
 if (command === 'release-recipes') releaseRecipesCommand(rest);
+if (command === 'asset-sizes') assetSizesCommand(rest);
 if (command !== 'check' && command !== 'scaffold' && command !== 'generate') usage(`unknown command ${command ?? ''}`);
 const options = new Map<string, string>();
 let contractPath: string;

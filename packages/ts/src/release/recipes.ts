@@ -493,12 +493,11 @@ nothing else, calls neither gh nor git, and ends with the line "no upload" (B2.4
 	@test -z "$(REHEARSAL)" || test -n "$(WORK)" || { echo '${step}: REHEARSAL=1 requires WORK, the directory of the rehearsal, for example make ${step} TAG=v0.0.1 REHEARSAL=1 WORK=var/rehearsal' >&2; exit 2; }
 ${has('php') ? `${require('NODE', 'the Node.js of the checkout')}\n` : ''}	@set -e; version=$$(echo "$$TAG" | sed 's/^v//'); dir=$(RELEASE_ASSETS); fail() { echo "${step}: $$1" >&2; exit 1; }; \\
 	set --; seen=' '; wanted=; \\
-	take() { case "$$seen" in *" $$2 "*) fail "$$1 has the label $$2 of another asset" ;; esac; seen="$$seen$$2 "; \\
-	size=$$(($$(wc -c < "$$1"))); test "$$size" -gt 0 || fail "$$1 is empty, and GitHub takes no empty asset"; \\
-	test "$$size" -lt 2147483648 || fail "$$1 is $$size bytes, and GitHub takes no asset of 2 GiB or more"; }; \\
+	take() { case "$$seen" in *" $$2 "*) fail "$$1 has the label $$2 of another asset" ;; esac; seen="$$seen$$2 "; }; \\
 ${has('php') ? `	minors=$$($(NODE) -e '${minorsScript(step)}'); \\\n` : ''}${loops.join('\n')}
 	missing=; for want in ${wanted.join(' ')} $$wanted; do case "$$seen" in *" $$want "*) ;; *) missing="$$missing $$want" ;; esac; done; \\
 	test -z "$$missing" || fail "$$dir lacks$$missing"; \\
+	$(BINDING_RUN) asset-sizes --step ${step} "$$dir" || exit 1; \\
 $(if $(REHEARSAL),	mkdir -p "$(WORK)"; for asset in "$$@"; do file=$$(echo "$$asset" | sed 's/#[^#]*$$//'); echo "$$(($$(wc -c < "$$file"))) $$asset"; done > "$(WORK)/platform-assets.txt"; \\
 	echo "${step}: the rehearsal of $$TAG checked $$# assets and wrote the upload to $(WORK)/platform-assets.txt"; echo 'no upload',	set -x; \\
 	gh release upload "$$TAG" "$$@")
