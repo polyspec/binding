@@ -16,7 +16,7 @@ import { carriers, categoryClass } from '../src/generate/model.ts';
 import { CASE_JSON_STRING_GOLDENS, caseFilesOf, casePathOf, caseTextParts, fromJson } from '../src/generate/samples.ts';
 import { closure, featureItems, INTO_CORE, PARTS, jsString, phpText, pyString, usedHelpers, WIDEN } from '../src/generate/text.ts';
 import { categoryType, goString } from '../src/generate/go.ts';
-import { bindingCoreFinding, dependencyForm, goSumModule, goSumOf, hostRequirements, releaseFindings, releaseRequires, sumRequires, trackedPackages } from '../src/generate/packages.ts';
+import { bindingCoreFinding, dependencyForm, goSumModule, goSumOf, hostRequirements, inheritedLines, manifestReleaseFindings, releaseFindings, releaseRequires, sumRequires, trackedPackages } from '../src/generate/packages.ts';
 import { parse } from 'smol-toml';
 
 // The contracts of tests/e2e and of the fixture repository name the five targets (BD-27), and the generator refuses
@@ -11075,6 +11075,104 @@ test('B2.460: the go.sum that scaffold tracks holds no line of a module of the s
   assert.equal(goSumOf(goMod, [{ Path: 'github.com/polyspec/json/packages/go', Version: 'v0.0.34', Sum: 'h1:zip=', GoModSum: 'h1:mod=' }]), 'github.com/polyspec/json/packages/go v0.0.34 h1:zip=\ngithub.com/polyspec/json/packages/go v0.0.34/go.mod h1:mod=\n');
   // A go.mod that requires a module of its own repository alone has no go.sum, and starts no Go.
   assert.equal(goSumOf('module github.com/polyspec/crud-ui/packages/generator/go\n\ngo 1.27.3\n\nrequire github.com/polyspec/crud-ui/packages/validator/go v0.0.20\n', []), undefined);
+});
+
+test('B2.457: CK-70 reads the polyspec lines of every dependency table of a manifest, those of a target and of [patch] among them (CK-70)', () => {
+  const branch = { git: 'https://github.com/polyspec/json.git', branch: 'main' };
+  const tag = { git: 'https://github.com/polyspec/json.git', tag: 'v0.0.34' };
+  const finding = (table: string, crate = 'polyspec-json'): string => `the dependency line of ${crate} in [${table}] names the branch main, a development form, and a release names the version =X.Y.Z or the tag vX.Y.Z (GN-3e)`;
+  const found = (manifest: unknown): string[] => manifestReleaseFindings(manifest, 'packages/rust', new Set());
+  // The line of a consumer: a branch in [dev-dependencies].
+  assert.deepEqual(found({ package: { name: 'polyspec-plot' }, 'dev-dependencies': { 'polyspec-json': branch } }), [finding('dev-dependencies')]);
+  assert.deepEqual(found({ 'build-dependencies': { 'polyspec-json': branch } }), [finding('build-dependencies')]);
+  // The three tables of a target, by its name as the manifest writes it.
+  const target = 'cfg(target_arch = "wasm32")';
+  assert.deepEqual(found({ target: { [target]: { dependencies: { 'polyspec-json': branch }, 'dev-dependencies': { 'polyspec-json': branch }, 'build-dependencies': { 'polyspec-json': branch } } } }),
+    [`target.'${target}'.dependencies`, `target.'${target}'.dev-dependencies`, `target.'${target}'.build-dependencies`].map((table) => finding(table)));
+  // A line of [dependencies] that the contract does not name, and a crate under another name of the manifest.
+  assert.deepEqual(found({ dependencies: { 'polyspec-json': branch, json: { ...branch, package: 'polyspec-json-codec' } } }), [
+    'the dependency line of polyspec-json names the branch main, a development form, and a release names the version =X.Y.Z or the tag vX.Y.Z (GN-3e)',
+    'the dependency line of polyspec-json-codec names the branch main, a development form, and a release names the version =X.Y.Z or the tag vX.Y.Z (GN-3e)',
+  ]);
+  // [patch] of the root manifest replaces the source of a crate for every member.
+  assert.deepEqual(manifestReleaseFindings({ patch: { 'https://github.com/polyspec/json.git': { 'polyspec-json': { path: '../json/packages/rust' } } } }, '.', new Set()),
+    ['the dependency line of polyspec-json in [patch."https://github.com/polyspec/json.git"] names the path ../json/packages/rust, a development form, and a release names the version =X.Y.Z or the tag vX.Y.Z (GN-3e)']);
+  // A release form in each table is no finding, and neither is a crate that is no polyspec crate, in any form.
+  assert.deepEqual(found({ dependencies: { 'polyspec-json': tag, serde: { git: 'https://github.com/serde-rs/serde.git', branch: 'master' } }, 'dev-dependencies': { 'polyspec-json': '=0.0.34', libtest: { path: '../../../libtest' } }, target: { [target]: { dependencies: { 'polyspec-json': tag } } } }), []);
+  // The line of a crate on itself (CK-65) and a path that stays inside the repository name no other repository; no
+  // manifest of a binding package names a version from them, so they need none.
+  assert.deepEqual(found({ package: { name: 'polyspec-plot' }, 'dev-dependencies': { 'polyspec-plot': { path: '.', features: ['fault-test'] }, 'polyspec-plot-tools': { path: '../tools/rust' } } }), []);
+  assert.deepEqual(found({ 'dev-dependencies': { 'polyspec-points': { path: '../../../points/packages/rust' } } }), ['the dependency line of polyspec-points in [dev-dependencies] names the path ../../../points/packages/rust, a development form, and a release names the version =X.Y.Z or the tag vX.Y.Z (GN-3e)']);
+  // A line of [dependencies] that the caller judges itself (the lines that the contract names) is left to it.
+  assert.deepEqual(manifestReleaseFindings({ dependencies: { 'polyspec-json': branch }, 'dev-dependencies': { 'polyspec-json': branch } }, 'packages/rust', new Set(['polyspec-json'])), [finding('dev-dependencies')]);
+});
+
+test('B2.457: a line that a crate inherits from the workspace has the form of the line of [workspace.dependencies] (GN-3e, CK-70)', () => {
+  const workspace = { 'polyspec-points': { git: 'https://github.com/polyspec/points.git', tag: 'v0.1.2' }, 'polyspec-json': { git: 'https://github.com/polyspec/json.git', branch: 'main' }, 'polyspec-near': { path: 'packages/near/rust', version: '0.0.3' }, 'polyspec-far': { path: '../far/packages/rust' } };
+  const lines = inheritedLines({ 'polyspec-points': { workspace: true }, 'polyspec-json': { workspace: true, features: ['x'] }, 'polyspec-near': { workspace: true }, 'polyspec-far': { workspace: true }, 'polyspec-none': { workspace: true }, serde: '1' }, workspace);
+  // A release form of the workspace is one of the crate, and a development form is named with its place.
+  assert.equal(dependencyForm(lines.get('polyspec-points'), 'packages/rust').version, '0.1.2');
+  assert.equal(dependencyForm(lines.get('polyspec-json'), 'packages/rust').version, undefined);
+  assert.equal(dependencyForm(lines.get('polyspec-json'), 'packages/rust').named, 'the branch main, by the line of [workspace.dependencies] of the root manifest');
+  // A path of the workspace is read from the root of the repository, and given from the place of the crate.
+  assert.deepEqual(dependencyForm(lines.get('polyspec-near'), 'packages/rust'), { version: '0.0.3', path: '../near/rust', named: 'the version 0.0.3 of the path packages/near/rust, by the line of [workspace.dependencies] of the root manifest' });
+  assert.equal(dependencyForm(lines.get('polyspec-far'), 'packages/rust').version, undefined);
+  assert.equal(dependencyForm(lines.get('polyspec-far'), 'packages/rust').path, '../../../far/packages/rust');
+  // A line that the workspace does not hold, and a line read without the workspace, name no version.
+  assert.equal(dependencyForm(lines.get('polyspec-none'), 'packages/rust').named, 'workspace = true, and [workspace.dependencies] of the root manifest holds no line of it');
+  assert.equal(dependencyForm({ workspace: true }, 'packages/rust').version, undefined);
+  // The manifests of the binding packages follow: the version of the workspace's tag, and the line as the core has it.
+  const { contract, foreign } = plotSample();
+  const packages = (line: unknown): Map<string, string> => trackedPackages(contract, '0.0.0', inheritedLines({ 'polyspec-points': { workspace: true } }, { 'polyspec-points': line }), [], foreign);
+  const released = packages({ git: 'https://github.com/polyspec/points.git', tag: 'v0.1.2' });
+  assert.match(String(released.get('packages/go/go.mod')), /\nrequire github\.com\/polyspec\/points\/packages\/go v0\.1\.2\n$/);
+  assert.match(String(released.get('packages/python/pyproject.toml')), /\ndependencies = \["polyspec-points==0\.1\.2"\]\n/);
+  assert.match(String(released.get('packages/python/Cargo.toml')), /\npolyspec-points = \{ workspace = true \}\n/);
+  assert.deepEqual(releaseFindings(contract, inheritedLines({ 'polyspec-points': { workspace: true } }, { 'polyspec-points': { git: 'https://github.com/polyspec/points.git', tag: 'v0.1.2' } }), [], foreign), []);
+  const development = packages({ git: 'https://github.com/polyspec/points.git', branch: 'main' });
+  assert.match(String(development.get('packages/go/go.mod')), /\nrequire github\.com\/polyspec\/points\/packages\/go v0\.0\.0\n$/);
+  assert.deepEqual(releaseFindings(contract, inheritedLines({ 'polyspec-points': { workspace: true } }, { 'polyspec-points': { git: 'https://github.com/polyspec/points.git', branch: 'main' } }), [], foreign),
+    ['the dependency line of polyspec-points names the branch main, by the line of [workspace.dependencies] of the root manifest, a development form, and a release names the version =X.Y.Z or the tag vX.Y.Z (GN-3e)']);
+  // The line on polyspec-binding-core that the core inherits is inherited by each binding crate, with its features.
+  const inheritedCore = trackedPackages(contract, '0.0.0', inheritedLines({ 'polyspec-points': '=0.1.2', 'polyspec-binding-core': { workspace: true } }, { 'polyspec-binding-core': { git: 'https://github.com/polyspec/binding.git', tag: 'v0.3.0' } }), [], foreign);
+  assert.match(String(inheritedCore.get('packages/python/Cargo.toml')), /\npolyspec-binding-core = \{ workspace = true, features = \["construct", "lock"\] \}\n/);
+});
+
+test('B2.457: binding check --release reads a branch line of [dev-dependencies] and a line inherited from the workspace (CK-70)', () => {
+  const { root, env } = plotCopy();
+  try {
+    const manifest = join(root, 'plot/packages/rust/Cargo.toml');
+    const contract = join(root, 'plot/packages/rust/interface.json');
+    const run = (...args: string[]): { status: number | null; stderr: string } => spawnSync(process.execPath, [cli, ...args, '--cargo', 'cargo'], { encoding: 'utf8', env });
+    const text = readFileSync(manifest, 'utf8')
+      .replace('polyspec-points = { path = "../../../points/packages/rust" }', 'polyspec-points = { workspace = true }')
+      .replace('branch = "v1/rust-core"', 'tag = "v0.3.0"');
+    const rootManifest = join(root, 'plot/Cargo.toml');
+    const workspace = (line: string): void => writeFileSync(rootManifest, `${readFileSync(new URL('../../../tests/e2e/plot/Cargo.toml', import.meta.url), 'utf8')}\n[workspace.dependencies]\npolyspec-points = ${line}\n`);
+    // A tree of release forms alone passes CK-70.
+    writeFileSync(manifest, text);
+    workspace('{ git = "https://github.com/polyspec/points.git", tag = "v0.1.2" }');
+    assert.equal(run('scaffold', '--root', join(root, 'plot')).status, 0);
+    assert.match(readFileSync(join(root, 'plot/packages/go/go.mod'), 'utf8'), /\nrequire github\.com\/polyspec\/points\/packages\/go v0\.1\.2\n$/);
+    assert.doesNotMatch(run('check', contract, '--release').stderr, /CK-70/);
+    // The branch of the workspace's line is the form of the line that inherits it.
+    workspace('{ git = "https://github.com/polyspec/points.git", branch = "main" }');
+    assert.match(run('check', contract, '--release').stderr, /plot\/packages\/rust\/Cargo\.toml: CK-70 the dependency line of polyspec-points names the branch main, by the line of \[workspace\.dependencies\] of the root manifest, a development form/);
+    // A branch line of [dev-dependencies], which no contract names.
+    workspace('{ git = "https://github.com/polyspec/points.git", tag = "v0.1.2" }');
+    writeFileSync(manifest, text.replace('\n[lints]', '\n[dev-dependencies]\npolyspec-json = { git = "https://github.com/polyspec/json.git", branch = "main" }\n\n[lints]'));
+    const release = run('check', contract, '--release');
+    assert.equal(release.status, 1);
+    assert.match(release.stderr, /plot\/packages\/rust\/Cargo\.toml: CK-70 the dependency line of polyspec-json in \[dev-dependencies\] names the branch main, a development form, and a release names the version =X\.Y\.Z or the tag vX\.Y\.Z \(GN-3e\)\n/);
+    // [patch] of the root manifest.
+    writeFileSync(manifest, text);
+    writeFileSync(rootManifest, `${readFileSync(rootManifest, 'utf8')}\n[patch."https://github.com/polyspec/points.git"]\npolyspec-points = { path = "../points/packages/rust" }\n`);
+    assert.match(run('check', contract, '--release').stderr, /plot\/Cargo\.toml: CK-70 the dependency line of polyspec-points in \[patch\."https:\/\/github\.com\/polyspec\/points\.git"\] names the path \.\.\/points\/packages\/rust, a development form/);
+    // A check without --release reads none of them.
+    assert.doesNotMatch(run('check', contract).stderr, /CK-70/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test('the cases of an alias row with only are tests of the targets that it lists alone (GN-13h, B2.317)', () => {

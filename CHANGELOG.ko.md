@@ -1,6 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: a720cd0fb3d28ab7fc889983eb237ddad5c6bec571b90055efcaa2ec67f1e967 -->
-<!-- source-sha256: af39c2057c369878bbe45717f4c37a928f4d473b67aa37090bb0916dd6cd5e5f -->
+<!-- source-sha256: b4d3e694ed3aac2b6ba015d683729404e712ad16623c04d917fb4b5137accb80 -->
 <!-- source-sha256: baf3548b9f3653972ddd969c66fbc61139860af40b54c2e12379b6f4df57ba2c -->
 <!-- source-sha256: bb28dfd6025b03b96be79ca11dcac3969e000c5324ce6b643123791d04a79f0c -->
 <!-- source-sha256: cfa54c3f8f39682e72777a5567ac382242f1fe10dac5f69c2bc4369cda67435f -->
@@ -14,6 +13,12 @@
 
 ## Unreleased
 
+- `binding check --release`는 계약의 release recipe가 읽는 레포의 설정을 recipe의 reader 그대로 읽고 빠진 것을 하나씩 이름한다(CK-102, B2.471): target `php`는 `config/toolchain.json`의 `phpExtension.minors`와 `llvm.version`, target `go`는 Go module의 디렉터리를 이름하는 `packages.go`의 module path. 그리고 recipe `release-binding-check`는 계약의 release recipe가 읽는 Makefile의 변수(`BINDING_RUN`, `CARGO`, target에 따라 `UV`, `NPM`, `NODE`)를 모두 먼저 요구한다. session-store의 release는 검사를 통과한 뒤 tag 뒤의 `release-platform-assets`에서 `names no PHP minor of the extension in phpExtension.minors (GN-19a)`로 멈췄을 것이다. 이 버전으로 옮기는 레포가 할 일: target `php`가 있는 레포는 `config/toolchain.json`에 `phpExtension.minors`(예: `["8.4", "8.5"]`)와 `llvm.version`을 적는다. 뒤의 것은 recipe가 읽는 대로 `"llvm": {` 줄 아래 `"version": "<major>"` 줄에 적는다. Makefile이 recipe의 변수를 일부 goal에서만 정의하는 레포는 `release-binding-check`에서도 include 앞에 그것을 정의한다.
+- 레포의 commit된 tree는 어느 branch에서든 release 꼴만 담고, CI가 release의 검사를 실행한다(CK-70, GN-19i, B2.457): `packages/release.mk`의 생성된 `release-assets-<job>` recipe는 저마다 `release-binding-check`를 첫 단계로 실행한다. 그래서 CI의 실행과 release의 실행이 한 recipe이고, GN-19i의 입력 `release`는 없어졌다. 전에는 레포마다 자기 Makefile의 조건으로 release에서만 검사를 돌렸고, template, http-negotiation, session-store가 저마다 tag 뒤에 처음 돈 검사에 tag를 잃었다. `binding check --release`는 이제 코어, 추적하는 바인딩 crate 각각, root의 manifest에서 `[dev-dependencies]`, `[build-dependencies]`, `[target.<target>]`의 table, `[patch.<source>]`에 있는 crate `polyspec-<name>`의 줄도 모두 읽는다. `workspace = true`인 줄은 검사에서도 `scaffold`가 쓰는 manifest에서도 그것이 물려받는 `[workspace.dependencies]`의 줄의 꼴을 갖고, 바인딩 crate는 코어가 물려받는 `polyspec-binding-core` 줄을 물려받는다. 이 버전으로 옮기는 레포가 할 일:
+  - Makefile에서 조건 `$(if $(filter true,$(RELEASE)),…release-binding-check…)`를 지우고, `assets.yml`과 그것을 부르는 workflow에서 입력 `release`를 지우고, `make release-recipes`를 다시 실행한다. `release-assets-<job>` 앞에서 `release-binding-check`를 아직 실행하는 자기 recipe는 검사를 두 번 돌릴 뿐이다.
+  - `release-assets-<job>` recipe를 실행하는 모든 job(`platform`, `php`, `npm`)에 CI에서도 Go를 설치한다. 검사가 Go를 시작할 수 있기 때문이다(GN-15l). 자기 go가 `PATH`의 `go`가 아니면 `GO`를 정의한다.
+  - 추적하는 Cargo manifest의 개발 꼴 줄을 모두 tag나 release의 버전으로 바꾼다: `[dependencies]`, `[dev-dependencies]`, `[build-dependencies]`, target의 table, `[patch]`, 그리고 crate가 물려받는 `[workspace.dependencies]`의 줄에 있는 branch, commit, 버전 범위, 레포를 벗어나는 path. 다른 레포의 checkout에 맞댄 개발은 추적하지 않는 링크로 한다. crate가 자기 자신을 이름하는 줄과 레포 안의 path는 그대로 둔다.
+  - 코어가 `polyspec-binding-core`나 라이브러리를 workspace에서 물려받는 레포는 `binding scaffold`를 다시 실행해 manifest를 commit한다.
 - 생성된 member의 G-7 시험과 Python의 GN-11a 시험은 class의 인자에 그 member의 case의 case 값을 주고, B-5c 시험은 그 class의 instance 각각을 raise하지 않는 그 class의 첫 case로 만든다. 전에는 core가 거부할 수 있는 첫 constructor의 placeholder를 주었다(GN-13t, B2.463). method의 G-7 시험은 receiver를 한 번 만들고 모든 호출을 그 receiver에 하므로, 상태를 가진 receiver를 같은 case 폴더에서 다시 만들지 않는다.
 - 이 version으로 옮기는 레포가 Go 모듈에 할 일(B2.459): `zz_generated_*.go` 파일을 하나도 추적하지 않는다. `binding release-go-module`이 이제 그 파일을 하나라도 추적하는 tag의 commit을 거부하므로, 그 파일을 추적하는 레포(orm)는 tag를 만들기 전에 그 파일을 index에서 지우고(각각 `git rm --cached`) ignore한다(Go 모듈의 `.gitignore`에 `zz_generated_*.go` 한 줄). 소비자가 받는 모듈에 레포 자신의 시험과 program이 있다고 기대하지 않는다. 소비자가 `go install`로 설치하는 명령에는 자기 Go 모듈을 준다.
 - `binding release-go-module`은 tag의 commit이 추적하는 모든 생성 파일을 거부하고, 하나씩 밝히며, commit도 tag도 만들지 않는다(GN-3, GN-15g, GN-19f, B2.459). 전에는 test feature의 build tag 뒤의 추적 파일과 추적된 guard만 거부했다(B2.446). 나머지 추적 파일 위에는 work tree의 파일을 덮어썼고 생성이 더는 쓰지 않는 추적 파일은 그대로 두었으므로, release 형태가 release가 검사한 commit과 달랐고 아무것도 그것을 말하지 않았다. GN-3은 `zz_generated_*.go` 파일을 추적한다고 적고 G-6을 인용했는데, G-6은 binding의 어떤 문서도 정의하지 않는 규칙이다. 그 문장은 이제 GN-15g와 GN-19h처럼 추적하는 tree가 그 파일을 담지 않는다고 적고, 인용은 지웠다.

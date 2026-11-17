@@ -7,9 +7,10 @@
 // The text holds no `${` of the shell: make passes `$$` to the shell, and every expansion of a variable of the shell is
 // written `$$name`, so a template literal of this file interpolates only the values of the contract.
 
+import { spawnSync } from 'node:child_process';
 import type { Contract } from '../contract.ts';
 import { addonName, componentBase, extensionName, NODE_PLATFORMS, place, WASM_BINDGEN } from '../generate/packages.ts';
-import { CARRIED_LIBRARIES } from './go-module.ts';
+import { CARRIED_LIBRARIES, goModulePlaceFinding } from './go-module.ts';
 
 // The steps of a release in the order that GN-19h names them; a contract has those of its targets.
 // GN-19c: the manylinux policy of a Linux wheel. The PEP 517 backend of maturin passes --compatibility off unless it is
@@ -51,6 +52,14 @@ const PLATFORMS = [
   { triple: 'aarch64-apple-darwin', go: 'darwin_arm64', pie: 'arm64-darwin-bsdlibc', musl: '', wheel: '*macosx*_arm64.whl' },
 ].map((p) => ({ ...p, platform: platformOf(p.triple) }));
 
+// GN-19d: the script of sed by which the recipes read the major release of LLVM from config/toolchain.json: the value of
+// a line "version": "<major>" between a line "llvm": { and the next }. It reads the lines of the file, so a file on one
+// line pins none for it. The check of a release reads the file with the same script (releaseSettingFindings).
+export const LLVM_MAJOR_SED = String.raw`/"llvm": {/,/}/s/^ *"version": "\([0-9]*\)".*/\1/p`;
+// What a recipe and the check of a release say of a config/toolchain.json from which that script reads no major. The
+// text stands in single quotes of the shell in a line of make, so it holds no single quote and no $.
+const NO_LLVM_MAJOR = 'config/toolchain.json pins no major release of LLVM (llvm.version), which the recipe reads from a line "version": "<major>" under a line "llvm": { (GN-19d)';
+
 const SHARED = `# ---- Shared by the recipes of every contract of the repository ----------------------------------------------------
 ifndef BINDING_RELEASE_SHARED
 BINDING_RELEASE_SHARED := 1
@@ -73,7 +82,7 @@ BINDING_CDYLIB := $(if $(filter Darwin,$(shell uname -s)),dylib,so)
 # the two differ and the build fails. So the build takes the libclang (LIBCLANG_PATH) and the clang (CLANG_PATH) of the
 # one LLVM whose major release config/toolchain.json pins (llvm.version), from LLVM_ROOT: /usr/lib/llvm-<major> on Linux
 # and the Homebrew formula llvm@<major> on macOS unless it is given (GN-19d).
-LLVM_MAJOR ?= $(shell sed -n '/"llvm": {/,/}/s/^ *"version": "\\([0-9]*\\)".*/\\1/p' config/toolchain.json 2>/dev/null)
+LLVM_MAJOR ?= $(shell sed -n '${LLVM_MAJOR_SED}' config/toolchain.json 2>/dev/null)
 LLVM_ROOT ?= $(if $(filter Darwin,$(shell uname -s)),/opt/homebrew/opt/llvm@$(LLVM_MAJOR),/usr/lib/llvm-$(LLVM_MAJOR))
 # binding_require stops the target $@ when the variable $(1) is empty, naming it and what it holds ($(2)).
 binding_require = test -n "$($(1))" || { echo "$@ needs $(1): $(2); define it before the include of $(3) (GN-19h)" >&2; exit 2; }
@@ -132,7 +141,13 @@ export function releaseRecipes(contract: Contract): Recipes {
   const crate = (kind: string): string => `polyspec-${contract.library}-${kind}`;
   const extension = extensionName(contract);
   const label = `polyspec-${contract.library}`;
-  const require = (variable: string, what: string): string => `\t@$(call binding_require,${variable},${what},${path})`;
+  // B2.471: each variable of the Makefile that a recipe requires, with what it holds, in the order of the recipes;
+  // release-binding-check requires all those of the release recipes of the contract.
+  const required = new Map<string, string>();
+  const require = (variable: string, what: string): string => {
+    required.set(variable, what);
+    return `\t@$(call binding_require,${variable},${what},${path})`;
+  };
   // GN-1d: every command of binding that runs Cargo, and every call of Cargo, takes the cargo command of the repository,
   // and a build takes its arguments right after the subcommand.
   const generate = (lang: string): string => `\t$(BINDING_RUN) generate --contract ${contractPath} --target ${lang} --cargo "$(CARGO)"`;
@@ -222,7 +237,7 @@ ${require('BINDING_RUN', 'the command that starts binding')}
 ${require('CARGO', 'the cargo command of the repository')}
 	@test -n "$(PHP)" || { echo '${step} needs PHP: the PHP to build for, for example make ${step} PHP=php' >&2; exit 2; }
 	@test -z "$(EXPECTED_PHP_MINOR)" || printf '%s\\n' "$(EXPECTED_PHP_MINOR)" | grep -Eq '^[0-9]+\\.[0-9]+$$' || { echo '${step}: EXPECTED_PHP_MINOR must be major.minor (for example 8.4)' >&2; exit 2; }
-	@test -n "$(LLVM_MAJOR)" || { echo '${step}: config/toolchain.json pins no major release of LLVM (llvm.version)' >&2; exit 2; }
+	@test -n "$(LLVM_MAJOR)" || { echo '${step}: ${NO_LLVM_MAJOR}' >&2; exit 2; }
 	@test -x "$(LLVM_ROOT)/bin/clang" && ls "$(LLVM_ROOT)/lib" 2>/dev/null | grep -q '^libclang' || { echo '${step}: the bindgen of ext-php-rs needs the libclang and the clang of LLVM $(LLVM_MAJOR) (config/toolchain.json) in $(LLVM_ROOT), which the job provisions before the recipe (GN-19i)' >&2; exit 2; }
 	@test "$$("$(LLVM_ROOT)/bin/clang" -dumpversion | cut -d. -f1)" = "$(LLVM_MAJOR)" || { echo "${step}: $(LLVM_ROOT)/bin/clang is clang $$("$(LLVM_ROOT)/bin/clang" -dumpversion), not $(LLVM_MAJOR) (config/toolchain.json)" >&2; exit 2; }
 ${generate('php')}
@@ -338,13 +353,19 @@ ${generate('go')}
 `);
   }
 
-  add('release-binding-check', `${head('release-binding-check', `release-binding-check runs the release check of binding on the contract (GN-19g, CK-70), which a release runs before it
-builds an asset of a tag. The check starts the go command of GO when the go.mod of the contract requires the release of
-another polyspec Go module (GN-15l), and only then, so the job that runs it has Go.`)}
-${require('BINDING_RUN', 'the command that starts binding')}
-${require('CARGO', 'the cargo command of the repository')}
+  // The text of release-binding-check is written after the other release recipes (bindingCheck), which it reads.
+  const bindingCheckAt = sections.length;
+  add('release-binding-check', '');
+  const bindingCheck = (): string => `${head('release-binding-check', `release-binding-check runs the release check of binding on the contract (GN-19g, CK-70, CK-102), which a release runs
+before it builds an asset of a tag. The check starts the go command of GO when the go.mod of the contract requires the
+release of another polyspec Go module (GN-15l), and only then, so the job that runs it has Go. It first requires every
+variable of the Makefile that a release recipe of the contract reads, so a variable that only a recipe after the tag
+reads is missed here (B2.471).`)}
+${[...required].map(([variable, what]) => `\t@$(call binding_require,${variable},${what},${path})`).join('\n')}
 	$(BINDING_RUN) check ${contractPath} --release --cargo "$(CARGO)" --go "$(GO)"
-`);
+`;
+  require('BINDING_RUN', 'the command that starts binding');
+  require('CARGO', 'the cargo command of the repository');
 
   // GN-19g: the assets of each platform with their labels, and the labels that the targets of the contract require, one
   // asset of each: a missing platform or PHP minor is named, and two files of one label do not stand for another.
@@ -408,29 +429,42 @@ ${has('php') ? `	minors=$$($(NODE) -e '${minorsScript(step)}'); \\\n` : ''}${loo
 
   // GN-19i: the build recipes of the jobs of assets.yml. Each build of a job runs as a make of its own to its end, and the
   // recipe names the builds that failed; an install that a build needs comes first and stops the recipe when it fails.
+  // B2.457: the first step of each is the check of a release (release-binding-check), a make of its own, which stops the
+  // recipe when it fails: the job of CI and the job of a release run this one recipe, so what fails after the tag fails
+  // in CI first, and no Makefile and no workflow holds a condition that runs the check in a release alone.
+  const check = `\t$(MAKE) --no-print-directory ${name('release-binding-check')}`;
   const runAll = (job: string, steps: string[]): string => `\t@failed=; for goal in ${steps.join(' ')}; do $(MAKE) --no-print-directory "$$goal" || failed="$$failed $$goal"; done; \\
 \tif [ -n "$$failed" ]; then echo "${job}: failed:$$failed" >&2; exit 1; fi`;
   const platformSteps = [...(has('go') ? ['release-go-static'] : []), ...(has('python') ? ['release-wheel'] : []), ...(has('node') ? ['release-npm-platform'] : [])].map(name);
   if (platformSteps.length > 0) {
     const job = name('release-assets-platform');
     add('release-assets-platform', `${head('release-assets-platform', `release-assets-platform is the build of the job platform of assets.yml (GN-19i): ${platformSteps.join(', ')} on the
-platform of the host, each to its end; it fails naming each build that failed.`, '')}
+platform of the host, each to its end; it fails naming each build that failed. Its first step is
+${name('release-binding-check')}, which stops it.`, '')}
+${check}
 ${runAll(job, platformSteps)}
 `);
   }
   if (has('php')) {
     const job = name('release-assets-php');
     add('release-assets-php', `${head('release-assets-php', `release-assets-php is the build of an entry of the job php of assets.yml (GN-19i): release-php-ext for the PHP of
-PATH, which the job selects before the recipe, with EXPECTED_PHP_MINOR, the PHP minor of the matrix entry.`, '')}
+PATH, which the job selects before the recipe, with EXPECTED_PHP_MINOR, the PHP minor of the matrix entry. Its first
+step is ${name('release-binding-check')}.`, '')}
+${check}
 	@test -n "$(EXPECTED_PHP_MINOR)" || { echo '${job} needs EXPECTED_PHP_MINOR: the PHP minor of the entry, for example make ${job} EXPECTED_PHP_MINOR=8.4' >&2; exit 2; }
 	$(MAKE) --no-print-directory ${name('release-php-ext')} PHP=php EXPECTED_PHP_MINOR=$(EXPECTED_PHP_MINOR)
 `);
   }
   if (has('node') || has('wasm')) {
-    add('release-assets-npm', `${head('release-assets-npm', `release-assets-npm is the build of the job npm of assets.yml (GN-19i)${has('wasm') ? ': it installs the wasm-bindgen CLI first and stops\nwhen that fails, then' : ':'} runs ${name('release-npm')}.`, '')}
+    add('release-assets-npm', `${head('release-assets-npm', `release-assets-npm is the build of the job npm of assets.yml (GN-19i): it runs ${name('release-binding-check')} first${has('wasm') ? ',\nthen installs the wasm-bindgen CLI and stops when that fails, then' : ', then'} runs ${name('release-npm')}.`, '')}
+${check}
 ${has('wasm') ? '\t$(MAKE) --no-print-directory install-wasm-bindgen\n' : ''}	$(MAKE) --no-print-directory ${name('release-npm')}
 `);
   }
+
+  // The release recipes are written: release-binding-check requires the variables that they read, and not those of
+  // the recipe of a checkout below.
+  sections[bindingCheckAt] = bindingCheck();
 
   if (has('node')) {
     const step = name('checkout-node-addon');
@@ -471,6 +505,34 @@ ${generate('node')}
 `;
   const shared = `${SHARED}${has('wasm') ? `\n${INSTALL_WASM_BINDGEN}` : ''}`;
   return { path, targets: defined, text: `${header}\n${shared}\n${sections.join('\n')}` };
+}
+
+// CK-102, B2.471: the settings of the repository that a release recipe of the contract reads and that are missing, each
+// with its file from the root, read by the reader of the recipe itself, so the check cannot differ from the recipe: the
+// script of Node.js of release-platform-assets for phpExtension.minors (minorsScript), the script of sed of the recipes
+// for llvm.version (LLVM_MAJOR_SED), and the function of `binding release-go-module` for the place of the Go module
+// (goModulePlaceFinding). Only the settings of the targets of the contract are read. node: the Node.js that runs the
+// script, as $(NODE) runs it in the recipe.
+export function releaseSettingFindings(contract: Contract, root: string, node: string = process.execPath): { path: string; message: string }[] {
+  const base = componentBase(contract);
+  const name = (step: string): string => `${step}${base === 'packages' ? '' : `-${base.slice('packages/'.length)}`}`;
+  const has = (lang: string): boolean => (contract.targets as readonly string[]).includes(lang);
+  const found: { path: string; message: string }[] = [];
+  if (has('php')) {
+    // The text of the script is a line of make, which writes each $ as $$.
+    const minors = spawnSync(node, ['-e', minorsScript(name('release-platform-assets')).replaceAll('$$', '$')], { cwd: root, encoding: 'utf8' });
+    if (minors.error !== undefined) throw new Error(`${node} did not start: ${minors.error.message}`);
+    if (minors.status !== 0) found.push({ path: 'config/toolchain.json', message: minors.stderr.trim() });
+    const llvm = spawnSync('sed', ['-n', LLVM_MAJOR_SED, 'config/toolchain.json'], { cwd: root, encoding: 'utf8' });
+    if (llvm.error !== undefined) throw new Error(`sed did not start: ${llvm.error.message}`);
+    if (llvm.stdout.trim() === '') found.push({ path: 'config/toolchain.json', message: `${name('release-php-ext')}: ${NO_LLVM_MAJOR}` });
+  }
+  if (has('go')) {
+    const module = (contract.packages['go'] as { module?: unknown } | undefined)?.module;
+    const misplaced = typeof module === 'string' ? goModulePlaceFinding(module, place(contract, 'packages/go')) : undefined;
+    if (misplaced !== undefined) found.push({ path: `${contract.core.path}/interface.json`, message: `${name('release-go-module')}: ${misplaced}` });
+  }
+  return found;
 }
 
 // CK-94, GN-1d: each line of a file of recipes that runs Cargo in another way than GN-1d states, with its line from 1: the

@@ -666,6 +666,112 @@ test('B2.279: release-assets-npm installs the wasm-bindgen CLI first, stops when
   assert.equal(box.calls().filter((call) => call.tool === 'cargo').length, 0, 'release-assets-npm builds after a failed install');
 });
 
+// B2.457: the build recipe of each job runs the check of a release as its first step, so the run of CI and the run of a
+// release are one recipe, and no Makefile and no workflow holds a condition that runs the check in a release alone.
+test('B2.457: each release-assets-<job> runs release-binding-check first, with --cargo and --go, and builds nothing when it fails (GN-19g, GN-19i)', (t) => {
+  const box = sandbox(t, 'x86_64-unknown-linux-gnu');
+  standIn(box.bin, 'mise', '');
+  const jobs: [string, string[]][] = [['release-assets-platform', []], ['release-assets-php', ['EXPECTED_PHP_MINOR=8.4', `LLVM_ROOT=${box.llvm}`]], ['release-assets-npm', [`MISE=${join(box.bin, 'mise')}`]]];
+  for (const [job, args] of jobs) {
+    writeFileSync(box.env['CALLS'] as string, '');
+    const run = box.make(job, ...args, 'GO=/opt/go/bin/go');
+    assert.equal(run.status, 0, run.output);
+    const calls = box.calls();
+    const check = callIndex(calls, 'binding', 'check', join(box.root, 'packages/rust/interface.json'), '--release');
+    assert.equal(check, 0, `${job} starts ${calls[0]?.tool ?? ''} ${(calls[0]?.args ?? []).join(' ')} before the check`);
+    assert.deepEqual(calls[check]?.args.slice(3), ['--cargo', join(box.bin, 'cargo'), '--go', '/opt/go/bin/go'], job);
+  }
+  // A failed check stops the job before a build, an install or a generation.
+  standIn(box.bin, 'binding', `if (args[0] === 'check') { console.error('CK-70 the dependency line of polyspec-points names the branch main'); process.exit(1); }`);
+  for (const [job, args] of jobs) {
+    writeFileSync(box.env['CALLS'] as string, '');
+    const run = box.make(job, ...args);
+    assert.notEqual(run.status, 0, job);
+    assert.match(run.output, /CK-70 the dependency line of polyspec-points names the branch main/, job);
+    assert.deepEqual(box.calls().map((call) => `${call.tool} ${call.args[0] ?? ''}`), ['binding check'], job);
+  }
+  // The file holds no condition on an input of a release: the check is a line of each build recipe.
+  const text = releaseRecipes(fixtureContract()).text;
+  assert.doesNotMatch(text, /\$\(RELEASE\)|filter true/);
+  for (const job of ASSET_JOBS) {
+    const recipe = text.slice(text.indexOf(`\n${job}:`));
+    assert.match(recipe.split('\n').find((line) => line.startsWith('\t')) ?? '', /^\t\$\(MAKE\) --no-print-directory release-binding-check$/, job);
+  }
+});
+
+// B2.471: the check of a release reads the settings of the repository that the recipes of the release read, with the
+// reader of the recipe, so a setting that is missing fails in CI and not in a recipe that runs after the tag.
+const releaseCheck = (root: string): { status: number | null; stderr: string } => {
+  const run = spawnSync(process.execPath, [cli, 'check', join(root, 'packages/rust/interface.json'), '--release', '--cargo', 'cargo'], { encoding: 'utf8' });
+  return { status: run.status, stderr: run.stderr };
+};
+const toolchain = (root: string, value: unknown): void => writeFileSync(join(root, 'config/toolchain.json'), `${JSON.stringify(value, null, 2)}\n`);
+
+test('B2.471: binding check --release refuses a repository with a PHP target whose config/toolchain.json names no phpExtension.minors (CK-102, GN-19a)', (t) => {
+  const box = sandbox(t, 'aarch64-unknown-linux-gnu');
+  assert.doesNotMatch(releaseCheck(box.root).stderr, /CK-102/);
+  const finding = new RegExp(`${join(box.root, 'config/toolchain.json')}: CK-102 release-platform-assets: config/toolchain\\.json names no PHP minor of the extension in phpExtension\\.minors, a list such as \\["8\\.4", "8\\.5"\\] \\(GN-19a\\)\\n`);
+  // The key is missing, the list is empty, a value is no <major>.<minor>, and the file is not there.
+  for (const value of [{ llvm: { version: LLVM_MAJOR } }, { llvm: { version: LLVM_MAJOR }, phpExtension: { minors: [] } }, { llvm: { version: LLVM_MAJOR }, phpExtension: { minors: ['8.4', '8'] } }]) {
+    toolchain(box.root, value);
+    const refused = releaseCheck(box.root);
+    assert.equal(refused.status, 1, JSON.stringify(value));
+    assert.match(refused.stderr, finding, JSON.stringify(value));
+    // The recipe that reads it after the tag stops on the same setting with the same sentence.
+    const recipe = box.make('release-platform-assets', 'TAG=v0.0.3');
+    assert.match(recipe.output, /release-platform-assets: config\/toolchain\.json names no PHP minor of the extension in phpExtension\.minors/, JSON.stringify(value));
+  }
+  rmSync(join(box.root, 'config/toolchain.json'));
+  assert.match(releaseCheck(box.root).stderr, finding);
+  // A check without --release reads no setting of a release.
+  assert.doesNotMatch(String(spawnSync(process.execPath, [cli, 'check', join(box.root, 'packages/rust/interface.json'), '--cargo', 'cargo'], { encoding: 'utf8' }).stderr), /CK-102/);
+});
+
+test('B2.471: binding check --release refuses a repository with a PHP target whose config/toolchain.json pins no llvm.version as the recipes read it (CK-102, GN-19d)', (t) => {
+  const box = sandbox(t, 'aarch64-unknown-linux-gnu');
+  const finding = new RegExp(`${join(box.root, 'config/toolchain.json')}: CK-102 release-php-ext: config/toolchain\\.json pins no major release of LLVM \\(llvm\\.version\\), which the recipe reads from a line "version": "<major>" under a line "llvm": \\{ \\(GN-19d\\)\\n`);
+  toolchain(box.root, { phpExtension: { minors: PHP_MINORS } });
+  const refused = releaseCheck(box.root);
+  assert.equal(refused.status, 1);
+  assert.match(refused.stderr, finding);
+  assert.match(box.make('release-php-ext', `PHP=${join(box.bin, 'php')}`).output, /release-php-ext: config\/toolchain\.json pins no major release of LLVM \(llvm\.version\)/);
+  // The recipes read the major with sed from the lines of the file, so a file on one line pins none for them.
+  writeFileSync(join(box.root, 'config/toolchain.json'), JSON.stringify({ llvm: { version: LLVM_MAJOR }, phpExtension: { minors: PHP_MINORS } }));
+  assert.match(releaseCheck(box.root).stderr, finding);
+  assert.match(box.make('release-php-ext', `PHP=${join(box.bin, 'php')}`).output, /pins no major release of LLVM/);
+});
+
+test('B2.471: binding check --release refuses a Go module whose module path names another directory than the one of the module (CK-102, GN-15)', (t) => {
+  const box = sandbox(t, 'aarch64-unknown-linux-gnu', (contract) => { (contract.packages['go'] as { module: string }).module = 'github.com/polyspec/sample/go'; });
+  const refused = releaseCheck(box.root);
+  assert.equal(refused.status, 1);
+  assert.match(refused.stderr, new RegExp(`${join(box.root, 'packages/rust/interface.json')}: CK-102 release-go-module: github\\.com/polyspec/sample/go: the Go module is at packages/go of its repository, not at go, the directory of its module path \\(GN-15\\)\\n`));
+  const other = sandbox(t, 'aarch64-unknown-linux-gnu', (contract) => { (contract.packages['go'] as { module: string }).module = 'example.org/sample/packages/go'; });
+  assert.match(releaseCheck(other.root).stderr, /interface\.json: CK-102 release-go-module: example\.org\/sample\/packages\/go: the Go module is not github\.com\/<owner>\/<repository>\[\/<directory>\]/);
+});
+
+test('B2.471: a repository without the target is not asked for the setting of that target (CK-102)', (t) => {
+  // No PHP target: no config/toolchain.json is read. No Go target: no module path is read.
+  const box = sandbox(t, 'aarch64-unknown-linux-gnu', (contract) => { contract.targets = contract.targets.filter((target) => target !== 'php' && target !== 'go'); });
+  rmSync(join(box.root, 'config/toolchain.json'));
+  assert.doesNotMatch(releaseCheck(box.root).stderr, /CK-102/);
+});
+
+test('B2.471: release-binding-check requires every variable of the Makefile that a release recipe of the contract reads (GN-19h)', (t) => {
+  const box = sandbox(t, 'aarch64-unknown-linux-gnu');
+  for (const [variable, what] of [['UV', 'the uv of the checkout'], ['NPM', 'the npm of the checkout'], ['NODE', 'the Node.js of the checkout'], ['CARGO', 'the cargo command of the repository']] as const) {
+    writeFileSync(box.env['CALLS'] as string, '');
+    const run = box.make('release-binding-check', `${variable}=`);
+    assert.equal(run.status, 2, `${variable}: ${run.output}`);
+    assert.match(run.output, new RegExp(`release-binding-check needs ${variable}: ${what}; define it before the include of packages/release\\.mk \\(GN-19h\\)`));
+    assert.equal(box.calls().length, 0, variable);
+  }
+  // A contract with the PHP target alone reads NODE in release-platform-assets, after the tag, and no UV and no NPM.
+  const php = sandbox(t, 'aarch64-unknown-linux-gnu', (contract) => { contract.targets = ['php']; });
+  assert.equal(php.make('release-binding-check', 'NODE=').status, 2);
+  assert.equal(php.make('release-binding-check', 'UV=', 'NPM=').status, 0);
+});
+
 // B2.407: the generated entry loads <name>.<platform>.node beside itself when the platform package is not installed
 // (GN-3c); the recipe of the file of recipes puts it there, so no consumer writes the build, the name or the copy.
 test('B2.407: checkout-node-addon builds the addon of the checkout and puts <name>.<platform>.node beside the generated entry (GN-3c, GN-1d)', (t) => {

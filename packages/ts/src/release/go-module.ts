@@ -34,6 +34,19 @@ export function goRemote(module: string, version: string): GoRemote {
   return { owner, repository, directory, tag: directory === '' ? version : `${directory}/${version}` };
 }
 
+// GN-15, GN-19f: what is wrong with the module path of a Go module at `directory` of its repository: a path that is no
+// path of GitHub, or one whose directory is another, so that the tag <directory>/vX.Y.Z is not the one that Go reads for
+// it. `binding release-go-module` refuses it, and the check of a release reads it with this function (CK-102, B2.471).
+export function goModulePlaceFinding(module: string, directory: string): string | undefined {
+  let at: GoRemote;
+  try {
+    at = goRemote(module, 'v0.0.0');
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error);
+  }
+  return at.directory === directory ? undefined : `${module}: the Go module is at ${directory} of its repository, not at ${at.directory}, the directory of its module path (GN-15)`;
+}
+
 // The version that a go.mod requires of a module, from a line `require <module> <version>` or a line of a block
 // `require (...)`; undefined when it requires none.
 export function requiredVersion(goMod: string, module: string): string | undefined {
@@ -345,7 +358,8 @@ export function releaseGoModule(release: GoModuleRelease): GoModuleReleased {
   const { root, directory, module, tag, work, remote } = release;
   if (!/^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/.test(tag)) throw new Refused([`the tag ${tag} is not vX.Y.Z`]);
   const at = goRemote(module, tag);
-  if (at.directory !== directory) throw new Refused([`${module}: the Go module is at ${directory} of its repository, not at ${at.directory}, the directory of its module path (GN-15)`]);
+  const misplaced = goModulePlaceFinding(module, directory);
+  if (misplaced !== undefined) throw new Refused([misplaced]);
   const moduleTag = at.tag;
   const reference = `refs/tags/${moduleTag}`;
   // B2.456: the consumer of the proof is built by Go, so a run without the go command is refused before it reads the

@@ -268,12 +268,22 @@ the design ids are those of the binding design.
   of another repository. Why: the generator of crud-ui names its validator, a library of the same repository, by
   `polyspec-crud-ui-validator = { path = "../../validator/rust", version = "0.0.20" }`, the only form by which Cargo
   builds two crates of one tree, and the check of a release refused the line as a path, so that repository could
-  pass no check of a release (B2.460). Every other line (a path that leaves the repository, a
+  pass no check of a release (B2.460). A line that the core inherits from the workspace (`workspace = true`) has the
+  form of the line of `[workspace.dependencies]` of the root manifest: the manifests name the version of that line,
+  a `path` of it is read from the root of the repository, and each binding crate, a member of the same workspace,
+  inherits the line as the core does (`polyspec-<library> = { workspace = true }`, and for `polyspec-binding-core`
+  `workspace = true` with the features of the binding crate). A line that inherits where the workspace holds no line
+  of the crate names no version. Before, such a line was read as a line without a version, so a core that inherited a
+  tag got the manifests of a development form, and its binding crates a line on `polyspec-binding-core` without a
+  source (B2.457). Every other line (a path that leaves the repository, a
   branch, a commit, a version range) is a development form, which a repository uses until the library has a release:
   the manifest names the library without the version of a release (`go.mod` `v0.0.0`; `pyproject.toml` the name
   `polyspec-<library>` alone; `package.json` and `composer.json` the package with `*`), and the development checkout
   resolves it through its development links and its development install. No form of the line stops `scaffold`, `generate` or `check`;
-  `binding check --release` reports each development form (CK-70). The dependency line of each binding crate on
+  `binding check --release` reports each development form (CK-70). A committed tree of a repository, on any branch,
+  holds the release forms alone, and its CI runs that check (GN-19i): a checkout is developed against the checkout of
+  another repository through its untracked links, and the development forms remain what `scaffold` writes for a tree
+  that no release is cut from, such as the repositories of the end-to-end check of binding (`tests/e2e`). The dependency line of each binding crate on
   `polyspec-binding-core` follows the line of the core on it in the same way: `scaffold` writes the source that the
   core names (its `git` with its `branch` or `tag`, its `version`, or its `path`, which climbs to the place of the
   binding crate) with the features that the binding crate needs, and pins none by itself, so a core that names the
@@ -3898,7 +3908,9 @@ the design ids are those of the binding design.
   Why: what a run publishes is the decision of the recipe that started it, and a command that is run again after a
   failed push gives the same reference.
 - **GN-19g** Before a recipe of a release builds an archive, it runs `binding check <interface.json> --release` for
-  each contract of the repository, every one to its end, and stops when one fails (CK-70). An asset of the GitHub
+  each contract of the repository, every one to its end, and stops when one fails (CK-70). The recipe
+  `release-binding-check` is that call, and each build recipe of the assets runs it first, in CI as in a release
+  (GN-19i). An asset of the GitHub
   Release has the label `<vendor>-<product>-<runtime>-<version>`, followed by `-<platform>` for an asset of a
   platform and by `-php<X.Y>-<platform>` for a PHP extension. Before it uploads, `release-platform-assets` requires
   the whole set of the targets of the contract, one asset of each label: the wheel of each platform of GN-19a, the npm
@@ -3935,11 +3947,14 @@ the design ids are those of the binding design.
   recipes read: `BINDING_RUN`, the command that starts binding (such as `$(NODE) $(BINDING)` or the bin link of the
   installed package), `CARGO`, the cargo command of the repository, and `CARGOFLAGS`, the arguments of its builds, which
   may be empty (GN-1d), `NODE`, `NPM` and `UV`, the tools of the checkout by their absolute paths, and `BINDING_DEP`, the
-  target that installs binding, when it has one; a recipe that reads one that is empty fails and names it. `GO`, the
+  target that installs binding, when it has one; a recipe that reads one that is empty fails and names it, and
+  `release-binding-check` requires each one that a release recipe of the contract reads, so a variable that only a
+  recipe after the tag reads is missed before the tag (docs/spec/contract-check.md CK-102, B2.471). `GO`, the
   go command that binding starts, has the default `go`, the go of `PATH`: the recipes pass `--go "$(GO)"` to each
   command of binding that may start Go, `binding check --release` of `release-binding-check` (GN-15l) and `binding
   release-go-module` of `release-go-module` (GN-19f), and start no Go themselves, so a Makefile defines `GO` only when
-  its go is not the `go` of `PATH`, and the job that runs one of the two recipes has Go; a command that needs Go and
+  its go is not the `go` of `PATH`, and the job that runs one of the two recipes has Go, which is every job that runs
+  a `release-assets-<job>`, whose first step is `release-binding-check` (GN-19i); a command that needs Go and
   does not find it names the tool, `--go` and `GO` (GN-15l). `NAPI`,
   `WASM_BINDGEN`, `MISE`, `RELEASE_ASSETS`, `RELEASE_TARGET` and `LLVM_ROOT` have defaults that a Makefile or a command
   line can override. The repository pins `@napi-rs/cli` as a devDependency, the major release of LLVM in
@@ -3967,8 +3982,16 @@ the design ids are those of the binding design.
   gets each defect once in each repository; a generated file that is not tracked cannot drift from the binding that a
   repository pins, and the check finds a Makefile that still holds a copy.
 - **GN-19i** The workflow that builds the assets of each platform is a workflow of the repository (`assets.yml`), which
-  its workflows of CI and of the release call (`workflow_call`, with the input `ref` of the tag and the input `release`
-  that runs `make release-binding-check` first). Independent jobs build the non-PHP assets once per platform and the
+  its workflows of CI and of the release call (`workflow_call`, with the input `ref` of the tag). The workflow has no
+  input that tells a release from CI, and the Makefile of the repository has no condition on one: each build recipe
+  `release-assets-<job>` of the file of GN-19h runs `release-binding-check` (GN-19g) as its first step and stops when it
+  fails, so the run of CI and the run of a release are the same recipe on the same tree, and each job has Go, which
+  the check may start (GN-15l). A committed tree of a repository, on any branch, holds the release forms alone
+  (docs/spec/contract-check.md CK-70), so the check passes in CI wherever it passes in the release, and there is no
+  declaration of a development tree. Why: the check ran only with an input `release`, by a condition that each
+  repository wrote into its own Makefile (`$(if $(filter true,$(RELEASE)),…)`), so it first ran in the run of the
+  release, after the tag: template, http-negotiation and session-store each lost a tag to a check that CI had never
+  run (B2.457). Independent jobs build the non-PHP assets once per platform and the
   PHP extensions once per platform and PHP minor of GN-19a. Every job runs on the runner of its platform
   (`ubuntu-26.04`, `ubuntu-26.04-arm`, `macos-15`) and has one run step, `make ci-assets-<job>` with the values of its
   matrix entry as make variables; every other step is a `uses:` step that provisions the runner (the checkout, the
@@ -3979,7 +4002,8 @@ the design ids are those of the binding design.
   stops when an install fails, runs `make release-recipes`, and then the build recipe `release-assets-<job>` of that
   file, a make of its own that reads the file just written. The build recipe holds the order and the conditions of the
   job; no recipe runs `sudo` or installs into the machine.
-  - `ci-assets-platform` ends with `make release-assets-platform`, which runs `release-go-static`, `release-wheel` and
+  - Each `release-assets-<job>` starts with `make release-binding-check` of its contract, a make of its own.
+  - `ci-assets-platform` ends with `make release-assets-platform`, which then runs `release-go-static`, `release-wheel` and
     `release-npm-platform` of the targets of the contract, each to its end, and fails naming each failed build; the job
     uploads `var/release/assets` as the artifact `assets-<platform>`.
   - `ci-assets-php PHP_MINOR=${{ matrix.minor }}` ends with `make release-assets-php EXPECTED_PHP_MINOR=<minor>`, which
