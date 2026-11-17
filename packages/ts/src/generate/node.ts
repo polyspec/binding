@@ -1651,7 +1651,7 @@ fn failure_error(failure: ${failure}) -> Fail {
     match failure {
         ${model.coreError === undefined ? 'binding_core::Failure::Kind(()) => binding_error(BindingError::Internal { detail: String::from("E-1c: this library names no kind, so no call gives one") })' : 'binding_core::Failure::Kind(error) => core_error(error)'},
         binding_core::Failure::Raised(raised) => match take_thrown(&raised) {${napiError ? `
-            Some(Thrown::Js(error)) => Fail { thrown: Some(error), ..binding_error(BindingError::Internal { detail: String::new() }) },` : ''}
+            Some(Thrown::Js(error)) => Fail { thrown: Some(Box::new(error)), ..binding_error(BindingError::Internal { detail: String::new() }) },` : ''}
             Some(Thrown::Binding(fail)) => fail,${passing ? `
             Some(Thrown::Held(exception)) => thrown_again(&exception),` : ''}
             None => ${takesFunction(model) || keepsAny(model) ? 'elsewhere(&raised)' : 'binding_error(BindingError::Internal { detail: String::from("U-3: the exception of the callback is gone") })'},
@@ -1671,7 +1671,7 @@ fn thrown_again(exception: &Owned) -> Fail {
     if unsafe { napi::sys::napi_throw(env_.raw(), value.raw()) } != napi::sys::Status::napi_ok {
         return binding_error(BindingError::Internal { detail: String::from("GN-6ae: the exception of the function could not be thrown again") });
     }
-    Fail { thrown: Some(napi::Error::new(napi::Status::PendingException, String::new())), ..binding_error(BindingError::Internal { detail: String::new() }) }
+    Fail { thrown: Some(Box::new(napi::Error::new(napi::Status::PendingException, String::new()))), ..binding_error(BindingError::Internal { detail: String::new() }) }
 }
 ` : ''}${callsBack(model) ? `
 /// U-3, GN-6ab: the failure of a callback. A machine goes on after the call, and a core may answer the Raised and
@@ -1959,8 +1959,9 @@ struct Fail {
     kind: &'static str,
     status: Option<u16>,
     errno: Option<i32>,
-    // U-3: the exception that a callback threw, which the call throws again unchanged.
-    thrown: Option<napi::Error>,${model.errorUnits.length > 0 ? `
+    // U-3: the exception that a callback threw, which the call throws again unchanged. Boxed, so that the failure
+    // stays under the size that clippy result_large_err allows with the conversion of B2.489 beside it.
+    thrown: Option<Box<napi::Error>>,${model.errorUnits.length > 0 ? `
     // I-3: the properties of an error unit, which the instance takes where the call returns.
     // Boxed again, so that the failure stays small (a thin pointer).
     properties: Option<Box<Properties>>,` : ''}${convertsAny(model) ? `
@@ -2002,9 +2003,9 @@ pub fn register(classes: Vec<Function<'_, ClassArgs, ()>>) -> napi::Result<()> {
 fn throw(env_: &Env, fail: Fail) -> napi::Error {
     if let Some(thrown) = fail.thrown {${convertsAny(model) ? `
         if let Some(converts) = fail.converts {
-            return converted_thrown(env_, thrown, converts);
+            return converted_thrown(env_, *thrown, converts);
         }` : ''}
-        return thrown;
+        return *thrown;
     }
     let Some(class) = CLASSES.get().and_then(|classes| classes.get(fail.class)) else {
         return napi::Error::from_reason(format!("B-4: the library classes are not registered: {}", fail.message));

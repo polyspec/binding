@@ -1007,7 +1007,7 @@ fn converted_integer<T: TryFrom<i64>>(value: &JsValue, name: &str) -> Result<Opt
     if number.fract() != 0.0 || !(-9_007_199_254_740_991.0..=9_007_199_254_740_991.0).contains(&number) {
         return Err(outside());
     }
-    #[allow(clippy::cast_possible_truncation, reason = "B2.489: a safe integer, checked above")]
+    #[allow(clippy::as_conversions, clippy::cast_possible_truncation, reason = "B2.489: a safe integer, checked above")]
     let whole = number as i64;
     match T::try_from(whole) {
         Ok(integer) => Ok(Some(integer)),

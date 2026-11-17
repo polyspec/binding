@@ -219,7 +219,7 @@ test('B2.489: the Node addon converts an exception of session-store where the ca
   assert.match(converts, /converted_from\(env_, value, 7\.\.14, \|kind\| match kind \{/);
   assert.match(converts, /"record" => Some\(\(6, "record", &\["offset"\]\)\),/);
   assert.match(converts, /"io" => Some\(\(2, "io", &\[\]\)\),/);
-  assert.match(rustFn(crate, 'throw'), /if let Some\(converts\) = fail\.converts \{\n\s+return converted_thrown\(env_, thrown, converts\);/);
+  assert.match(rustFn(crate, 'throw'), /if let Some\(converts\) = fail\.converts \{\n\s+return converted_thrown\(env_, \*thrown, converts\);/);
   const from = rustFn(crate, 'converted_from');
   assert.match(from, /let status: Option<u32> = object\.get_named_property\("status"\)\?;/);
   assert.match(from, /let errno: Option<i32> = object\.get_named_property\("errno"\)\?;/);

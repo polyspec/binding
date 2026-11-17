@@ -755,7 +755,7 @@ fn js_fail(error: napi::Error) -> Fail {
     if error.status != napi::Status::PendingException {
         return internal(error);
     }
-    Fail { thrown: Some(error), ..binding_error(BindingError::Internal { detail: String::new() }) }
+    Fail { thrown: Some(Box::new(error)), ..binding_error(BindingError::Internal { detail: String::new() }) }
 }
 `).replace(/\n\n(?=[ }])/g, '\n');
 

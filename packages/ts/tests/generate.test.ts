@@ -8101,7 +8101,7 @@ test('Node makes a closure of a function that the machine owns, holds its value 
   assert.match(lib, /let status = unsafe \{ napi::sys::napi_call_function\(env_\.raw\(\), receiver\.raw\(\), function\.raw\(\), raw\.len\(\), raw\.as_ptr\(\), &mut returned\) \};/);
   assert.match(lib, /napi::sys::napi_get_and_clear_last_exception\(env_\.raw\(\), &mut exception\)[\s\S]*?Ok\(held\) => Err\(Thrown::Held\(held\)\),/);
   assert.match(lib, /Some\(Thrown::Held\(exception\)\) => thrown_again\(&exception\),/);
-  assert.match(lib, /fn thrown_again\(exception: &Owned\) -> Fail \{[\s\S]*?napi::sys::napi_throw\(env_\.raw\(\), value\.raw\(\)\)[\s\S]*?Fail \{ thrown: Some\(napi::Error::new\(napi::Status::PendingException, String::new\(\)\)\), \.\.binding_error\(BindingError::Internal \{ detail: String::new\(\) \}\) \}\n\}/);
+  assert.match(lib, /fn thrown_again\(exception: &Owned\) -> Fail \{[\s\S]*?napi::sys::napi_throw\(env_\.raw\(\), value\.raw\(\)\)[\s\S]*?Fail \{ thrown: Some\(Box::new\(napi::Error::new\(napi::Status::PendingException, String::new\(\)\)\)\), \.\.binding_error\(BindingError::Internal \{ detail: String::new\(\) \}\) \}\n\}/);
   // A value of any type is held as the one element of an array, which a reference of Node-API version 8 takes.
   assert.match(lib, /fn boxed\(env_: &Env, value: Unknown<'_>\) -> Result<Self, Fail> \{\n {8}Self::new\(env_, tuple_out\(env_, vec!\[value\]\)\?\)\n {4}\}/);
   assert.match(lib, /fn unboxed<'env>\(&self, env_: &'env Env\) -> Result<Unknown<'env>, Fail> \{\n {8}let \[value\] = tuple_in\(self\.value\(env_\)\?, "a held value"\)\?;\n {8}Ok\(value\)\n {4}\}/);
