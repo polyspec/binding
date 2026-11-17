@@ -91,8 +91,9 @@ the design ids are those of the binding design.
   generation stays and a reader never sees a part: `packages/php-ext/generated`, `packages/python/generated`,
   `packages/ts/generated`, `packages/go/internal/ffi/generated`, `packages/ts/wasm/generated`. In the Go module, which
   holds hand-written folders beside the generated packages (L-1), binding owns the files `zz_generated_*.go` rather
-  than a directory: a generation removes every one of them under `packages/go` and writes its own; they are tracked
-  (G-6). No source of binding is copied into the repository: the core and the binding crates depend on
+  than a directory: a generation removes every one of them under `packages/go` and writes its own. No tracked tree
+  holds one (GN-15g): a repository ignores them, and `binding release-go-module` refuses the commit of a tag that
+  tracks one (GN-19f). No source of binding is copied into the repository: the core and the binding crates depend on
   `polyspec-binding-core`, a Git dependency of the binding repository before its first release, whose commit the
   repository's `Cargo.lock` pins.
 - **GN-3a** Each binding is a tracked thin package at its final place: `packages/<python|ts|php-ext>/Cargo.toml`, the
@@ -2354,7 +2355,7 @@ the design ids are those of the binding design.
   file. Why the directory is a package that the binding imports: `go mod vendor` copies only the directories of the
   packages that a build imports, so a consumer that vendors its modules gets the library of every platform, and the
   directory of the directive exists in a tree without a library. No tracked tree holds a library or a generated
-  file. A checkout builds its library and names its directory by `CGO_LDFLAGS` (GN-14), which the linker searches
+  file, and `binding release-go-module` refuses the commit of a tag that tracks a generated file (GN-19f). A checkout builds its library and names its directory by `CGO_LDFLAGS` (GN-14), which the linker searches
   before the directory of the directive.
   A release carries the Go module, because Go fetches a module as the source of a tag. From the commit of the tag
   `vX.Y.Z` the release of the repository (GN-3c) writes the files of `binding generate` for the target go, builds the crate
@@ -2366,14 +2367,33 @@ the design ids are those of the binding design.
   the repository pins (the `strip` of a Cargo profile does not change a static library, whose third is the debug
   sections of the Rust standard library), and runs `binding release-go-module` (GN-19f), which creates one
   commit whose parent is that commit and whose tree adds, below the directory of the Go module, the generated
-  files that the released form can build and the library of each platform. The commit carries each generated file
+  files that the released form can build and the library of each platform, and removes the tests of the repository
+  and the Go files of the programs. The commit carries each generated file
   except two kinds: a file whose build constraint names a build tag of a test feature
   (`polyspec_<library>_<feature>`, GN-13ba), whether it is a test or not (such as
   `internal/binding/zz_generated_panic.go`), and the guard of those tags, `zz_generated_tags_test.go` (GN-13bf). A
-  file with a constraint of other tags alone, such as `//go:build musl` of a link file, is carried. One function
-  reads the build constraint of each generated file and gives the files that are carried, and both
-  `binding release-go-module` and the released form of the end-to-end check (GN-14f) read it; it holds no list of
-  file names. Why: the released form carries only what can be built in it. A file behind a tag of a test feature
+  file with a constraint of other tags alone, such as `//go:build musl` of a link file, is carried. Of the files that the commit of
+  the tag tracks, the released form leaves out two kinds as well: a test of the repository, which is every file
+  `_test.go` that the generator did not write, the files that the overlay of GN-14h treats as absent, and a Go file
+  of a program, which is every Go file whose package clause is `main`, in whatever directory. Every other tracked
+  file is carried as that commit holds it: a hand-written package such as a host, and a file that is no Go file. One
+  function gives, of the files of the module, generated and hand-written, those that the released form carries; it
+  reads the name of each file, the build constraint of a generated file and the package clause of a Go file, and
+  both `binding release-go-module` and the released form of the end-to-end check (GN-14f) read it and remove a file
+  by no other rule (B2.459); it holds no list of file names and no name of a directory. Why the tests and the
+  programs are left out: what the check proves and what the tag carries are one form. A test of the repository
+  reads inputs that the runner of the repository gives (GN-14h), so the `go test` of a consumer over the fetched
+  module would fail on it, and the end-to-end check runs a form without it. A program is imported by no consumer,
+  since Go imports no package `main`, and it is no part of the library; the programs of the Go module of a binding
+  serve its tests, such as a probe that a test starts. Why the package clause and not a directory `tests`: the
+  clause is what Go reads to tell a program from a package, while the name of a directory would leave out a
+  package that a consumer can import and carry a program placed elsewhere. A repository that publishes a command
+  for `go install` gives it a Go module of its own. The `go.mod` and the `go.sum` of the released form are those
+  of the commit of the tag, byte for byte. A requirement that only a left-out test or program used stays in that
+  `go.mod`: it takes part in the version selection of a consumer, and no package of the form imports it, so the
+  build of a consumer compiles none of its source. The command names no such requirement, which only `go mod tidy`
+  over the released form finds, and it writes no `go.mod`, because the result would be a file that no commit of
+  the repository holds and no check of the repository read. Why the generated files are left out: the released form carries only what can be built in it. A file behind a tag of a test feature
   calls test entry points, which the library of a release may not hold (GN-19f), so no build of the released form
   can compile it with its tag, and the guard would ask a run for tags that the form does not carry, so the untagged
   `go test` of a fetched module, the right run of that form, would fail on it. The releases before B2.446 carried
@@ -3564,9 +3584,11 @@ the design ids are those of the binding design.
   from the module cache of the run, whose directories Go keeps read-only, with `GOPROXY=direct`, `GOFLAGS` empty and
   no `CGO_LDFLAGS`. The run fails when the `go.mod` of the consumer holds a `replace`, and it counts the tests as
   GN-14a states. It removes the module cache with `go clean -modcache` when the step ends. The tree of the commit
-  holds, of the generated files, those that the commit of a release carries, which the run reads from the function
-  of GN-15g that `binding release-go-module` reads: no file behind a build tag of a test feature and no guard of
-  those tags (GN-13bf). So the `go test` with no tag is the right run of the released form: it runs every generated
+  holds the files that the commit of a release carries, which the run reads from the function of GN-15g that
+  `binding release-go-module` reads, and the run removes a file of the module by no other rule: no generated file
+  behind a build tag of a test feature and no guard of those tags (GN-13bf), no test of the repository, among them
+  the contract cases that the run copied into the module (GN-14h), and no Go file of a program. The packages that
+  the test of the consumer imports are the public packages of GN-19f, from the function of the command. So the `go test` with no tag is the right run of the released form: it runs every generated
   test that the form holds, and none of them is `TestGN13bfEveryBuildTagOfThePackageIsBuilt`. Why: the generated tests
   of the copy link the library of the build by `CGO_LDFLAGS`, so only this step shows that a module fetched at its
   tag links the library that it carries.
@@ -3590,8 +3612,10 @@ the design ids are those of the binding design.
   `packages/php-ext/generated/tests` and `CasesTest.php`, and `go vet` and `go test` of the Go module read the files
   `zz_generated*_test.go` (GN-13b) and the `tests/cases_test.go` that the run copied. Every other test file of the Go
   module is a test of the repository; an overlay of `go vet` and `go test` (`-overlay`, a file of the work directory)
-  treats each as absent and the run prints their paths, so no file of the copy changes. The source of the released
-  form (GN-14f) leaves the same files out. The test of the core (GN-14) is a step of every target and stays. Why: a
+  treats each as absent and the run prints their paths, so no file of the copy changes. The released form leaves the same files
+  out, in the end-to-end check (GN-14f) and in the commit of a release (GN-15g): one rule says what a test of the
+  repository is, a file `_test.go` that the generator did not write, and the overlay and the released form both
+  read it (B2.459). The test of the core (GN-14) is a step of every target and stays. Why: a
   test of the repository reads inputs that the runner of the repository gives, such as the path of its case file in
   an environment variable, which the run does not know, and one target that runs more than the others gives another
   result for the same contract.
@@ -3804,14 +3828,19 @@ the design ids are those of the binding design.
     library placed in the directory of another platform would fail only in the link of a consumer.
   - `llvm-nm --defined-only` of the pinned toolchain (GN-19b) names no test entry point in a library (GN-13b), and
     `llvm-size -A` names no debug section whose size is not 0.
-  - The tree of the commit holds no generated file that the released form leaves out (GN-15g): no file behind a
-    build tag of a test feature and no `zz_generated_tags_test.go`. The command adds none from the work tree, so
-    the check reads the files `zz_generated_*.go` that the commit of the tag tracks (`git ls-tree`, and `git show`
-    of each that the command does not write over), which `git read-tree` brings into the tree, and names each such
-    file. Why: a tracked file of that kind would be in the released form although the command left its own out.
+  - The commit of the tag tracks no generated file (GN-15g): no file `zz_generated_*.go` below the directory of the
+    Go module (`git ls-tree`), whatever its build constraint and whether the work tree holds a file of that name or
+    not. The command names each one with what the repository does, which is to remove it from the index (`git rm
+    --cached`) and to ignore it. Why: the command writes the files of the work tree over the tracked ones and
+    keeps a tracked one that the generation no longer writes, so the released form would differ from the commit
+    that the release checked, in each release, and no output would say so. Before B2.459 the command refused only
+    a tracked file behind a build tag of a test feature and a tracked guard of those tags (B2.446).
 
   The commit is made without a change of the checkout: with an index file of `--work` (`GIT_INDEX_FILE`), `git
-  read-tree` of the commit of the tag, `git update-index --add --cacheinfo` with mode 100644 for each generated file
+  read-tree` of the commit of the tag, `git update-index --force-remove` for each tracked file that the released
+  form leaves out (GN-15g), a test of the repository or a Go file of a program, which the command tells by the name
+  of the file and by its package clause in the commit of the tag (`git show`) and names to the reader of the run,
+  `git update-index --add --cacheinfo` with mode 100644 for each generated file
   that a release carries (GN-15g) and for `internal/ffi/lib/<platform>/libpolyspec_<repository>_go.a` of each platform, whose objects `git
   hash-object -w --no-filters` writes, `git write-tree`, and `git commit-tree -p <commit of the tag>` with the
   message `chore(release): Carry the Go module of vX.Y.Z`. Its author and committer dates are the committer date of
@@ -3822,7 +3851,10 @@ the design ids are those of the binding design.
   Before the tag, a consumer proves the commit: the command pushes it as the tag into a bare repository of `--work`,
   which Git reads in place of `https://github.com/<owner>/<repository>` (`url.<path>.insteadOf` of a configuration
   file of the run), and writes a module whose `go.mod` requires the Go module at `vX.Y.Z` and whose test imports
-  every public package of it; `go mod tidy` and `go test -count=1 .` run with `GOPROXY=direct`, `GOSUMDB=off`,
+  every public package of it. A public package is a directory of the released form outside every directory
+  `internal` with a Go file that is no test and whose package clause is not `main`; the command reads the clause
+  from the commit of the tag for a tracked file (`git show`) and from the work tree for a generated one. A
+  directory of tests alone holds no package to import and Go imports no program, so neither is one (B2.459). `go mod tidy` and `go test -count=1 .` run with `GOPROXY=direct`, `GOSUMDB=off`,
   `GOENV=off`, `GOTOOLCHAIN=local`, `GOWORK=off`, `GOFLAGS` and `CGO_LDFLAGS` empty, `CGO_ENABLED=1` and the module
   and build caches of `--work`, and the command fails when the `go.mod` of the consumer then holds a `replace`. It
   removes the module cache with `go clean -modcache`. A Go module of another repository that the `go.mod` requires is

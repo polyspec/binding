@@ -1,6 +1,7 @@
 // GN-15g, GN-19f: the released form of a Go module. A release carries the Go module in a commit that the tag
-// <directory of the Go module>/vX.Y.Z names: its tree adds the generated files that the form can build
-// (goReleaseFiles) and the static library of each platform to the tree of the commit of the tag vX.Y.Z. `binding release-go-module` makes that commit and tag in the
+// <directory of the Go module>/vX.Y.Z names: its tree is the tree of the commit of the tag vX.Y.Z with the generated
+// files that the form can build and the static library of each platform, and without the tests of the repository and
+// the programs (goReleaseFiles, the one rule of the files of the form). `binding release-go-module` makes that commit and tag in the
 // repository of a contract (releaseGoModule), and the end-to-end check makes the same form in a repository of its
 // work directory (GN-14f); both read the tag, the consumer, the debug sections and the test entry points from here.
 
@@ -137,14 +138,31 @@ export function goModFindings(goMod: string): string[] {
   ];
 }
 
-// GN-19f: the packages of a module that a consumer can import, from the paths of its files in the module: each
-// directory with a Go file that is no test, outside every directory `internal`.
-export function publicPackages(files: readonly string[]): string[] {
+// The name of the package clause of a Go file, the first token of the file after its comments, which hold its build
+// constraint; undefined for a text that starts with no package clause.
+export function goPackageOf(text: string): string | undefined {
+  let at = 0;
+  for (;;) {
+    while (at < text.length && /\s/.test(text.charAt(at))) at += 1;
+    const close = text.startsWith('//', at) ? text.indexOf('\n', at) : text.startsWith('/*', at) ? text.indexOf('*/', at) : undefined;
+    if (close === undefined) break;
+    if (close < 0) return undefined;
+    at = close + (text.startsWith('//', at) ? 1 : 2);
+  }
+  return /^package\s+([\p{L}_][\p{L}\p{N}_]*)/u.exec(text.slice(at))?.[1];
+}
+
+// GN-19f: the packages of a module that a consumer can import, of `files`, the paths of its files in the module, and
+// `read`, which gives the text of a Go file: each directory outside every directory `internal` with a Go file that
+// is no test and whose package clause is not `main`. A directory of tests alone holds no package to import, and Go
+// imports no program, so a consumer that imported a directory of `package main` would not build.
+export function publicPackages(files: readonly string[], read: (path: string) => string): string[] {
   const found = new Set<string>();
   for (const file of files) {
     if (!file.endsWith('.go') || file.endsWith('_test.go')) continue;
     const dirs = file.split('/').slice(0, -1);
-    if (!dirs.includes('internal')) found.add(dirs.join('/'));
+    if (dirs.includes('internal') || found.has(dirs.join('/'))) continue;
+    if (goPackageOf(read(file)) !== 'main') found.add(dirs.join('/'));
   }
   return [...found].sort();
 }
@@ -243,27 +261,37 @@ export function goStaticBuildArgs(build: { manifest: string; targetDir: string; 
 }
 
 export interface GoReleaseFiles {
-  // The generated files that the commit of a release carries, sorted.
+  // The files that the released form carries, sorted.
   carried: string[];
-  // Each generated file that it leaves out, with the reason as the end of a sentence about the file.
+  // Each file that it leaves out, with the reason as the end of a sentence about the file.
   leftOut: Map<string, string>;
 }
 
-// GN-15g: the generated files of a Go module that the commit of a release carries, of `files`, the text of each Go
-// file by its path; a file that the generator did not write (isGoGenerated) is in neither part. The released form
-// holds only what can be built in it, so the commit leaves out each generated file whose build constraint names a
-// build tag of a test feature (GN-13ba), test or not, because such a file calls test entry points that the library of
-// a release may not hold (GN-19f), and the guard of those tags (GN-13bf), which would ask for tags that the form does
-// not carry. A constraint of other tags, such as `musl` of a link file, leaves a file in. Both the commit of
-// `binding release-go-module` and the source of the released form of the end-to-end check (GN-14f) read this.
-export function goReleaseFiles(files: ReadonlyMap<string, string>): GoReleaseFiles {
+// GN-14h: a test of the repository in a Go module is a file `_test.go` that the generator did not write. Its own
+// runner gives its inputs, so the end-to-end check treats it as absent (goTestScope) and the released form does not
+// carry it (goReleaseFiles); both read this.
+export const isGoRepositoryTest = (path: string): boolean => path.endsWith('_test.go') && !isGoGenerated(path);
+
+// GN-15g: the files of a Go module that the released form carries, of `files`, the paths of the files of the module,
+// generated and hand-written, and `read`, which gives the text of a Go file; every path is in one of the two parts.
+// The released form holds what a consumer of the module can build and run in it, so it leaves out four kinds of
+// file. A generated file whose build constraint names a build tag of a test feature (GN-13ba), test or not, calls
+// test entry points that the library of a release may not hold (GN-19f), and the guard of those tags (GN-13bf) would
+// ask for tags that the form does not carry. A test of the repository (isGoRepositoryTest) reads inputs that the
+// runner of the repository gives, so it would fail in a fetched module. A Go file of a program, whose package clause
+// is `main`, is imported by no consumer and is no part of the library, and the programs of a Go module of a binding
+// serve its tests. A constraint of other tags, such as `musl` of a link file, leaves a file in, and so does every
+// other file, a hand-written package such as a host among them. Both the commit of `binding release-go-module` and
+// the source of the released form of the end-to-end check (GN-14f) read this, and no other rule removes a file.
+export function goReleaseFiles(files: readonly string[], read: (path: string) => string): GoReleaseFiles {
   const carried: string[] = [];
   const leftOut = new Map<string, string>();
-  for (const [path, text] of files) {
-    if (!isGoGenerated(path)) continue;
-    const tags = goTestTagsOf(text);
+  for (const path of files) {
+    const tags = isGoGenerated(path) ? goTestTagsOf(read(path)) : [];
     if (tags.length > 0) leftOut.set(path, `is behind the build tag${tags.length === 1 ? '' : 's'} ${tags.join(', ')} of a test feature`);
-    else if (path.slice(path.lastIndexOf('/') + 1) === GO_TAG_GUARD_FILE) leftOut.set(path, 'is the guard of the build tags of the generated tests (GN-13bf)');
+    else if (isGoGenerated(path) && path.slice(path.lastIndexOf('/') + 1) === GO_TAG_GUARD_FILE) leftOut.set(path, 'is the guard of the build tags of the generated tests (GN-13bf)');
+    else if (isGoRepositoryTest(path)) leftOut.set(path, 'is a test of the repository, whose inputs the runner of the repository gives (GN-14h)');
+    else if (path.endsWith('.go') && goPackageOf(read(path)) === 'main') leftOut.set(path, 'is a Go file of a program (`package main`), which no consumer imports');
     else carried.push(path);
   }
   return { carried: carried.sort(), leftOut };
@@ -369,13 +397,27 @@ export function releaseGoModule(release: GoModuleRelease): GoModuleReleased {
     }
   };
   walk('');
-  const generated = goReleaseFiles(written).carried;
-  // GN-15g: the tree of the commit holds every file that the commit of the tag tracks, so a generated file of that
-  // commit that the release does not write over is in the released form as that commit holds it.
+  // GN-15g: no tracked tree holds a generated file. The command writes the generated files of the work tree over those
+  // of the commit of the tag and leaves the others as that commit holds them, so a tracked one makes the released form
+  // differ from the commit that the release checked, and nothing says so: each is refused by name.
   const tracked = run('git', ['-C', root, 'ls-tree', '-r', '-z', '--name-only', parent, '--', directory]).split('\0').filter((path) => path !== '').map((path) => path.slice(directory.length + 1));
-  const kept = new Map<string, string>();
-  for (const path of tracked) if (isGoGenerated(path) && !generated.includes(path)) kept.set(path, run('git', ['-C', root, 'show', `${parent}:${directory}/${path}`]));
-  for (const [path, why] of goReleaseFiles(kept).leftOut) findings.push(`${directory}/${path}: the commit of the tag ${tag} tracks it, and it ${why}; the released form holds no such file, which cannot be built in it (GN-15g)`);
+  for (const path of tracked) {
+    if (isGoGenerated(path)) findings.push(`${directory}/${path}: the commit of the tag ${tag} tracks it, and it is a generated file (zz_generated_*.go), which no tracked tree holds, because the release writes its own over it and the released form would differ from that commit without a word: remove it from the index (git rm --cached) and ignore it (GN-15g)`);
+  }
+  // The files of the released form (GN-15g): the hand-written files that the commit of the tag tracks and the
+  // generated files of the work tree, of which goReleaseFiles gives those that the form carries. The text of a tracked
+  // file is the one of that commit, and the text of a generated file the one of the work tree.
+  const shown = new Map<string, string>();
+  const read = (path: string): string => {
+    const text = written.get(path) ?? shown.get(path) ?? run('git', ['-C', root, 'show', `${parent}:${directory}/${path}`]);
+    if (!written.has(path)) shown.set(path, text);
+    return text;
+  };
+  const handWritten = tracked.filter((path) => !isGoGenerated(path));
+  const form = goReleaseFiles([...handWritten, ...written.keys()], read);
+  const generated = form.carried.filter((path) => written.has(path));
+  // The tracked files that the released form leaves out, which the commit removes from the tree of the commit of the tag.
+  const removed = handWritten.filter((path) => form.leftOut.has(path)).sort();
   // GN-15k: the link file of each platform with the native-static-libs that the release build of that platform printed,
   // which release-go-static wrote beside its library; the commit takes it in place of the file of the work tree.
   const linked = new Map<string, string>();
@@ -436,6 +478,11 @@ export function releaseGoModule(release: GoModuleRelease): GoModuleReleased {
   const index = { GIT_INDEX_FILE: join(work, 'index') };
   rmSync(index.GIT_INDEX_FILE, { force: true });
   git(['read-tree', parent], index);
+  // GN-15g: the tests of the repository and the programs leave the index, and the checkout keeps them.
+  for (const path of removed) {
+    release.log(`${directory}/${path}: the released form leaves it out, since it ${form.leftOut.get(path) ?? ''} (GN-15g)`);
+    git(['update-index', '--force-remove', '--', `${directory}/${path}`], index);
+  }
   for (const path of [...added.keys()].sort()) {
     const object = git(['hash-object', '-w', '--no-filters', '--', added.get(path) ?? '']);
     git(['update-index', '--add', '--cacheinfo', `100644,${object},${path}`], index);
@@ -482,7 +529,7 @@ export function releaseGoModule(release: GoModuleRelease): GoModuleReleased {
   const goVersion = /^go (\S+)$/m.exec(goMod)?.[1];
   if (goVersion === undefined) throw new Error(`${directory}/go.mod names no Go version (GN-15)`);
   mkdirSync(consumer, { recursive: true });
-  for (const [name, text] of consumerFiles(goVersion, [{ module, version: tag, packages: publicPackages([...tracked, ...generated]) }])) writeFileSync(join(consumer, name), text);
+  for (const [name, text] of consumerFiles(goVersion, [{ module, version: tag, packages: publicPackages(form.carried, read) }])) writeFileSync(join(consumer, name), text);
   mkdirSync(goEnv.GOMODCACHE, { recursive: true });
   try {
     release.log(go(['mod', 'tidy'], consumer).trimEnd());

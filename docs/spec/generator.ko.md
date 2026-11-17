@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 69df7b8234f1f706382e8c64f846e6351418b86ceffad45116b6a17c0f66506a -->
+<!-- source-sha256: 912da4277887664dca4bca265a6db8c0b3e73621e4bdcd01382f3dd9395adbe4 -->
 # 생성기
 
 [English](generator.md)
@@ -66,8 +66,9 @@
 - **GN-3** binding은 다섯 디렉터리를 소유하고 각각을 staging 디렉터리를 거쳐 통째로 쓴다. 그래서 이전 생성의 파일이 남지
   않고 읽는 쪽은 일부만 보지 않는다: `packages/php-ext/generated`, `packages/python/generated`, `packages/ts/generated`,
   `packages/go/internal/ffi/generated`, `packages/ts/wasm/generated`. 생성 패키지 옆에 손으로 쓰는 폴더가 있는 Go 모듈(L-1)에서는
-  디렉터리가 아니라 `zz_generated_*.go` 파일을 소유한다: 생성은 `packages/go` 아래의 그 파일을 모두 지우고 자기 것을 쓰며, 그
-  파일은 추적한다(G-6).
+  디렉터리가 아니라 `zz_generated_*.go` 파일을 소유한다: 생성은 `packages/go` 아래의 그 파일을 모두 지우고 자기 것을 쓴다. 추적하는
+  tree는 그 파일을 담지 않는다(GN-15g): 레포는 그 파일을 ignore하고, `binding release-go-module`은 그 파일을 추적하는 tag의
+  commit을 거부한다(GN-19f).
   binding의 소스는 레포에 복사하지 않는다. 코어와 바인딩 crate는 `polyspec-binding-core`에 의존하며, 첫 릴리스 전에는
   binding 레포의 Git 의존이고 레포의 `Cargo.lock`이 커밋을 고정한다.
 - **GN-3a** 바인딩마다 최종 자리에 추적하는 얇은 package가 있다: `packages/<python|ts|php-ext>/Cargo.toml`, crate의 속성을
@@ -1932,7 +1933,7 @@
   `internal/ffi/lib/<platform>/libpolyspec_<repository>_go.a`다. 그 디렉터리가 바인딩이 import하는 패키지인 이유:
   `go mod vendor`는 빌드가 import하는 패키지의 디렉터리만 복사하므로, 모듈을 vendor하는 소비자가 모든 플랫폼의
   라이브러리를 받고, 지시문의 디렉터리가 라이브러리 없는 tree에도 있다. 추적하는 tree는 라이브러리도 생성 파일도 담지
-  않는다. checkout은 자기 라이브러리를 빌드하고 그 디렉터리를 `CGO_LDFLAGS`로 가리키며(GN-14), linker는 그 디렉터리를
+  않으며, `binding release-go-module`은 생성 파일을 추적하는 tag의 commit을 거부한다(GN-19f). checkout은 자기 라이브러리를 빌드하고 그 디렉터리를 `CGO_LDFLAGS`로 가리키며(GN-14), linker는 그 디렉터리를
   지시문의 디렉터리보다 먼저 찾는다.
   Go는 모듈을 tag의 소스로 받으므로 release가 Go 모듈을 싣는다. 레포의 release(GN-3c)는 tag `vX.Y.Z`의 commit에서 target go의
   `binding generate` 파일을 쓰고, crate `polyspec-<repository>-go`를 플랫폼마다 release profile로 feature 없이
@@ -1942,12 +1943,27 @@
   레포가 고정한 Rust toolchain의 component `llvm-tools`의 `llvm-strip --strip-debug`로 각 라이브러리의 debug section을
   떼고(Cargo profile의 `strip`은 정적 라이브러리를 바꾸지 않으며, 그 3분의 1이 Rust 표준 라이브러리의 debug section이다),
   `binding release-go-module`(GN-19f)을 실행한다. 이 명령은 그 commit을 부모로 하는 commit 하나를 만든다. 그 commit의 tree는 Go 모듈 디렉터리 아래에 release 형태가 빌드할 수 있는 생성 파일과 각 플랫폼의
-  라이브러리를 더한다. commit은 두 종류를 뺀 모든 생성 파일을 싣는다. 하나는 build constraint가 test feature의 build
+  라이브러리를 더하고, 레포의 시험과 program의 Go 파일을 뺀다. commit은 두 종류를 뺀 모든 생성 파일을 싣는다. 하나는 build constraint가 test feature의 build
   tag(`polyspec_<library>_<feature>`, GN-13ba)를 적은 파일이고, 시험이든 아니든 뺀다(`internal/binding/zz_generated_panic.go`
   같은 것). 다른 하나는 그 tag들의 guard인 `zz_generated_tags_test.go`다(GN-13bf). link 파일의 `//go:build musl`처럼 다른
-  tag만 적은 constraint의 파일은 싣는다. 함수 하나가 각 생성 파일의 build constraint를 읽어 싣는 파일을 주고,
-  `binding release-go-module`과 end-to-end 검사의 release 형태(GN-14f)가 둘 다 그것을 읽는다. 그 함수는 파일 이름의 목록을
-  갖지 않는다. 이유: release 형태는 그 안에서 빌드할 수 있는 것만 싣는다. test feature의 tag 뒤의 파일은 시험 진입점을
+  tag만 적은 constraint의 파일은 싣는다. tag의 commit이 추적하는 파일 가운데서도 release 형태는 두 종류를 뺀다. 하나는
+  레포의 시험으로, 생성기가 쓰지 않은 모든 `_test.go` 파일이며 GN-14h의 overlay가 없는 것으로 다루는 파일이다. 다른 하나는
+  program의 Go 파일로, 어느 디렉터리에 있든 package 절이 `main`인 모든 Go 파일이다. 그 밖의 추적 파일은 그 commit이 가진
+  대로 싣는다. host 같은 손으로 쓴 package도, Go 파일이 아닌 파일도 싣는다. 함수 하나가 모듈의 파일, 곧 생성 파일과 손으로
+  쓴 파일 가운데 release 형태가 싣는 것을 준다. 그 함수는 각 파일의 이름, 생성 파일의 build constraint, Go 파일의 package
+  절을 읽으며, `binding release-go-module`과 end-to-end 검사의 release 형태(GN-14f)가 둘 다 그것을 읽고 다른 규칙으로는
+  파일을 빼지 않는다(B2.459). 그 함수는 파일 이름의 목록도 디렉터리의 이름도 갖지 않는다. 시험과 program을 빼는 이유:
+  검사가 증명하는 것과 tag가 싣는 것은 한 형태다. 레포의 시험은 레포의 runner가 주는 입력을 읽으므로(GN-14h), 받은 모듈에
+  소비자가 돌리는 `go test`가 그 시험에서 실패하고, end-to-end 검사는 그 시험이 없는 형태를 돌린다. program은 어떤 소비자도
+  import하지 않는다. Go는 package `main`을 import하지 않기 때문이며, program은 라이브러리의 일부도 아니다. 바인딩의 Go
+  모듈의 program은 시험이 시작하는 probe처럼 그 시험에 쓰인다. 디렉터리 `tests`가 아니라 package 절로 정하는 이유: Go가
+  program과 package를 가르는 데 읽는 것이 그 절이고, 디렉터리의 이름으로 정하면 소비자가 import할 수 있는 package를 빼고
+  다른 곳에 둔 program을 싣게 된다. `go install`용 명령을 공개하는 레포는 그 명령에 자기 Go 모듈을 준다. release 형태의
+  `go.mod`와 `go.sum`은 tag의 commit의 것 그대로이며 한 byte도 다르지 않다. 빠진 시험이나 program만 쓰던 require는 그
+  `go.mod`에 남는다. 그 require는 소비자의 version 선택에 들어가고, 그 형태의 어떤 package도 그것을 import하지 않으므로
+  소비자의 빌드는 그 소스를 컴파일하지 않는다. 명령은 그런 require를 밝히지 않는다. release 형태에 `go mod tidy`를 돌려야만
+  찾을 수 있기 때문이다. 명령은 `go.mod`를 쓰지도 않는다. 그 결과는 레포의 어떤 commit도 갖지 않고 레포의 어떤 검사도
+  읽지 않은 파일이기 때문이다. 생성 파일을 빼는 이유: release 형태는 그 안에서 빌드할 수 있는 것만 싣는다. test feature의 tag 뒤의 파일은 시험 진입점을
   부르는데 release의 라이브러리는 그것을 가질 수 없으므로(GN-19f), release 형태의 어떤 빌드도 그 파일을 그 tag로 컴파일할 수
   없다. 그리고 guard는 그 형태가 싣지 않은 tag를 run에 요구하므로, 받은 모듈의 태그 없는 `go test`, 곧 그 형태의 올바른
   실행이 guard에서 실패한다. B2.446 이전의 release들은 그 파일들을 실었다. 명령은 그 commit에 tag `<Go 모듈 디렉터리>/vX.Y.Z`(`packages/go/vX.Y.Z`)를 단다. 이것은 Go가
@@ -2908,9 +2924,11 @@
   모듈들의 모든 패키지를 import한다. 실행은 `go mod tidy`로 `go.sum`을 쓴 다음, 소비자와 받은 모듈의 모든 패키지의
   `go test`를 실행의 모듈 cache에서 돌린다. Go는 그 cache의 디렉터리를 읽기 전용으로 두며, 환경은 `GOPROXY=direct`, 빈
   `GOFLAGS`이고 `CGO_LDFLAGS`는 없다. 소비자의 `go.mod`에 `replace`가 있으면 실행은 실패하고, 시험은 GN-14a대로 센다.
-  단계가 끝나면 `go clean -modcache`로 모듈 cache를 지운다. commit의 tree는 생성 파일 가운데 release의 commit이 싣는
-  것을 담으며, 실행은 그것을 `binding release-go-module`이 읽는 GN-15g의 함수에서 읽는다. test feature의 build tag 뒤의
-  파일도, 그 tag들의 guard(GN-13bf)도 없다. 그래서 태그 없는 `go test`가 release 형태의 올바른 실행이다. 그것은 그 형태가
+  단계가 끝나면 `go clean -modcache`로 모듈 cache를 지운다. commit의 tree는 release의 commit이 싣는 파일을 담으며,
+  실행은 그것을 `binding release-go-module`이 읽는 GN-15g의 함수에서 읽고 다른 규칙으로는 모듈의 파일을 빼지 않는다. test
+  feature의 build tag 뒤의 생성 파일도, 그 tag들의 guard(GN-13bf)도, 레포의 시험도 없으며, 실행이 모듈에 복사한 계약
+  case도 레포의 시험에 든다(GN-14h). program의 Go 파일도 없다. 소비자의 시험이 import하는 package는 GN-19f의 공개
+  package이며 명령의 함수에서 읽는다. 그래서 태그 없는 `go test`가 release 형태의 올바른 실행이다. 그것은 그 형태가
   가진 생성 시험을 모두 돌리고, 그 가운데 `TestGN13bfEveryBuildTagOfThePackageIsBuilt`는 없다. 이유: 사본의 생성 시험은 빌드의 라이브러리를 `CGO_LDFLAGS`로
   링크하므로, tag로 받은 모듈이 자기가 실은 라이브러리를 링크한다는 것은 이 단계만 보인다.
   Linux에서는 commit이 실행 arch의 musl 라이브러리도 `internal/ffi/lib/linux_<arch>_musl`에 싣는다. 그 라이브러리는
@@ -2931,7 +2949,9 @@
   실행하고, Go module의 `go vet`과 `go test`는 파일 `zz_generated*_test.go`(GN-13b)와 실행이 복사한
   `tests/cases_test.go`를 읽는다. Go module의 다른 시험 파일은 모두 레포의 시험이다. `go vet`과 `go test`의
   overlay(`-overlay`, 작업 디렉터리의 파일)가 각각을 없는 것으로 다루고 실행은 그 경로를 출력하므로, 사본의 파일은
-  바뀌지 않는다. 배포 형태(GN-14f)의 원본도 같은 파일을 뺀다. 코어의 시험(GN-14)은 모든 target의 단계이며 남는다.
+  바뀌지 않는다. release 형태도 end-to-end 검사에서(GN-14f), 그리고 release의 commit에서(GN-15g) 같은 파일을 뺀다. 규칙
+  하나가 레포의 시험이 무엇인지, 곧 생성기가 쓰지 않은 `_test.go` 파일임을 정하고, overlay와 release 형태가 둘 다 그것을
+  읽는다(B2.459). 코어의 시험(GN-14)은 모든 target의 단계이며 남는다.
   이유: 레포의 시험은 레포의 runner가 주는 입력, 예를 들어 환경 변수로 주는 case 파일의 경로를 읽는데 실행은 그것을
   모르며, 한 target이 다른 target보다 더 많이 실행하면 같은 계약에 다른 결과를 낸다.
 - **GN-14k** `refused.json`을 가진 `tests/e2e`의 레포는 컴파일러가 그 바인딩을 거부하는지의 검사다(B2.402).
@@ -3114,13 +3134,16 @@
     소비자의 링크에서야 실패한다.
   - 고정한 toolchain의 `llvm-nm --defined-only`(GN-19b)가 라이브러리에서 시험 진입점을 찾지 않고(GN-13b), `llvm-size -A`가
     크기가 0이 아닌 debug section을 찾지 않는다.
-  - commit의 tree가 release 형태가 빼는 생성 파일(GN-15g)을 담지 않는다. test feature의 build tag 뒤의 파일도
-    `zz_generated_tags_test.go`도 없다. 명령은 work tree에서 그런 파일을 더하지 않으므로, 이 검사는 tag의 commit이
-    추적하는 `zz_generated_*.go` 파일을 읽고(`git ls-tree`, 그리고 명령이 덮어쓰지 않는 파일 각각의 `git show`) 그런
-    파일을 하나씩 밝힌다. 그 파일들은 `git read-tree`로 tree에 들어온다. 이유: 추적된 그런 파일은 명령이 자기 것을
-    뺐어도 release 형태에 들어간다.
+  - tag의 commit이 생성 파일을 추적하지 않는다(GN-15g). Go 모듈 디렉터리 아래에 `zz_generated_*.go` 파일이 하나도
+    없다(`git ls-tree`). build constraint가 무엇이든, work tree에 같은 이름의 파일이 있든 없든 같다. 명령은 그런 파일을
+    하나씩 밝히고 레포가 할 일을 함께 적는다: index에서 지우고(`git rm --cached`) ignore한다. 이유: 명령은 work tree의
+    파일을 추적된 파일 위에 덮어쓰고, 생성이 더는 쓰지 않는 추적 파일은 그대로 두므로, release 형태가 release가 검사한
+    commit과 release마다 달라지는데 어떤 출력도 그것을 말하지 않는다. B2.459 전에는 명령이 test feature의 build tag 뒤의
+    추적 파일과 그 tag들의 추적된 guard만 거부했다(B2.446).
 
   commit은 checkout을 바꾸지 않고 만든다. `--work`의 index 파일(`GIT_INDEX_FILE`)로 tag의 commit을 `git read-tree`하고,
+  release 형태가 빼는 추적 파일(GN-15g), 곧 레포의 시험과 program의 Go 파일 각각을 `git update-index --force-remove`하며(명령은
+  그것을 파일의 이름과 tag의 commit에 있는 package 절(`git show`)로 가려내고 실행을 읽는 쪽에 밝힌다),
   release가 싣는 생성 파일(GN-15g) 각각과 플랫폼마다의 `internal/ffi/lib/<platform>/libpolyspec_<repository>_go.a`를 mode 100644로
   `git update-index --add --cacheinfo`하며(그 object는 `git hash-object -w --no-filters`가 쓴다), `git write-tree`와
   `git commit-tree -p <tag의 commit>`을 message `chore(release): Carry the Go module of vX.Y.Z`로 실행한다. author와
@@ -3129,7 +3152,10 @@
   가리키면 이전 실행의 결과이며 명령은 그대로 둔다.
   tag 전에 소비자가 commit을 증명한다. 명령은 commit을 `--work`의 bare 저장소에 그 tag로 push하고, Git이
   `https://github.com/<owner>/<repository>` 대신 그 저장소를 읽게 하며(실행의 설정 파일의 `url.<path>.insteadOf`),
-  `go.mod`가 Go 모듈을 `vX.Y.Z`로 require하고 시험이 그 공개 package를 모두 import하는 모듈을 쓴다. `go mod tidy`와
+  `go.mod`가 Go 모듈을 `vX.Y.Z`로 require하고 시험이 그 공개 package를 모두 import하는 모듈을 쓴다. 공개 package는 release 형태에서 `internal` 디렉터리 밖에 있고,
+  시험이 아니며 package 절이 `main`이 아닌 Go 파일을 가진 디렉터리다. 명령은 그 절을 추적 파일은 tag의 commit에서(`git
+  show`), 생성 파일은 work tree에서 읽는다. 시험만 있는 디렉터리에는 import할 package가 없고 Go는 program을 import하지
+  않으므로 둘 다 공개 package가 아니다(B2.459). `go mod tidy`와
   `go test -count=1 .`를 `GOPROXY=direct`, `GOSUMDB=off`, `GOENV=off`, `GOTOOLCHAIN=local`, `GOWORK=off`, 빈 `GOFLAGS`와
   `CGO_LDFLAGS`, `CGO_ENABLED=1`, `--work`의 module cache와 build cache로 실행하고, 그 뒤 소비자의 `go.mod`에 `replace`가
   있으면 명령은 실패한다. module cache는 `go clean -modcache`로 지운다. `go.mod`가 require하는 다른 레포의 Go 모듈은 자기

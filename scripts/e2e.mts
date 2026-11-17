@@ -114,7 +114,7 @@ const { componentBase, isHost, namedLibraries, place } = await import('../packag
 const { GO_PLATFORMS, goLinkFile } = await import('../packages/ts/src/generate/go.ts');
 // GN-14f, GN-19f: the tag, the consumer, the debug sections and the test entry points of the released form of a Go
 // module are those of `binding release-go-module`.
-const { carriedLibraries, consumerFiles, debugSections, goLinkDirective, goReleaseFiles, goRemote, goStaticBuildArgs, goWork, nativeStaticLibs, requiredVersion, selfContained, testEntrySymbol } = await import('../packages/ts/src/release/go-module.ts');
+const { carriedLibraries, consumerFiles, debugSections, goLinkDirective, goReleaseFiles, goRemote, goStaticBuildArgs, goWork, isGoRepositoryTest, nativeStaticLibs, publicPackages, requiredVersion, selfContained, testEntrySymbol } = await import('../packages/ts/src/release/go-module.ts');
 
 // The checkout that started the run holds the tools (var/tools) and the Git history; binding is the tree of the commit.
 const checkout = args.get('--checkout') ?? '';
@@ -915,7 +915,7 @@ if (targets.includes('go')) {
     const scopeOverlay = join(work, `go-overlay-${p.contract.library}.json`);
     const scoped = (): string[] => {
       const files = (readdirSync(goModule, { recursive: true, encoding: 'utf8' })).map((path) => path.split('\\').join('/'));
-      const scope = goTestScope(goModule, files, goCases && i === 0);
+      const scope = goTestScope(goModule, files, goCases && i === 0, isGoRepositoryTest);
       rmSync(scopeOverlay, { force: true });
       if (scope.overlay === undefined) return [];
       process.stdout.write(`the tests of the repository that go vet and go test of the run leave out (GN-14h): ${scope.dropped.join(', ')}\n`);
@@ -1059,18 +1059,17 @@ if (targets.includes('go')) {
         const moduleDir = join(source.dir, r.remote.directory);
         mkdirSync(dirname(moduleDir), { recursive: true });
         execFileSync('cp', ['-R', goModule, moduleDir]);
-        // The contract cases of the run are no file of the repository: the run copied them into the module (GN-14). The
-        // tests of the repository are left out as the tests of the copy leave them out (GN-14h), so go test of the
-        // fetched modules reads the generated tests alone.
-        const carriedFiles = readdirSync(moduleDir, { recursive: true, encoding: 'utf8' }).map((path) => path.split('\\').join('/'));
-        for (const path of goTestScope(moduleDir, carriedFiles, false).dropped) rmSync(join(moduleDir, path));
-        // GN-15g: of the generated files, the tree holds those that the commit of a release carries, which
-        // `binding release-go-module` reads from the same function: no file behind a build tag of a test feature and
-        // no guard of those tags (GN-13bf), so the untagged go test of the fetched modules is the whole run of the form.
-        const goTexts = new Map(carriedFiles.filter((path) => path.endsWith('.go') && existsSync(join(moduleDir, path))).map((path) => [path, readFileSync(join(moduleDir, path), 'utf8')]));
-        const { leftOut } = goReleaseFiles(goTexts);
+        // GN-15g: the tree holds the files that the commit of a release carries, which `binding release-go-module`
+        // reads from the same function, and this step removes no file by another rule: no generated file behind a
+        // build tag of a test feature and no guard of those tags (GN-13bf), no test of the repository, among them the
+        // contract cases that the run copied into the module (GN-14, GN-14h), and no Go file of a program. So the
+        // untagged go test of the fetched modules is the whole run of the form, and it reads the generated tests alone.
+        const moduleFiles = readdirSync(moduleDir, { recursive: true, encoding: 'utf8' }).map((path) => path.split('\\').join('/')).filter((path) => statSync(join(moduleDir, path)).isFile());
+        const readModuleFile = (path: string): string => readFileSync(join(moduleDir, path), 'utf8');
+        const form = goReleaseFiles(moduleFiles, readModuleFile);
+        const { leftOut } = form;
         for (const path of leftOut.keys()) rmSync(join(moduleDir, path));
-        process.stdout.write(`${moduleOf(r.p)}: the released form leaves out ${String(leftOut.size)} generated file${leftOut.size === 1 ? '' : 's'} (GN-15g)${[...leftOut].map(([path, why]) => `\n  ${path} ${why}`).join('')}\n`);
+        process.stdout.write(`${moduleOf(r.p)}: the released form leaves out ${String(leftOut.size)} file${leftOut.size === 1 ? '' : 's'} (GN-15g)${[...leftOut].map(([path, why]) => `\n  ${path} ${why}`).join('')}\n`);
         // GN-15g: the library that a release carries has no debug section; the strip of a Cargo profile leaves a
         // static library as it is, so llvm-strip of the toolchain removes them, and llvm-size names what is left.
         // GN-15k: a library of native-static-libs that the Rust toolchain ships in the self-contained directory of the
@@ -1096,16 +1095,9 @@ if (targets.includes('go')) {
           const triple = `${muslTriple}-unknown-linux-musl`;
           carry(join(target, triple, `release/lib${lib(r.p.contract, 'go')}.a`), `${platform}_musl`, releaseBuild(triple), triple);
         }
-        // The packages that a consumer can import: the directories of the module with a Go file that is no test,
-        // outside internal.
-        const packages: string[] = [];
-        const walk = (dir: string): void => {
-          const entries = readdirSync(join(moduleDir, dir), { withFileTypes: true });
-          if (entries.some((e) => e.isFile() && e.name.endsWith('.go') && !e.name.endsWith('_test.go'))) packages.push(dir);
-          for (const e of entries) if (e.isDirectory() && e.name !== 'internal') walk(dir === '' ? e.name : `${dir}/${e.name}`);
-        };
-        walk('');
-        if (r.main) required.push({ module: moduleOf(r.p), version: r.version, packages: packages.sort() });
+        // GN-19f: the packages that a consumer can import, of the files that the form carries, as
+        // `binding release-go-module` reads them: no directory of internal, of tests alone or of a program.
+        if (r.main) required.push({ module: moduleOf(r.p), version: r.version, packages: publicPackages(form.carried, readModuleFile) });
       }
       for (const [key, source] of sources) {
         const bare = join(root, 'remote', `${key}.git`);

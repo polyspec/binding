@@ -3,6 +3,7 @@
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { goReleaseFiles, isGoRepositoryTest } from '../src/release/go-module.ts';
 import { GO_TAG_GUARD, goPackageFailure, goTagGuardFailure, goTestScope, readGoTestEvents } from '../../../scripts/go-test-events.mts';
 
 const lines = (...events: object[]): string => `${events.map((event) => JSON.stringify(event)).join('\n')}\n`;
@@ -48,13 +49,22 @@ test('go test of the run reads the tests that the generator writes and the contr
     'tests/helpers_test.go',
   ];
   // Without contract cases of the run, tests/cases_test.go is a test of the repository.
-  const without = goTestScope('/w/m', files, false);
+  const without = goTestScope('/w/m', files, false, isGoRepositoryTest);
   assert.deepEqual(without.dropped, ['media_type/parse_test.go', 'tests/cases_test.go', 'tests/helpers_test.go']);
   assert.deepEqual(JSON.parse(without.overlay ?? ''), { Replace: { '/w/m/media_type/parse_test.go': '', '/w/m/tests/cases_test.go': '', '/w/m/tests/helpers_test.go': '' } });
   // The run copied its contract cases into tests/cases_test.go, so go test reads that file.
-  assert.deepEqual(goTestScope('/w/m', files, true).dropped, ['media_type/parse_test.go', 'tests/helpers_test.go']);
+  assert.deepEqual(goTestScope('/w/m', files, true, isGoRepositoryTest).dropped, ['media_type/parse_test.go', 'tests/helpers_test.go']);
   // A module with no test of the repository needs no overlay.
-  assert.deepEqual(goTestScope('/w/m', ['a/zz_generated_test.go'], false), { dropped: [], overlay: undefined });
+  assert.deepEqual(goTestScope('/w/m', ['a/zz_generated_test.go'], false, isGoRepositoryTest), { dropped: [], overlay: undefined });
+});
+
+test('B2.459: the tests that the overlay of the run treats as absent are the tests of the repository that the released form leaves out (GN-14h, GN-15g)', () => {
+  const files = ['go.mod', 'host/host.go', 'host/host_test.go', 'media_type/zz_generated_media_type.go', 'media_type/zz_generated_test.go', 'media_type/parse_test.go', 'tests/cases_test.go', 'tests/probe/main.go', 'tests/probe/main_test.go'];
+  const texts: Record<string, string> = { 'host/host.go': 'package host\n', 'tests/probe/main.go': 'package main\n' };
+  const { leftOut } = goReleaseFiles(files, (path) => texts[path] ?? 'package p\n');
+  const tests = [...leftOut].filter(([, why]) => why.startsWith('is a test of the repository')).map(([path]) => path).sort();
+  assert.deepEqual(tests, ['host/host_test.go', 'media_type/parse_test.go', 'tests/cases_test.go', 'tests/probe/main_test.go']);
+  assert.deepEqual(goTestScope('/w/m', files, false, isGoRepositoryTest).dropped, tests);
 });
 
 test('B2.438: the run of go test with the build tag of before GN-13ba must fail on the guard of the tags and name a missing tag (GN-13bf)', () => {
