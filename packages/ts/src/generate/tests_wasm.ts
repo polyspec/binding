@@ -1,7 +1,7 @@
 // The generated node:test module of the WASM binding (G-5): B-2, B-3, B-4, B-7 and G-7 for every function, run
 // against the subpath ./wasm of the installed package after init (P-5). The JavaScript values are those of Node.
 
-import { type Fn, type Model, awaits, cleanupWarning, memberName, errorUnitOfKind, hookCall, langName, unitOf, takesNull, type Arg, nativeRoundTrip, machineFunction, callsCode } from './model.ts';
+import { type Fn, type Model, awaits, categoryClass,cleanupWarning, memberName, errorUnitOfKind, hookCall, langName, unitOf, takesNull, type Arg, nativeRoundTrip, machineFunction, callsCode } from './model.ts';
 import { type CallbackHow, type Context, type MadeForm, type Receiver, aliasCases, aliasRepresentative, bytesKind, callbackArg, callbackReachingArgs, classCaseArgs, otherValue, expectedErrno, numberRefusesNull, fixtureValues, fixturesOf, fromJson, isPlain, judgesCallbackResult, madeLines, callArgs, caseRefusal, callables, caseValue, expectedText, nodeTokens, tokenForms, isNumber, resultCases, placeholder, raisingCases, refusedKeyMap, unsafeKeyMap, samePairs, sampleReceiver, primitiveCases, refusesNull, stringCases, textKind, wrapText, functionFixturesOf, type After, FIXTURE_RAISED, callbackCases, stepExpected } from './samples.ts';
 import { header, jsString } from './text.ts';
 import { wasmGlue } from './wasm.ts';
@@ -53,7 +53,7 @@ export function wasmTests(model: Model): string {
       return `{ ${(unit.members ?? []).filter((m) => m.default === undefined).map((m) => `${langName('wasm', m.name, 'callable')}: ${body}`).join(', ')} }`;
     },
   };
-  const cls = (category: string): string => model.classes.find((c) => c.category === category)?.name ?? '';
+  const cls = (category: string): string => categoryClass(model, category);
   // E-2, B-4: the exact class of a failure of a case: the class of the error unit of its kind, or of its category.
   const exactClass = (raises: { kind: string; category: string }): string => {
     const unit = errorUnitOfKind(model, raises.kind);

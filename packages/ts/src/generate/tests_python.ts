@@ -1,7 +1,7 @@
 // The generated unittest module of the Python binding (G-5): B-2, B-3, B-4, B-7 and G-7 for every function.
 
 import type { Model } from './model.ts';
-import { POISON_ENTRY, callsCode, Unsupported, cleanupWarning, errorUnitOfKind, hookCall, isInternal, langName, memberName, unitOf, takesNull, nativeRoundTrip, awaits, machineFunction } from './model.ts';
+import { POISON_ENTRY, callsCode, categoryClass,Unsupported, cleanupWarning, errorUnitOfKind, hookCall, isInternal, langName, memberName, unitOf, takesNull, nativeRoundTrip, awaits, machineFunction } from './model.ts';
 import { internalModule } from './python.ts';
 import { foreignReaders, foreignClassNames, pythonForeignRead } from './value_class.ts';
 import type { Unit } from '../contract.ts';
@@ -413,7 +413,7 @@ export function pythonTests(model: Model, module: string): string {
       return `foreign_${library.replaceAll('-', '_')}.${langName('python', unit.name, 'class')}`;
     },
   };
-  const cls = (category: string): string => model.classes.find((c) => c.category === category)?.name ?? '';
+  const cls = (category: string): string => categoryClass(model, category);
   // E-2: the exact class of a kind is the class of the error unit that its row names, or the class of its category.
   // E-2, B-4: the exact class of a failure of a case: the class of the error unit of its kind, or of its category.
   const exactClass = (raises: { kind: string; category: string }): string => {

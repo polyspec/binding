@@ -1535,6 +1535,7 @@ class Checker {
         if (typeof expected['errno'] === 'string' && !ERRNO_SYMBOL.test(expected['errno'])) {
           this.report('CK-22', `/cases/${i}`, `${where}: the errno ${expected['errno']} of raises is not the symbol of an errno, such as ENOSPC (G-5)`);
         }
+        if (typeof kind === 'string') this.caseRaises(row.member, record, kind, expected['category'], record['faults'] !== undefined || armedThen.any, `/cases/${i}`);
         if (record['faults'] === undefined && !armedThen.any) {
           if (typeof kind === 'string') kinds.add(kind);
           continue;
@@ -2465,6 +2466,77 @@ class Checker {
     if (this.targetsOf(memberId).includes('wasm') && (only === undefined || only.includes('wasm'))) {
       this.report('CK-95', path, `the row of ${memberId} holds the case ${String(record['id'])}, which runs against the service ${service.id}, for wasm, whose core has no socket; give the row an only without wasm (GN-13h, GN-13j)`);
     }
+  }
+
+  // B2.448 (GN-13bh): the category that the raises of a case writes is one of the six of E-1 and the category of its
+  // kind, where the kind has one (errors.kinds, or the fixed category of E-1a); the generated test names the class of
+  // that category, so another text left it with no class to name.
+  // B2.449 (CK-22): the kind of the raises of a case is a kind that the call of the case can give: a kind of the
+  // raises of its member; a kind of E-1a, which the binding raises itself; a kind of in_raises of a value alias that a
+  // parameter holds, which the in function of the argument gives (U-7); for a case that makes its receiver from its
+  // own keys and has neither faults nor after, a kind of the raises of a factory of the class (GN-13f); and for a case
+  // that arms a fault injection point, a kind of the category internal (X-1).
+  caseRaises(memberId: string, record: Record<string, unknown>, kind: string, category: unknown, arms: boolean, path: string): void {
+    const found = this.members.get(memberId);
+    if (found === undefined) return;
+    const member = found.member;
+    const where = `the case ${String(record['id'])} of ${member.id}`;
+    if (category !== undefined) {
+      const own = this.kindCategories().get(kind) ?? BINDING_KINDS[kind];
+      if (typeof category !== 'string' || !(CATEGORIES as readonly string[]).includes(category)) {
+        this.report('CK-22', path, `${where} raises the kind ${kind} with the category ${JSON.stringify(category)}, which is no category: a category is one of ${CATEGORIES.join(', ')} (CK-22, GN-13bh)`);
+      } else if (own !== undefined && own !== category) {
+        this.report('CK-22', path, `${where} raises the kind ${kind} with the category ${category}, but the kind ${kind} is of the category ${own} (CK-22, GN-13bh)`);
+      }
+    }
+    // GN-7c: a row of a kind of a library takes its kinds from the row of that library.
+    const kindsOfVariants = (variants: readonly string[], contract: Contract = this.contract): string[] => variants.flatMap((variant) => {
+      const row = contract.errors.kinds.find((k) => k.variant === variant);
+      if (row === undefined) return [];
+      return kindsOf((row.library === undefined ? row : this.given(row.library)?.errors.kinds.find((k) => k.variant === innerVariant(row.variant))) ?? row);
+    });
+    if (kind in BINDING_KINDS || kindsOfVariants(member.raises ?? []).includes(kind)) return;
+    // X-1: the match that maps the core error is one for every member, so a case of any member that arms a point
+    // shows a kind of the category internal.
+    if (arms && this.kindCategories().get(kind) === 'internal') return;
+    // U-7: the in function of a value alias that an argument holds gives a kind of its in_raises.
+    const aliasKinds = new Set<string>();
+    const walk = (type: Type, seen: ReadonlySet<string>): void => {
+      if (typeof type === 'string' || 'function' in type || 'passthrough' in type) return;
+      if ('optional' in type) return walk(type.optional, seen);
+      if ('list' in type) return walk(type.list, seen);
+      if ('map' in type) return walk(type.map, seen);
+      if ('keyed_map' in type) return walk(type.keyed_map, seen);
+      if ('tuple' in type) return type.tuple.forEach((item) => walk(item, seen));
+      const key = `${type.library ?? ''} ${type.unit}`;
+      if (seen.has(key)) return;
+      const owner = type.library === undefined ? this.contract : this.given(type.library);
+      const unit = owner?.units.find((u) => u.id === type.unit);
+      if (owner === undefined || unit === undefined) return;
+      for (const each of kindsOfVariants(unit.in_raises ?? [], owner)) aliasKinds.add(each);
+      const inner = new Set([...seen, key]);
+      const fields = [...(unit.fields ?? []), ...(unit.cases ?? []).flatMap((c) => c.fields)];
+      for (const field of fields) walk(type.library === undefined ? field.type : foreignType(field.type, type.library), inner);
+    };
+    // A type of a unit of another library names the units of that library.
+    const foreignType = (type: Type, library: string): Type => {
+      if (typeof type === 'string' || 'function' in type || 'passthrough' in type) return type;
+      if ('optional' in type) return { optional: foreignType(type.optional, library) };
+      if ('list' in type) return { list: foreignType(type.list, library) };
+      if ('map' in type) return { map: foreignType(type.map, library) };
+      if ('keyed_map' in type) return { keyed_map: foreignType(type.keyed_map, library), key: type.key };
+      if ('tuple' in type) return { tuple: type.tuple.map((item) => foreignType(item, library)) };
+      return { unit: type.unit, library: type.library ?? library };
+    };
+    // GN-13f: a member with a receiver whose case gives no receiver takes it from a factory of its class, by the keys
+    // of the case, and the failure of the case is then that of the factory or of the call.
+    const receives = (m: Member): boolean => m.kind !== 'constructor' && (m.core === undefined || (typeof m.core === 'object' && m.core.receiver !== undefined));
+    const factories = receives(member) && record['receiver'] === undefined && !arms && record['after'] === undefined
+      ? (found.unit.members ?? []).filter((m) => m.kind === 'constructor' || !receives(m))
+      : [];
+    for (const callable of [member, ...factories]) for (const parameter of callable.parameters ?? []) walk(parameter.type, new Set());
+    if (aliasKinds.has(kind) || factories.some((m) => kindsOfVariants(m.raises ?? []).includes(kind))) return;
+    this.report('CK-22', path, `${where} raises the kind ${kind}, which the call of the case does not give: it is no kind of the raises of ${member.id}, of E-1a, of in_raises of a value alias that a parameter holds, nor, for a case that makes its receiver from its keys, of the raises of a factory of ${found.unit.id} (CK-22, B2.449)`);
   }
 
   // G-5 (GN-6ae): raises "callback" of a case, and after, the calls that observe the receiver after the call.
