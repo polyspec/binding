@@ -13816,6 +13816,27 @@ test('B2.463: the G-7 test of a method makes its receiver once and gives an argu
   }
 });
 
+test('B2.508: the G-7 test makes each argument of a class once, as a local of the test, and gives it to every call, in PHP, Python, Node and WASM', () => {
+  // orm: the G-7 test of StepRunner.new made its arguments in each of its calls, over the one case folder, so the
+  // second made the table owner again ("table owner already exists"). Go has no G-7 test: the calls do not compile.
+  const { contract, caseFiles } = statefulSample();
+  const out = generateTargets({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles, targets: ['python', 'node', 'wasm', 'php', 'go'] });
+  const starts = {
+    absorb: { python: /def test_g7_counter_absorb_counts/, node: /test\('G-7: Counter\.absorb /, wasm: /test\('G-7: Counter\.absorb /, php: /function testG7CounterAbsorbCounts/ },
+    seek: { python: /def test_g7_seek_counts/, node: /test\('G-7: seek /, wasm: /test\('G-7: seek /, php: /function testG7SeekCounts/ },
+  };
+  for (const [member, start] of Object.entries(starts)) {
+    for (const target of ['python', 'node', 'wasm', 'php'] as const) {
+      const [body] = bodiesOf(text(out, STATEFUL_TESTS[target]), start[target], STATEFUL_END[target]);
+      assert.ok(body !== undefined, `${target}: no G-7 test of ${member}`);
+      // The counter argument is made once, as a local, and the calls take that local.
+      assert.equal(body.match(/Counter\(4\)/g)?.length, 1, `${target} ${member}: ${body}`);
+      assert.match(body, /argument0 = (new )?(pkg\.|\\?Polyspec\\Sample\\)?Counter\(4\)/, `${target} ${member}: ${body}`);
+      assert.ok((body.match(/argument0\b/g)?.length ?? 0) >= 2, `${target} ${member}: ${body}`);
+    }
+  }
+});
+
 test('B2.463: the Python test of GN-11a gives an argument of a class the case value of a case of the member (GN-13t)', () => {
   const { contract, caseFiles } = statefulSample();
   const out = generateTargets({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles, targets: ['python'] });
