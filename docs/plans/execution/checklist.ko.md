@@ -1,5 +1,5 @@
 <!-- doc-id: checklist-execution -->
-<!-- source-sha256: cc85aa0183f430a7387269ee07653cc341de92b308316e4e6d02c6e5b587e95b -->
+<!-- source-sha256: c569ab6735417e490320276d28210614d8ce799cd4dc6f135a8658a0dbad9e29 -->
 <!-- source-sha256: 104715bbb3873c12393596f44cb2036194796b9a76786e39e3db54db1d02f48c -->
 <!-- source-sha256: 2319a87780edb98eec399d5a9f910e456286c731660035a263fc428df6dc4810 -->
 <!-- source-sha256: 222c499ea2f4781089984b1a2f1d9c19dfedcc2f743b6a4a36b2619880f38037 -->
@@ -352,3 +352,4 @@
 | B2.489 | 계약이 다른 라이브러리 package의 오류를 자기 오류 class로 바꾼다: 다른 라이브러리를 부르는 member가 그 라이브러리의 어떤 kind를 받는지, 각각이 어떤 class와 kind가 되는지를 밝히고, 모든 binding은 바뀐 class를 던진다. 0.0.21 뒤에 B2.487(오류 행의 라이브러리, through), B2.485, B2.483(orm의 hook)과 함께 설계한다. 입력: 그 세 설계와 hyper의 요청. | docs/spec의 설계와 그 ko 쌍, 그 뒤 구현 행 | hyper가 설계가 그 요청을 덮는다고 확인한다. 구현 행은 자기 시험을 밝힌다 | [ ] |
 | B2.490 | 계약이 alias마다 어떤 key sequence가 sequence_keys인지 밝힌다(B2.465 제안 2). 그래서 binding이 key의 모양으로 짐작하지 않는다. 형식은 orm이 lane head 08f7db0e의 snapshot에서 세는 실패 수로 정한다. 그 수가 없으면 이 행은 시작하지 않는다. | 계약 spec의 형식과 그 ko 쌍, check, generator, 시험 | snapshot에서 orm이 센, 해당 실패의 전후 수. 그 commit에서 전체 unit. CI e2e | [ ] |
 | B2.491 | 생성된 release-wheel recipe는 mise.toml이 pin한 maturin(link.mjs maturin이나 그 절대 경로)으로 wheel을 빌드한다. scaffold한 pyproject.toml의 범위 requires = ["maturin>=1.16,<2"]에서 uv build가 해석하는 build backend로 빌드하지 않는다. 그 범위에는 정확한 버전도 hash도 build constraint도 없어서, release wheel이 그날 registry가 주는 maturin으로 빌드된다(HR-81, HR-70, HR-89). 이 행은 Python wheel을 내는 소비자마다 같은 recipe를 받는지 적고, session-store v0.0.4와 json v0.0.36의 release wheel을 어느 maturin이 빌드했는지 CI log에서 읽어 적는다. | 생성되는 Python wheel release recipe, scaffold, GN-19와 그 ko 쌍, changelog, 시험 | Red: release-wheel의 dry run에 범위 requires를 해석하는 단계가 있다는 시험. Green: pin한 maturin을 실행한다. 그 commit에서 전체 unit. CI e2e | [ ] |
+| B2.492 | 값 class의 instance로 나가는 case 값(B2.465)을 그 호출이 닿는 변환이 받는다: lane snapshot에서 orm의 PHP 실행은 546 중 94가 실패한다. PHP extension의 encode가 그 객체를 "an object of the language"로 거부하거나(89), 먼저 실패해서 다른 kind가 보인다(5). 이 행은 어느 code가 instance를 받는지, 그리고 binding 자기 e2e와 crud-ui의 PHP가 왜 이것을 잡지 못했는지 밝힌다. 값 class instance가 encode에 닿는 e2e sample의 case가 Red다. | 생성되는 변환 또는 case 값의 꼴, e2e sample case, spec과 그 ko 쌍, changelog, 시험 | unit 시험에서 e2e sample case로 Red 다음 Green. 그 commit에서 전체 unit. 다음 snapshot에서 orm의 PHP offline 수. CI e2e | [ ] |
