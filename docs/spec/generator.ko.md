@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 2cd28f0feedeb76cb1f4c99a2e8c1e8d09d31f610b2a666ec7b749b22540b7df -->
+<!-- source-sha256: b12f8614faa3c5b6d8e1bb1bf319d568095daa62923a952542ded6cdb5c81e7c -->
 # 생성기
 
 [English](generator.md)
@@ -3508,11 +3508,17 @@
   `cargo fetch --locked`를 실행하고, 루트 `Cargo.toml`에 `polyspec-binding-core`를 실행의 `packages/core/rust`로 두는
   path patch를 GN-14i처럼 쓰고, 네트워크와 함께 `cargo update -p polyspec-binding-core`와 실행의 `binding scaffold`를
   실행한다(GN-14d). 그다음 lock을 tag의 lock과 비교한다: `polyspec-binding-core` 말고 다른 entry가 하나라도 더해지거나
-  빠지거나 바뀌면, 그 소비자는 그 entry들을 각각 이름하며 prepare에서 실패한다. update가 네트워크를 쓰는 까닭: 다른
+  빠지거나 바뀌면, 그 소비자는 그 entry들을 각각 이름하며 prepare에서 실패한다. 허용하는 바뀜은 하나다: name,
+  version, source가 그대로인 entry의 dependencies 목록이 바뀌고, 새 목록이 이름하는 crate와 version이 모두 lock에 이미
+  있는 것이다. 그런 목록은 바뀐 core 자신의 의존을 resolver가 다시 통일한 것이며(session-store에서 `windows-sys`가
+  0.61.2에서 0.52.0으로 간 것처럼), 소비자가 빌드하는 code는 하나도 바뀌지 않는다. 새 entry, 빠진 entry, version이나
+  source가 바뀐 entry는 그대로 실패다. update가 네트워크를 쓰는 까닭: 다른
   0.0.x minor의 release로 patch하면 git entry가 unlock되고, cargo는 그 `tag=`를 ref로 푸는데 `cargo fetch --locked`는
   그 ref를 남기지 않는다. update가 받는 것은 lock이 commit으로 고정한 그 tag이며 최신 release나 범위가 아니므로, 고정된
   것의 설치다(HR-89). lock이 그 entry만 바뀐다는 GN-14d의 목적은 네트워크가 없어서가 아니라 이 비교로 지킨다. 그 뒤로는 소비자 자신의 Makefile goal만, 각각 실행의 `BINDING`(실행 가능한 `dist/cli.js`),
-  `BINDING_RUN`(그것을 실행하는 node), `NODE`와 함께 실행한다: 네트워크와 함께 그 install(`install`, 또는 Makefile에
+  `BINDING_RUN`(그것을 실행하는 node), `NODE`와 함께 실행한다: 네트워크와 함께 그 goal `bootstrap`(소비자 CI의 첫 단계처럼 `devEngines`의 npm으로
+  `package-lock.json`을, 그 안의 locked kit까지 설치하므로 install이 kit의 도구를 찾는다. Makefile에 goal `bootstrap`이
+  없는 소비자는 그것을 이름하며 prepare에서 실패하고, 그 goal이 있는 tag로 옮긴다); 네트워크와 함께 그 install(`install`, 또는 Makefile에
   goal `install`이 없을 때 항목의 `install`이 이름하는 goal들). 이때 항목의 `path`가 이름하는 clone의 디렉터리를
   소비자 자신의 CI처럼 모든 goal의 `PATH` 앞에 둔다(session-store의 `var/tools/bay`. 그 goal `install-bay`와
   `setup-bay`가 생성된 시험의 Redis 서버를 위해 runner에 bay와 그 기계 설정을 설치한다); 생성하는 `bindings`; 계약의 target마다 생성된 시험을
