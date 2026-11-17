@@ -1,6 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 5d62655273ead52e4f11fa4cd09efbc38b95bae9234fa8303a84ffc97c7fafdc -->
-<!-- source-sha256: dce74fc108cefbf6fdea8670936d6ac3b6685331f89502b2bcff9bb7fdce43f9 -->
+<!-- source-sha256: d9add2ce1c3fe44d42c41abd124b520b60b687a5927c8846e2c8e0532230f6f3 -->
 <!-- source-sha256: 572a52702492351cb65968c1adcca9fd4d7ee3730d5499deb4d7dc636ebd7d70 -->
 <!-- source-sha256: bce373cf4c855701e37f5c7104353ae283bab50f4dab5c209f03c078f224aacb -->
 <!-- source-sha256: 6d1df45ce7d445bd052fccec065659cba5b44f64390113024fdc8de7268e0a98 -->
@@ -22,6 +21,7 @@
 
 ## Unreleased
 
+- `scaffold`가 PHP 확장에 쓰는 `composer.json`은 생성된 확장이 그 확장을 들여다보는 다른 모든 라이브러리의 확장 `ext-<extension name>`을 require한다(GN-3e): record의 소유자, 값 class의 소유자, 그리고 member가 오류 unit을 recognize하는 callback unit의 소유자다. 마지막 것은 확장이 그 오류 class를 이름으로 찾는다(GN-6s). 이전에는 record나 값 class 소유자의 확장만 require해서, crud-ui에서 validator의 callback unit `file_loader`를 받는 generator는 자기 확장 말고는 아무 확장도 require하지 않았고, crud-ui는 validator 확장을 손으로 로드했다(`BINDING_PHP_REQUIRES_generator = validator`). 그런 callback unit의 소유자는 Composer package 없이 확장만 더한다. 다른 라이브러리의 값 alias와 member가 아무 오류도 recognize하지 않는 callback unit은 require를 더하지 않고, 다른 라이브러리의 unit을 받지 않는 확장은 전처럼 PHP만 require한다. 생성기의 함수 하나(`ownerClasses`)가 emitter의 model과 `scaffold`에 이 종류를 이름한다(B2.441). `packages/ts`에서 `node --test --test-name-pattern=B2.441 tests/generate.test.ts`로 검증했고, 그 시험은 변경 전에 실패했다.
 - `packages/ts/schema/interface.schema.json`이 strict 옵션을 하나도 끄지 않은 Ajv strict 모드에서 컴파일되므로, 소비자가 그것으로 interface.json을 검증할 수 있다(CK-1, B2.443). Ajv는 naming exception의 `not` 아래 `required: ["parameter", "field"]`에서부터 strictRequired로, `value`와 literal default의 union type에서 strictTypes로 그것을 거부했고, orm은 대신 guard로 계약을 읽었다. 속성을 요구하는 하위 스키마는 이제 그 속성을 `properties`에 `true`로도 이름하여 같은 규칙을 말하고, 둘 이상의 타입인 값은 단일 타입의 `anyOf`다(두 literal default에는 새 `$defs/literal`). `binding check`는 `strictRequired: false`와 `allowUnionTypes: true` 없이 `strict: true`만으로 스키마를 컴파일한다. `packages/ts`에서 `node --test tests/schema-strict.test.ts`로 검증했고, 변경 전에는 실패했다.
 
 ## 0.0.19

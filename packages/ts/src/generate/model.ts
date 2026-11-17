@@ -309,6 +309,24 @@ export const variantValue = (variant: string): string => {
 // U-3, GN-6d: the name of the function that recognizes the exceptions of a callback member.
 export const recognizedFn = (cb: CallbackUnit, m: CallbackMember): string => `recognized_${rustField(cb.unit.name)}_${rustField(m.member.name)}`;
 
+// U-3: whether a member of a callback unit recognizes error units.
+export const recognizes = (member: Member): boolean => (member.errors?.recognize ?? []).length > 0;
+
+// GN-3e, B2.441: the classes of the owner of a unit of another library that the generated PHP extension finds by name
+// in the extension of that owner, by the kind of the unit: the class of a record (T-3), the class of a value class
+// with its static members and its map classes (GN-6x), and the error classes with their category classes that a
+// member of a callback unit recognizes (GN-6s). Every other unit of another library, a value alias among them, is
+// converted without a class of its owner. The model takes a record, a value class and the recognized errors of
+// another library by this function, which its emitters read, and scaffold writes the `ext-` requirements of
+// composer.json by it, so that the two cannot differ.
+export type OwnerClasses = 'record' | 'value class' | 'recognized errors';
+export function ownerClasses(unit: Unit): OwnerClasses | undefined {
+  if (unit.kind === 'record') return 'record';
+  if (unit.kind === 'class' && unit.origin === 'value') return 'value class';
+  if (unit.kind === 'interface' && unit.origin === 'callback' && (unit.members ?? []).some(recognizes)) return 'recognized errors';
+  return undefined;
+}
+
 // U-3, GN-6s: the error units of other repositories that a member of a callback unit of another repository
 // recognizes, each once, in the order of the callbacks: Node and WASM register their classes after the library classes.
 export const ownerRecognizedUnits = (model: Pick<Model, 'foreignCallbacks'>): { library: string; unit: Unit }[] => {
@@ -551,7 +569,7 @@ export function collectModel(
       });
       const returns = qualify(member.returns ?? 'none');
       supportedType(returns, units, `${library}.${member.id} returns`, foreign);
-      const recognized = (member.errors?.recognize ?? []).length === 0 ? undefined : ownerRecognized(owner, library, member);
+      const recognized = recognizes(member) ? ownerRecognized(owner, library, member) : undefined;
       const absent = callbackDefault(member, returns);
       return { member, params, returns, receiver, ...(recognized === undefined ? {} : { recognized }), ...(absent === undefined ? {} : { absent }) };
     });
@@ -1083,7 +1101,7 @@ export function collectModel(
   const foreignRecord = (library: string, id: string): void => {
     const owner = foreign.get(library);
     const unit = owner?.units.find((u) => u.id === id);
-    if (owner !== undefined && unit?.kind === 'record' && !foreignRecords.some((r) => r.library === library && r.unit.id === unit.id)) {
+    if (owner !== undefined && unit !== undefined && ownerClasses(unit) === 'record' && !foreignRecords.some((r) => r.library === library && r.unit.id === unit.id)) {
       foreignRecords.push({ library, contract: owner, unit });
     }
   };
@@ -1160,7 +1178,7 @@ export function collectModel(
     }
   };
   const foreignAlias = (unit: Unit, library: string): void => {
-    const valueClass = unit.kind === 'class' && unit.origin === 'value';
+    const valueClass = ownerClasses(unit) === 'value class';
     if ((unit.kind !== 'alias' && !valueClass) || typeof unit.core !== 'object' || aliases.some((a) => a.unit === unit)) return;
     const rows = foreign.get(library)?.errors.kinds ?? [];
     const dependent = rows.find((row) => row.library !== undefined || row.category === undefined);

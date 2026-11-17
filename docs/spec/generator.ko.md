@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: bf6b77ad5988dd1c910341132fbc5fa7a9e9ccd5754dc1fb937150a46e536440 -->
+<!-- source-sha256: 8b72079e01aa9aaabcc94d5363001efd640cdecb3bde3b123f54b085635e25e7 -->
 # 생성기
 
 [English](generator.md)
@@ -186,9 +186,17 @@
   위해 import하고(GN-6x), 선언은 다른 레포의 callback unit의 interface를 소유자의 package에서 이름하며(GN-6s), Node entry는
   그 unit의 member가 recognize하는 오류 class를 위해 그 package를 require한다(GN-6d). host 패키지의 `package.json`은 그
   각각을 `dependencies`에 적고 `check`가 그것을 읽는다(GN-3b, CK-19). 생성된 entry를 설치하고 로드하는 패키지가 host
-  패키지이기 때문이다. `composer.json`은 그 타입들에 record나 값
-  class가 있는 각 라이브러리의 확장 `ext-<extension name>`과 Composer package를 `require`에 적는다. 확장이 그 확장의
-  class의 인스턴스를 만들고 읽으며, PHP가 그 확장을 먼저 로드하기 때문이다. 다른 라이브러리의 계약이 다른
+  패키지이기 때문이다. `composer.json`은 생성된 확장이 그 확장을
+  들여다보는 다른 모든 라이브러리의 확장 `ext-<extension name>`을 `require`에 적는다. PHP가 그 확장을 먼저 로드해야 하기
+  때문이다. 생성된 확장은 다른 확장의 class를 이름으로 찾으며, 그 타입들 가운데 세 종류의 unit에 대해 그렇게 한다. record는
+  그 class를 만들고 읽는다(T-3). 값 class는 그 class, static member, map class를 읽고 호출한다(GN-6x). member가 오류 unit을
+  recognize하는 callback unit은 그 오류 class와 category class를 읽는다(GN-6s). record나 값 class의 소유자는 확장 옆에
+  Composer package도 `require`에 가진다. 다른 라이브러리의 값 alias는 소유자의 코어가 그 확장의 class 없이 변환하고, member가
+  아무 오류도 recognize하지 않는 callback unit은 호출자가 준 객체에서 호출되므로, 둘 다 require를 더하지 않는다. 생성기의
+  함수 하나가 이 종류를 이름하고, PHP emitter가 읽는 model과 `scaffold`가 모두 거기서 가져온다. 이유: crud-ui에서 generator는 validator의
+  callback unit `file_loader`를 받고, 그 시험은 generator가 validator 확장을 로드할 때까지(Makefile의
+  `BINDING_PHP_REQUIRES_generator = validator`) `Class "Polyspec\CrudUi\Validator\Errors\ComposeLoadError" not found`로
+  실패했는데, generator의 composer.json은 자기 확장 말고는 아무 확장도 require하지 않았다(B2.441). 다른 라이브러리의 계약이 다른
   자리에서만 이름하는 라이브러리, 예를 들어 이 계약이 받지 않는 class의 member 타입에만 있는 라이브러리는 어느 manifest에도
   없다. `scaffold`는 라이브러리의 계약을 그것을 이름하는 라이브러리의 코어에서 의존 줄의 `path`로 읽고, 나머지는
   `cargo metadata`로 읽는다. Cargo가 실패하면 아무 파일도 쓰지 않고 상태 1, Cargo의 오류와 GN-15f의 안내로
