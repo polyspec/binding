@@ -2058,7 +2058,11 @@ the design ids are those of the binding design.
   instance of it as `HostValue::Value` with the kind of the row; the handle is the same for the same instance within
   one walk of the core, so that the core sees one object at each of its positions. `read` of `HostValues` gives, for
   the handle, the property that the row names as `read`: the kept value, described again, or the value that the core
-  path of the property returns (a bool, an integer or a float). An `out` row whose make names the constructor of a
+  path of the property returns (a bool, an integer or a float). This holds in every target that generates the class,
+  PHP included: PHP tells the instance by its class, and `read` calls the PHP method of the property and describes its
+  result again by the rules of PHP, so a property of any kind (bytes, a map) is read as PHP gives it (B2.492). Before
+  B2.492 the PHP host had no such arm, so an instance that a case value or the code of the user passed entered as
+  `HostValue::Object`, which orm's core refuses as "an object of the language". An `out` row whose make names the constructor of a
   class without `core_type` makes an instance without calling the core: an `object` or a `map` is the map of its
   entries and a `reference` the value that it holds, which a writable property keeps. The instance is made before its
   content and is the same instance at every position of its handle (U-7 (d)). Python, Node, WASM and Go generate these
@@ -3164,7 +3168,10 @@ the design ids are those of the binding design.
   `integer_value` or `bytes_value` was expected as the bare value), a PHP `stdClass` and a PHP reference, numbered
   together by their first place: `<unit> #k`,
   then its one field, `php_object #k <n>`, then its pairs, and `php_reference #k`, then its value, and
-  `<form> again k` at a later place, so the identity of each place and each cycle is compared. A PHP reference whose
+  `<form> again k` at a later place, so the identity of each place and each cycle is compared. The texts of a result
+  write such an instance in the same way in every language, PHP included, where the method of the property gives the
+  field and a field that is a map is `map <n>` even when its keys are 0 to n-1 (B2.492, where the PHP texts wrote
+  `other <class>` for it, so orm's PHP results of `bytes_value` and `map_value` never matched). A PHP reference whose
   id has one place in the case value has no text of its own, only its value: PHP does not keep a reference that one
   place holds, because `ReflectionReference::fromArrayElement` gives null for it and `zend_array_dup` copies its
   value, so the reference that the binding makes for that place cannot be seen. The result of an

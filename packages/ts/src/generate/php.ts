@@ -5,7 +5,7 @@ import { ownerClasses } from './model.ts';
 import { convert } from '../names.ts';
 import { defaultAsserts, declaredValue } from './defaults.ts';
 import { absentInits, keptFunctionType, categoryClass,classKinds, DRIVEN, cancelsAny, cleanupAsserts, cleanupMade, cleanupWarning, drivenCall, waitsAsync, type Arg, type CallbackUnit, type Fn, type ErrorProperty, type ErrorUnit, errorProperties, type Model, isInternal, interfaceOf, implementorsOf, Unsupported, argType, leftOut, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, recordLocal, recordInit, rustIdent, rustType, rustVariant, unitOf, usesNative, takesFunction, keepsAny, keptCallbacks, keptModel, nativeRoundTrip, traitParam, keepsThrown, boxed, type Variant, type VariantCase, caseFields, caseRead, caseStruct, caseType, caseUnits, caseValue, caseWritten, implementsClause, UNIT_CASE_ALLOW, tupleIn, narrows, narrowed, tupleOut, propertyValue, errorMatched, recognizedFn, recognizedMatch, unitFn, libraryBlocks, machineFunction, countsThrown, takenCallbacks, lentCallbacks, convertsKept, callStruct , anchorCalls, lentRust} from './model.ts';
-import { PHP_NATIVE, aliasPhp, foreignFailurePhp, phpCaseTestEntries, phpHost, phpMaking } from './alias_php.ts';
+import { PHP_NATIVE, aliasPhp, foreignFailurePhp, phpCaseTestEntries, phpHost, phpMaking, phpReadsValues } from './alias_php.ts';
 import { THREAD_THROWN, elsewhereRust } from './alias_shared.ts';
 import { TAKES_PHP, functionGiven, givenRust, memberGiven, placeSubject } from './callback_arguments.ts';
 import { phpCaseTests } from './samples.ts';
@@ -1387,7 +1387,8 @@ function failureRust(model: Model): string {
   const failure = `binding_core::Failure<${model.coreError ?? '()'}>`;
   // U-3, GN-6x: an exception of PHP code is kept for a callback or a function type, and for a member of the owner of a
   // value class of another repository, whose exception the call throws again.
-  const keepsPhp = keepsThrown(model) || model.aliases.some((a) => a.owner !== undefined);
+  // B2.492: the property of a class of this contract that an in row names is read through its PHP method too.
+  const keepsPhp = keepsThrown(model) || phpReadsValues(model);
   // E-1c, GN-6w: a library whose only Failure comes from a trait that a class implements runs no PHP code that throws,
   // so it keeps no table, and a Raised that the core gives is a failure of kind internal.
   if (!keepsThrown(model) && model.aliases.length === 0 && !countsThrown(model.contract, model.foreign)) return `

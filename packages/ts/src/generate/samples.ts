@@ -3095,9 +3095,29 @@ def _tokens(top):
 `;
 }
 
-// GN-13e: the tokens of a result in PHP, as aliasTokens writes those of a case value: a stdClass is php_object, and a
-// place of an array or of an object that is a PHP reference is php_reference before its value.
-export const PHP_TOKENS = `
+// GN-13e, B2.492: a value class of an out row of PHP in the tokens: its unit, its class with the namespace, the method of
+// its property, and whether its content is a map, whose array aliasTokens writes as a map even when its keys are 0 to
+// n-1.
+export type PhpTokenForm = { unit: string; cls: string; method: string; map: boolean };
+
+// GN-13e: the tokens of a result in PHP, as aliasTokens writes those of a case value: a stdClass is php_object, a
+// place of an array or of an object that is a PHP reference is php_reference before its value, and an instance of a
+// value class of an out row is `<unit> #k`, then its content (B2.492: before, it was `other <class>`).
+export const phpTokens = (forms: PhpTokenForm[]): string => PHP_TOKENS.replace('/*KEPT*/', forms.map((f) => `
+            } elseif ($value instanceof ${f.cls}) {
+                $id = 'object ' . spl_object_id($value);
+                if (isset($numbers[$id])) {
+                    $out[] = ${phpText(f.unit)} . ' again ' . $numbers[$id];
+                    continue;
+                }
+                $numbers[$id] = $count++;
+                $out[] = ${phpText(f.unit)} . ' #' . $numbers[$id];${f.map ? `
+                $entries = $value->${f.method}();
+                $out[] = 'map ' . count($entries);
+                self::places($entries, false, $stack);` : `
+                $stack[] = [$value->${f.method}(), null];`}`).join(''));
+
+const PHP_TOKENS = `
 
     /**
      * GN-13e: the texts of the places of a value in pre-order, depth first, which a loop writes: the form of each
@@ -3149,7 +3169,7 @@ export const PHP_TOKENS = `
                 $numbers[$id] = $count++;
                 $properties = (array) $value;
                 $out[] = 'php_object #' . $numbers[$id] . ' ' . count($properties);
-                self::places($properties, false, $stack);
+                self::places($properties, false, $stack);/*KEPT*/
             } else {
                 $out[] = 'other ' . get_debug_type($value);
             }

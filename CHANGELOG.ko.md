@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 052bd4c1d021f3fbae682a95a814224fa289ca85f4d8e52780289f0d7cccbbeb -->
+<!-- source-sha256: b53c765caff246e7d3f13cd06bddf7980e0481816eaa8ce9b7652731c584eaa7 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
@@ -21,6 +21,7 @@
 
   `packages/ts`에서 `node --test --test-name-pattern=B2.490 tests/generate.test.ts tests/contract-check.test.ts`로 확인했다. orm case의 세 시험은 변경 전에 실패했다.
 
+- PHP 확장은 값 alias의 PHP `in` 행이 적은 이 contract의 class의 instance를 받는다(GN-6af, B2.492). 그 instance를 행의 kind를 가진 `HostValue::Value`로, walk 안에서 handle 하나로 기술하고, `read`는 행의 property의 PHP method를 불러 그 결과를 다시 기술하므로, bytes나 map을 주는 property도 PHP가 주는 대로 읽힌다. 전에는 PHP host가 다른 저장소의 값 class(GN-6x)만 읽어서, 그런 instance가 `HostValue::Object`로 들어갔다. B2.465 이후 그런 kind의 case 값은 그 instance로 나가므로, lane snapshot에서 orm의 PHP 실행은 546개 중 94개 시험이 실패했다(그중 89개는 `codec_encode: the value is no value of a column: an object of the language`). Python, Node, WASM은 이미 이 행을 읽었다. PHP 결과의 텍스트(GN-13e)도 그런 instance를 기대값처럼 `<unit> #k`와 그 내용으로 적는다. 전에는 `other <class>`로 적어서 orm의 `bytes_value`와 `map_value`의 PHP 결과가 실패했다. 소비자는 PHP 확장과 PHP 시험을 다시 생성한다. `tests/e2e/sample`에 alias `amount`, 그것만 모으는 class `weight`, member `weigh`가 생기고, 그 PHP case는 `weight`의 instance를 넘긴다. 검증: `packages/ts`에서 `node --test --test-name-pattern=B2.492 tests/generate.test.ts`. 변경 전에는 실패했다. PHP e2e case는 CI가 돌린다.
 - `library`가 있는 `errors.kinds` 행은 그 kind가 member에 닿는 통로인 그 라이브러리의 callback unit을 `through`에 적을 수 있고, `binding check`는 그런 행에 X-1의 case도 경로의 case도 묻지 않는다(CK-10, CK-22, GN-5, GN-7c, B2.487). CK-22는 계약이 kind를 전달하는 라이브러리마다 `<library>.internal`을 broken으로 장전하는 case를 요구했는데, 생성된 테스트는 이 계약의 코어가 그 라이브러리의 코어를 부르는 곳에서만 다른 라이브러리의 지점을 장전한다(GN-5). hyper는 session-store의 `store`를 받는다. 그것은 session-store의 package가 자기 `binding_core`로 만든 object이므로, hyper의 session-store 행 17개 중 16개는 그 object만 낸 kind다(17번째 `Random`은 store의 `renew`에서도, hyper 코어가 부르는 `random_hex`에서도 온다). 그 case가 있으면 생성된 Node 테스트가 "Missing expected rejection"으로 실패했고, 없으면 검사가 빠진 case와 각 행의 경로의 빠진 case를 보고했다. 이제 `"through": {"unit": "<unit>", "library": "<library>"}` 키가 그것을 적는다. `library`가 있는 행에만 쓸 수 있고, 키가 없는 행의 뜻은 전과 같다. object를 통해서도 코어의 호출로도 member에 닿는 kind는 `through`를 갖지 않으므로, 그 X-1 case와 경로 case는 계속 요구되고 그 생성 테스트는 코어의 호출만 증명한다. 검사는 라이브러리가 행의 것과 다르거나 unit이 그 라이브러리의 callback unit이 아닌 `through`, 그런 행을 `raises`에 적고 그 unit의 인자를 받지 않는 member(record 안이면 받은 것이다), `through` 행의 kind만 채우는 다른 라이브러리의 지점을 장전하는 case를 거부한다. 생성 코드는 바뀌지 않는다. 검사가 잡지 못하는 것: 코어가 실제로 호출로 닿는 kind의 행에 적은 `through`. 그리고 클래스를 덮어쓰는 `through` 행의 `class`는 어떤 생성 테스트도 증명하지 않는다. hyper가 쓸 것:
   - kind가 store를 통해서만 오는 session-store 행 16개, 곧 `Random`을 뺀 모든 행에 `"through": {"unit": "store", "library": "session-store"}`. `Random`은 store(`renew`)와 코어(`random_hex`) 양쪽에서 오므로 `through`를 갖지 않는다.
   - `session_store.internal`을 장전하는 `opening_functions.open_page`의 case `a_session_that_waits_after_its_start_is_internal`은 계약이 적은 case 파일에서 빼서 코어의 테스트만 읽는 파일로 옮긴다. 검사는 이제 그 자리의 그 case를 거부한다.

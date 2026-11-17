@@ -1706,7 +1706,11 @@
   인자는 addon이 판정한다. class를 적은 값 alias의 `in` 행(U-1)은 그 instance를 그 행의 kind를 가진
   `HostValue::Value`로 기술한다. 코어가 자기 각 위치에서 한 객체를 보도록, 코어의 한 walk 안에서 같은 instance의
   handle은 같다. `HostValues`의 `read`는 그 handle에 대해 행이 `read`로 적은 property를 준다: 보관한 값을 다시 기술한
-  것, 또는 그 property의 코어 경로가 돌려주는 값(bool, 정수, float)이다. make가 `core_type`이 없는 class의
+  것, 또는 그 property의 코어 경로가 돌려주는 값(bool, 정수, float)이다. 이는 그 class를 생성하는 모든 target에서,
+  PHP에서도 그렇다: PHP는 instance를 그 class로 알아보고, `read`는 property의 PHP method를 불러 그 결과를 PHP의
+  규칙으로 다시 기술하므로, 어떤 kind의 property(bytes, map)든 PHP가 주는 대로 읽힌다(B2.492). B2.492 전에는 PHP
+  host에 그 갈래가 없어서, case 값이나 사용자 코드가 넘긴 instance가 `HostValue::Object`로 들어갔고, orm의 코어는
+  그것을 "an object of the language"로 거부했다. make가 `core_type`이 없는 class의
   constructor를 적은 `out` 행은 코어를 부르지 않고 instance를 만든다: `object`나 `map`은 그 entry들의 map이고
   `reference`는 그것이 담은 값이며, 이 값은 쓰기 가능한 property가 보관한다. instance는 내용보다 먼저 만들어지고 그
   handle의 모든 위치에서 같은 instance다(U-7 (d)). Python, Node, WASM, Go가 이 class를 생성하며, Go는 GN-15c가 적은
@@ -2590,7 +2594,9 @@
   `float`과 `map`만 그랬고, orm이 `integer_value`나 `bytes_value`의 인스턴스로 주는 `int`나 byte string을 맨 값으로
   기대했다), PHP `stdClass`, PHP reference는 첫 자리 순서로 함께 번호를 받는다. `<unit> #k` 다음에 그 field 하나,
   `php_object #k <n>` 다음에 그 쌍들, `php_reference #k` 다음에 그 값이 오고, 뒤 자리는 `<form> again k`다. 그래서 각
-  자리의 동일성과 각 순환을 비교한다. case 값에서 id의 자리가 하나인 PHP reference는 자기 텍스트 없이 그 값만 가진다.
+  자리의 동일성과 각 순환을 비교한다. 결과의 텍스트는 그런 인스턴스를 PHP를 포함한 모든 언어에서 같이 적는다. PHP에서는
+  property의 method가 field를 주고, map인 field는 key가 0부터 n-1이어도 `map <n>`이다(B2.492. 전에는 PHP 텍스트가 그것을
+  `other <class>`로 적어서 orm의 `bytes_value`와 `map_value`의 PHP 결과가 맞은 적이 없다). case 값에서 id의 자리가 하나인 PHP reference는 자기 텍스트 없이 그 값만 가진다.
   PHP는 한 자리가 가진 reference를 유지하지 않는다. `ReflectionReference::fromArrayElement`는 그것에 null을 주고
   `zend_array_dup`은 그 값을 복사하므로, 바인딩이 그 자리에 만드는 reference는 보이지 않는다. `codec-test` 진입점을 가진(`in_raises`, GN-5) alias의 결과는 alias 행의 왕복(U-1)도
   거친다. 시험은 결과를 `_alias_round_<alias>`(Python), `__aliasRound<Alias>`(Node, WASM), `Internal\aliasRound<Alias>`(PHP)에

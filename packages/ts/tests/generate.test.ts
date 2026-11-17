@@ -226,6 +226,26 @@ test('host containers keep their identity during one walk, with and without valu
   }
 });
 
+// B2.492 (GN-6af, GN-13): the alias amount of the sample makes an integral float as an instance of weight in PHP, and
+// its PHP in row names weight, a class that amount alone gathers (CK-8), so the case value of weigh is that instance,
+// and the PHP host describes it as HostValue::Value of the kind float, whose read gives the float of weight.value. Before B2.492 the PHP host had no arm
+// for a class of the contract, so the instance entered as HostValue::Object, which the core of the sample refuses as
+// kind unsupported, as orm's core refuses it with "an object of the language".
+test('an instance of a value class of the contract that a case value makes enters the PHP host as a value of its in row (B2.492, GN-6af, GN-13)', () => {
+  const contract = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const cases = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/contracts/cases.json', import.meta.url), 'utf8'));
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: new Map([['contracts/cases.json', cases]]), targets: ['php'] });
+  const tests = text(out, 'packages/php-ext/generated/tests/GeneratedTest.php');
+  assert.match(tests, /\\Polyspec\\Sample\\weigh\(new \\Polyspec\\Sample\\Weight\(\(float\) 2\.0\)\)/);
+  const lib = text(out, 'packages/php-ext/generated/lib.rs');
+  const describe = lib.slice(lib.indexOf('    fn describe(&mut self, value: &\'a Zval)'));
+  const weight = lib.search(/php_instance\(value, "Polyspec\\\\Sample\\\\Weight"\)/);
+  assert.ok(weight >= 0, 'the PHP host tells an instance of weight');
+  assert.match(lib.slice(weight), /^php_instance\(value, "Polyspec\\\\Sample\\\\Weight"\) \{[\s\S]*?Some\(\("value", ReadAs::Content\)\)[\s\S]*?HostValue::Value \{ kind: ValueKind::Float, /);
+  const classes = describe.indexOf('php_value_class(value,');
+  assert.ok(classes >= 0 && classes < describe.indexOf('HostValue::Object {'),'the PHP host describes an instance of weight before any other object');
+});
+
 test('a record that a function returns has its result form in every language (T-4)', () => {
   const { contract, caseFiles } = load();
   contract.units[0].members[0].returns = { unit: 'options' };
@@ -13027,6 +13047,30 @@ const wholeConsumerTarget = (name: string, inputs: Inputs, target: Lang): Readon
   wholeConsumerTargets.set(key, made);
   return made;
 };
+
+// B2.492 (GN-6af, GN-13e): orm's alias orm_value makes an int, UTF-8 bytes and a map of sequence keys as instances of
+// integer_value, bytes_value and map_value in PHP and names those classes in its PHP in rows. The PHP host describes
+// each instance with the kind of its row and reads it through the method of its property, so a case value that is such
+// an instance reaches the encode; and the tokens of a PHP result write each instance as `<unit> #k` and its content,
+// as aliasTokens writes the expected value, where they wrote `other <class>`.
+test('B2.492: orm reads its value class instances in the PHP host and in the tokens of a PHP result (GN-6af, GN-13e)', () => {
+  const orm = WHOLE_CONSUMERS.find((c) => c.name === 'orm');
+  assert.ok(orm !== undefined);
+  const out = wholeConsumerTarget(orm.name, wholeConsumer(orm), 'php');
+  const lib = text(out as Map<string, string | Buffer>, 'packages/php-ext/generated/lib.rs');
+  for (const [cls, kind, read] of [['IntegerValue', 'Int', 'value'], ['BytesValue', 'Bytes', 'value'], ['MapValue', 'Map', 'entries']]) {
+    const at = lib.indexOf(`php_instance(value, "Polyspec\\\\Orm\\\\${cls}") {`);
+    assert.ok(at >= 0, cls);
+    const arm = lib.slice(at, lib.indexOf('\n    }\n', at));
+    assert.ok(arm.includes(`Some(("${read}", ReadAs::Content))`), cls);
+    assert.ok(arm.includes(`HostValue::Value { kind: ValueKind::${kind}, `), cls);
+  }
+  const tests = text(out as Map<string, string | Buffer>, 'packages/php-ext/generated/tests/GeneratedTest.php');
+  assert.match(tests, /\} elseif \(\$value instanceof \\Polyspec\\Orm\\BytesValue\) \{[\s\S]*?\$out\[\] = "bytes_value" \. ' #' \. \$numbers\[\$id\];\n {16}\$stack\[\] = \[\$value->value\(\), null\];/);
+  assert.match(tests, /\} elseif \(\$value instanceof \\Polyspec\\Orm\\MapValue\) \{[\s\S]*?\$entries = \$value->entries\(\);\n {16}\$out\[\] = 'map ' \. count\(\$entries\);\n {16}self::places\(\$entries, false, \$stack\);/);
+  // The bytes of the address 127.0.0.1, written so that no text of the test reads as a commit.
+  assert.match(tests, /"\[\\"bytes_value #0\\",\\"string 7f0{5}1\\"\]"/);
+});
 
 test('B2.363: the check of this tree gives the whole copy of each consumer contract the findings that findings.json records and no other, and the generator writes each of its targets (G-4)', () => {
   // findings.json: the findings that a copy has under the check of this tree, each with its reason and the condition
