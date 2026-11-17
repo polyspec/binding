@@ -417,6 +417,14 @@
         ]
       },
       "result": "list"
+    },
+    {
+      "id": "an_integral_float_is_a_float",
+      "value": {
+        "kind": "float",
+        "value": 2
+      },
+      "result": "float"
     }
   ],
   "tag_entries": [],

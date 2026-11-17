@@ -1213,6 +1213,24 @@
         },
         {
           "kind": "float",
+          "when": {
+            "predicate": "integral_float",
+            "is": true
+          },
+          "make": {
+            "php": "ratio.constructor",
+            "python": "float",
+            "node": "float",
+            "go": "float",
+            "wasm": "float"
+          }
+        },
+        {
+          "kind": "float",
+          "when": {
+            "predicate": "integral_float",
+            "is": false
+          },
           "make": {
             "php": "float",
             "python": "float",
@@ -1700,6 +1718,15 @@
         },
         {
           "wasm": "ratio",
+          "cases": [
+            {
+              "kind": "float",
+              "read": "ratio.value"
+            }
+          ]
+        },
+        {
+          "php": "ratio",
           "cases": [
             {
               "kind": "float",
