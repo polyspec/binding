@@ -1,11 +1,12 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 1c6496314a0b39c037ade3d0c6175af57eed5d68057c3f08b85144b2dc673bd1 -->
+<!-- source-sha256: 78ebf9014e150ee625f4c0d481544fac66476b1da3e5e7e79d0d9cbdd62cbca3 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- Python, PHP, Node, WASM의 생성 시험은 `raises`를 이름하는 `after` 호출의 args에 있는 instance 값 `{"new": "<static>", ...}`을 호출 전에, 호출의 outcome 밖에서 시험의 지역 변수로 만든다(GN-13f, GN-13o, B2.509). 전에는 그 값을 outcome 안에서 만들어서 static의 실패가 호출의 실패로 잡혔고, 그 kind가 기대 kind이면 시험은 아무것도 확인하지 않고 통과했다. end-to-end 검사에 `expected-failures.json`이 생긴다(GN-14n): 그 파일을 가진 `tests/e2e`의 레포는 그 파일이 적는 생성 시험이 정확히 각자의 text로 실패할 때만 통과하므로, 그런 시험의 통과는 실행을 실패시킨다. CI matrix에 든 `tests/e2e/falsepass`는 다섯 target에서 그 after 호출의 시험이 static에서 실패하기를 요구한다. 저장소가 할 일: `make bindings`를 다시 실행한다. static이 실패하는 after 시험은 이제 실패하므로, 그 case를 계약에서 고친다. 확인: `packages/ts`에서 `node --test --test-name-pattern "B2.509" tests/generate.test.ts`와 `node --test tests/e2e-expected.test.ts`, 그리고 `make e2e REPO=tests/e2e/falsepass`, 변경 전에는 거짓 통과로 실패했다.
 - 생성된 Go 시험은 `raises`를 이름하는 `after` 호출의 args에 있는 instance 값 `{"new": "<static>", ...}`을 호출 전에 그 static으로, 실패 검사와 함께 만든다(GN-13o, GN-13f, B2.506). 전에는 호출이 시험이 선언하지 않은 `made<N>`을 가리켜 시험이 compile되지 않았고(orm의 `_, failure13 := made6.AddTablesAndColumns(made14)`), 계약은 CK-22를 통과했다. Python, PHP, Node, WASM은 그 값을 호출 안에서 바로 만들어 이 결함이 없었다. 저장소가 할 일: `make bindings`를 다시 실행한다. 확인: `packages/ts`에서 `node --test --test-name-pattern "B2.506" tests/generate.test.ts`, 변경 전에는 실패했다.
 - `var/tools/bin/php`가 `.php-version`의 minor가 아니면 `make install-tools`는 그것을 고치는 단계를 댄다(B2.499, K283): wrapper를 지우고, 그 minor의 php를 PATH 맨 앞에 두고 `make install-tools`를 다시 실행한다. 전에는 그 단계에 삭제가 빠져 있었고, kit의 install-php는 있는 wrapper를 그대로 두므로(K1271), 그 단계를 따라도 wrapper가 다른 minor에 남았다. 레포가 할 일: 없다. 그런 wrapper를 가진 checkout은 이제 메시지가 대는 단계를 따른다. `packages/ts`에서 `node --test tests/php-minor.test.ts`로 검증했고, 그 B2.499 시험은 자체 checkout에서 kit의 php install로 그 단계를 따르며 변경 전에 실패했다.
 - `release-platform-assets`에 rehearsal이 생겼다. `make release-platform-assets TAG=<tag> REHEARSAL=1 WORK=<directory>`는 label 검사와 크기 검사를 돌고, asset마다 크기를 붙인 upload 목록을 `WORK/platform-assets.txt`에 쓸 뿐 다른 것은 쓰지 않으며, `gh`도 `git`도 부르지 않고, 마지막 줄은 `no upload`다(GN-19g, B2.496). 전에는 gh upload가 label 검사 바로 뒤에 이어져 rehearsal이 그 단계에 닿지 못했고, template 0.0.28은 asset job에서 잃었다. recipe는 이제 두 꼴 모두에서, GitHub이 받지 않는 빈 asset과 2 GiB 이상인 asset을 그 이름을 대며 거부한다. 레포가 할 일: `make release-recipes`를 다시 실행하고, rehearsal target이 `REHEARSAL=1 WORK=<directory>`로 이 recipe를 부른다. `packages/ts`에서 `node --test --test-name-pattern "B2.496" tests/release-recipes.test.ts`로 검증했고, 이 시험은 변경 전에 실패했다.

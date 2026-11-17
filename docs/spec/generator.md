@@ -3652,7 +3652,8 @@ the design ids are those of the binding design.
   `result`, a kind of the raises of the member of the call: the call must fail with that kind, which the test or the
   function requires before its next call. An instance value `{"new": "<static>", ...}` among the args of such a call
   is made by its static, with the failure check of GN-13f, before the call, in every target, as for a call that
-  names `result` (B2.506). A call of `after` may name `"on": "<name>"`, a name that a function fixture
+  names `result` (B2.506): outside the outcome of the call, which holds the call alone, so a failure of the static
+  fails the test even with the kind that the call expects, and is never taken as the failure of the call (B2.509). A call of `after` may name `"on": "<name>"`, a name that a function fixture
   of the case gives (GN-13n), and is then a call on the argument that the function kept, after the function returned,
   in place of the receiver of the case; a member without a receiver takes such a call too. Python and PHP keep the
   argument in the store of the test, Node and WASM in the store of the module, and Go in a variable of the test. A
