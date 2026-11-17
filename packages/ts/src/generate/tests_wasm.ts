@@ -462,7 +462,9 @@ test('N-4: ${name} ${kase.id}', () => {${receiverOfCase(kase.receiver).lines}
     if (fn.kind === 'property' || fn.special !== undefined || !reachable) continue;
     // G-7: the receiver is made once, as a local, and every call of the test runs on it: a receiver that holds state
     // cannot be made twice in one case folder (orm: StepRunner.run, "table owner already exists").
-    const once = receiverOfCase(sample);
+    const built = receiverOfCase(sample);
+    // A receiver that one factory call makes is an expression, which the test keeps as a local too.
+    const once = built.expr === '' || built.lines !== '' ? built : { lines: `\n  const receiver = ${built.expr};`, expr: 'receiver' };
     const onOnce = (args: string): string => invoke(fn, args, once.expr);
     // GN-13t: an argument of a class of the G-7 test is the case value of a case of the member, where one gives it.
     const values = (arg: Fn['args'][number]): string => otherValue(model, ctx, arg, classGiven);

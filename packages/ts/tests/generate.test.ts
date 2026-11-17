@@ -12867,6 +12867,14 @@ test('B2.463: the G-7 test of a method makes its receiver once and gives an argu
     assert.match(body, /Counter\(4\)/, `${target}: ${body}`);
     assert.doesNotMatch(body, /Counter\(0\)/, `${target}: ${body}`);
   }
+  // A receiver that one factory call makes, the ledger of the key "a", is made once too.
+  const plain = { python: /def test_g7_ledger_note_counts/, node: /test\('G-7: Ledger\.note /, wasm: /test\('G-7: Ledger\.note /, php: /function testG7LedgerNoteCounts/ };
+  for (const target of ['python', 'node', 'wasm', 'php'] as const) {
+    const [body] = bodiesOf(text(out, STATEFUL_TESTS[target]), plain[target], STATEFUL_END[target]);
+    assert.ok(body !== undefined, `${target}: no G-7 test of note`);
+    assert.equal(body.match(/Ledger\(['"]a['"]\)/g)?.length, 1, `${target}: ${body}`);
+    assert.ok((body.match(/receiver(->|\.)note\(/g)?.length ?? 0) >= 2, `${target}: ${body}`);
+  }
 });
 
 test('B2.463: the Python test of GN-11a gives an argument of a class the case value of a case of the member (GN-13t)', () => {

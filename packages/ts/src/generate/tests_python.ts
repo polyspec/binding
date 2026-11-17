@@ -990,7 +990,9 @@ ${kase.raises.status === undefined ? '' : `        self.assertEqual(error.status
     const unknown = pyo3New ? 'unexpected keyword argument' : bare ? 'takes no keyword arguments' : 'unexpected keyword';
     // G-7: the receiver is made once, as a local, and every call of the test runs on it: a receiver that holds state
     // cannot be made twice in one case folder (orm: StepRunner.run, "table owner already exists").
-    const once = receiverOfCase(sample);
+    const built = receiverOfCase(sample);
+    // A receiver that one factory call makes is an expression, which the test keeps as a local too.
+    const once = built.expr === '' || built.lines !== '' ? built : { lines: `\n        receiver = ${built.expr}`, expr: 'receiver' };
     const onOnce = (args: string): string => invoke(fn, args, once.expr);
     append(`
     def test_g7_${name}_counts_and_names_its_arguments(self) -> None:${once.lines}${fn.args.every((a) => a.default !== undefined) ? '' : `
