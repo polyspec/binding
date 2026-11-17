@@ -2622,11 +2622,9 @@ export function ownerErrorClasses(owner: Contract, lang: Lang): { category: Cate
   return [...categories, ...units];
 }
 
-// GN-5, GN-6ae: whether the crates of a contract keep a table of what was thrown, whose entries the entry point of
-// thrown-count-test counts: a member takes a callback unit, of this contract or of another, or a function type, or the
-// contract has a value alias with core, whose walk keeps what the language code threw. The contract and the contracts
-// that it names decide it, so that the manifest and the crate agree.
-export function countsThrown(contract: Contract, foreign: ReadonlyMap<string, Contract> = new Map()): boolean {
+// GN-6ae: whether a type calls language code: a function type, or a unit that callback tells, at any place of a list,
+// an optional, a map or a tuple.
+function callsBy(callback: (type: { unit: string; library?: string }) => boolean): (type: Type) => boolean {
   const called = (type: Type): boolean => {
     if (typeof type === 'string') return false;
     if ('function' in type) return true;
@@ -2636,9 +2634,20 @@ export function countsThrown(contract: Contract, foreign: ReadonlyMap<string, Co
     if ('keyed_map' in type) return called(type.keyed_map);
     if ('tuple' in type) return type.tuple.some(called);
     if (!('unit' in type)) return false;
+    return callback(type);
+  };
+  return called;
+}
+
+// GN-5, GN-6ae: whether the crates of a contract keep a table of what was thrown, whose entries the entry point of
+// thrown-count-test counts: a member takes a callback unit, of this contract or of another, or a function type, or the
+// contract has a value alias with core, whose walk keeps what the language code threw. The contract and the contracts
+// that it names decide it, so that the manifest and the crate agree.
+export function countsThrown(contract: Contract, foreign: ReadonlyMap<string, Contract> = new Map()): boolean {
+  const called = callsBy((type) => {
     const owner = type.library === undefined ? contract : foreign.get(type.library);
     return owner?.units.some((unit) => unit.id === type.unit && unit.origin === 'callback') === true;
-  };
+  });
   return contract.units.some((unit) =>
     (unit.kind === 'alias' && unit.origin === 'value' && typeof unit.core === 'object')
     || (unit.origin !== 'callback' && (unit.members ?? []).some((member) => (member.parameters ?? []).some((parameter) => called(parameter.type)))));
@@ -2647,17 +2656,7 @@ export function countsThrown(contract: Contract, foreign: ReadonlyMap<string, Co
 // GN-6ae: whether a member takes a callback unit or a function type, so that its call may keep what the language code
 // threw; the generated test of each of its cases reads the count of thrown-count-test after the call.
 export function callsCode(model: Model, fn: Fn): boolean {
-  const called = (type: Type): boolean => {
-    if (typeof type === 'string') return false;
-    if ('function' in type) return true;
-    if ('list' in type) return called(type.list);
-    if ('optional' in type) return called(type.optional);
-    if ('map' in type) return called(type.map);
-    if ('keyed_map' in type) return called(type.keyed_map);
-    if ('tuple' in type) return type.tuple.some(called);
-    if (!('unit' in type)) return false;
-    return [...model.callbacks, ...model.foreignCallbacks].some((callback) => callback.unit.id === type.unit && callback.library === type.library);
-  };
+  const called = callsBy((type) => [...model.callbacks, ...model.foreignCallbacks].some((callback) => callback.unit.id === type.unit && callback.library === type.library));
   return countsThrown(model.contract, model.foreign) && fn.args.some((arg) => called(arg.type));
 }
 
