@@ -117,7 +117,8 @@ rules of this repository.
   lint-rust`, `make typecheck-ts`, `make test-ts` and `make e2e-lint`. `make e2e-lint` generates the repositories of
   `tests/e2e` of the matrix of the job `e2e` of CI, with their DEPS and without `lent`, whose crates the compiler refuses,
   with the CLI of HEAD and lints each binding crate with `cargo clippy -D warnings` with its test features and without
-  them; it builds no package and runs no test, and Cargo reads the index of the registry. Why: without it the CI run of that push is the first lint
+  them; it builds no package and runs no test, and Cargo reads the index of the registry. It reads the tree of HEAD, as
+  `make e2e` does, so a change that is not committed is not linted. Why: without it the CI run of that push is the first lint
   of the generated crates, and 0.0.18 so failed in CI on a helper that four generated crates held unused (B2.430).
   Enforced by: `make release-coverage`, which fails a package file that `config/release.json` does not classify; `make
   release-tag`, which tags only the commit of a successful run.

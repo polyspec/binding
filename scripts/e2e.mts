@@ -390,8 +390,7 @@ const miseWhich = (command: string): string | undefined => {
   }
   return undefined;
 };
-// process.execPath is a real path, so it is compared with the real path of var/tools, which may be a link (B2.432).
-if (!process.execPath.startsWith(`${realpathSync(tools)}/`)) {
+if (!process.execPath.startsWith(`${tools}/`)) {
   missing.push(`the check runs on the Node.js of mise.toml, not ${process.execPath}: start it with make e2e`);
 }
 if (process.env['MISE_GLOBAL_CONFIG_FILE'] !== join(checkout, 'mise.toml')) {
