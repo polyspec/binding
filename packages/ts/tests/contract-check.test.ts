@@ -2563,3 +2563,33 @@ test('B2.383: a value of a generated interface may be {"bound": <name>} of a cla
   assert.equal(unknown.length, 1, unknown.join('\n'));
   assert.match(unknown[0] ?? '', /no function fixture around it gives that name/);
 });
+
+// B2.490: the alias data of tests/e2e/sample selects its map rows, out and in, by sequence_keys.
+describe('B2.490: CK-104', () => {
+  const root = new URL('../../../tests/e2e/sample/', import.meta.url);
+  const sampleCheck = (change: (data: any) => void): Finding[] => {
+    const c = JSON.parse(readFileSync(new URL('packages/rust/interface.json', root), 'utf8'));
+    change(c.units.find((u: any) => u.id === 'data'));
+    return checkContract(c, { caseFiles: new Map([['contracts/cases.json', JSON.parse(readFileSync(new URL('contracts/cases.json', root), 'utf8'))]]) });
+  };
+  test('an alias that states the key form text or int passes', () => {
+    assert.deepEqual(sampleCheck((data) => { data.sequence_keys = { keys: 'text' }; }), []);
+    assert.deepEqual(sampleCheck((data) => { data.sequence_keys = { keys: 'int' }; }), []);
+  });
+  test('an alias that selects a row by sequence_keys and states no key form is refused with the alias and the row; there is no default', () => {
+    const result = sampleCheck((data) => { delete data.sequence_keys; });
+    assert.deepEqual(result.map((f) => f.check), ['CK-104']);
+    assert.match(result[0]?.message ?? '', /^the alias data selects the row \/units\/\d+\/out\/\d+ by sequence_keys and states no sequence_keys\.keys, text or int/);
+  });
+  test('a case of an in row alone by sequence_keys needs the key form too', () => {
+    const result = sampleCheck((data) => {
+      delete data.sequence_keys;
+      for (const row of data.out) if (row.when?.predicate === 'sequence_keys') delete row.when;
+      data.out = data.out.filter((row: any, i: number, all: any[]) => row.kind !== 'map' || all.findIndex((r) => r.kind === 'map') === i);
+    });
+    assert.ok(result.some((f) => f.check === 'CK-104' && /selects the row \/units\/\d+\/in\/\d+\/cases\/\d+ by sequence_keys/.test(f.message)), JSON.stringify(result, null, 2));
+  });
+  test('an alias without a sequence_keys row needs no statement', () => {
+    assert.deepEqual(checkContract(contract(), { dependencies: deps() }), []);
+  });
+});

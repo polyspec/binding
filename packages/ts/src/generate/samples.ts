@@ -1137,6 +1137,21 @@ function isUtf8(bytes: Buffer): boolean {
 
 const SAFE = 2n ** 53n - 1n;
 
+// GN-13e, CK-104 (B2.490): whether the keys of a case map are the sequence of the key form that the alias states: the
+// texts "0" to "n-1" in order under text, the ints 0 to n-1 in order under int. The empty map has sequence keys under
+// both, and a map whose keys are the sequence of neither form has none. A map whose keys are the sequence of one form,
+// of an alias that states no form, is not judged: the keys' shape is no answer (CK-104 refuses the contract).
+export function sequenceKeys(alias: Unit, pairs: readonly unknown[][]): boolean {
+  if (pairs.length === 0) return true;
+  const text = pairs.every((pair, i) => pair[0] === String(i));
+  const int = pairs.every((pair, i) => typeof pair[0] === 'object' && pair[0] !== null && String((pair[0] as { int?: unknown }).int) === String(i));
+  const form = alias.sequence_keys?.keys;
+  if (form === 'text') return text;
+  if (form === 'int') return int;
+  if (text || int) throw new Unsupported(`${alias.id} selects a row by sequence_keys and states no sequence_keys.keys, so the case map with the keys ${text ? 'texts' : 'ints'} 0 to ${pairs.length - 1} is not judged (CK-104)`);
+  return false;
+}
+
 // GN-13e: whether a case value of the kind holds the predicate of an out row of the alias.
 function holdsPredicate(alias: Unit, kind: string, node: Record<string, unknown>, predicate: string): boolean {
   const held = node['value'];
@@ -1151,7 +1166,7 @@ function holdsPredicate(alias: Unit, kind: string, node: Record<string, unknown>
     }
     case 'sequence_keys':
       if (kind !== 'list' && !Array.isArray(held)) throw new Unsupported(`a case value of the kind ${kind} of ${alias.id} is ${JSON.stringify(held)}, not an array of [key, value] pairs (G-5)`);
-      return kind === 'list' || (held as unknown[][]).every((pair, i) => typeof pair[0] === 'object' && pair[0] !== null && String((pair[0] as { int?: unknown }).int) === String(i));
+      return kind === 'list' || sequenceKeys(alias, held as unknown[][]);
     default:
       throw new Unsupported(`the predicate ${predicate} of ${alias.id} is not judged for a result yet`);
   }

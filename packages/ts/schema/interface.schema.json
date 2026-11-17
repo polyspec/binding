@@ -1887,6 +1887,22 @@
             }
           }
         },
+        "sequence_keys": {
+          "description": "The key form that the predicate sequence_keys of a value alias means (CK-104, GN-13e): text, the keys are the texts \"0\" to \"n-1\" in order; int, the ints 0 to n-1 in order.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "keys"
+          ],
+          "properties": {
+            "keys": {
+              "enum": [
+                "text",
+                "int"
+              ]
+            }
+          }
+        },
         "out": {
           "type": "array",
           "minItems": 1,

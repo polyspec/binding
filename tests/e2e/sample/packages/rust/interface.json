@@ -1183,6 +1183,9 @@
       "visibility": "public",
       "origin": "value",
       "core_type": "polyspec_sample::Data",
+      "sequence_keys": {
+        "keys": "text"
+      },
       "core": {
         "in": "polyspec_sample::data_from_host",
         "out": "polyspec_sample::data_to_out"

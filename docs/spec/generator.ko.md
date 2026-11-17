@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 03f370bb2506c07672486fd89dc984e36ecb37112bedb094cd7fd25629e4ddbd -->
+<!-- source-sha256: 395588e1735fe7bb9d8fb632ae7d5db999de0dab80b5ab9b1afa12287be1efee -->
 # 생성기
 
 [English](generator.md)
@@ -2579,7 +2579,7 @@
   결과(다른 타입 안이 아니고, 생성자가 받은 값을 주는 값 class의 property도 아닌 것)는 그 자리들을 전위 순서, 깊이 우선으로
   적은 텍스트로 비교한다. 양쪽 모두 반복문이 쓰므로, 재귀가 받지 못하는 깊이의 값도 비교한다. 생성기는 case 값의
   텍스트를 alias의 out 행으로 쓴다. 각 자리에서 그 kind의 행 가운데 값이 가진 predicate(`utf8`, `safe_integer`,
-  `integral_float`, `sequence_keys`)의 행을 고르고(alias에 kind `list`나 `text`의 행이 없으면 case 값의 그 kind는
+  `integral_float`, 키가 alias가 밝힌 형태(text나 int)인 `sequence_keys`, CK-104)의 행을 고르고(alias에 kind `list`나 `text`의 행이 없으면 case 값의 그 kind는
   `map`이나 `bytes`의 행을 쓴다), 그 행의 그 언어 형태를 쓴다. 시험은 결과의 텍스트를 각 자리의 타입으로 쓴다. 텍스트는
   형태를 적는다. `null`, `bool true`나 `bool false`, Python과 PHP의 `int <10진>`, Node와 WASM의 `number <bits>`(IEEE 754
   bit의 hex 또는 `nan`), `bigint <10진>`, Python과 PHP의 `float <bits>`, Python, Node, WASM에서 UTF-8이나 bytes의 hex인
