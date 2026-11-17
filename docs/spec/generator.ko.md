@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 2a276d0bbc2ca7e5d45872114cb7f5d00d93d7e9f46be644a63feedb2b435dfa -->
+<!-- source-sha256: 464490383d5d4ea530e1358c800e7146bb01aefc7012aaca8710e35a9db2e2d2 -->
 # 생성기
 
 [English](generator.md)
@@ -3733,8 +3733,9 @@
   asset 하나씩 요구한다. GN-19a의 플랫폼마다의 wheel, npm 패키지와 target `node`이면 플랫폼마다의 플랫폼 패키지, GN-19a의
   PHP minor마다 플랫폼마다의 PHP 확장이다. 빠진 asset마다 그 label을 대며 실패하고, 플랫폼이나 지원 PHP minor를 적지 않은
   파일과 label이 같은 두 파일에도 실패한다. 이유: 플랫폼이나 PHP minor가 빠진 release는 거기에 설치되지
-  않는 패키지를 내고, 파일의 개수는 두 플랫폼 대신 한 플랫폼의 두 파일이 있는 것을 보지 못한다. GitHub이 받지 않으므로
-  빈 asset과 2 GiB 이상인 asset에도 그 이름을 대며 실패한다. `make release-platform-assets TAG=<tag> REHEARSAL=1
+  않는 패키지를 내고, 파일의 개수는 두 플랫폼 대신 한 플랫폼의 두 파일이 있는 것을 보지 못한다. 빈 asset과
+  2 GiB 이상인 asset에도 그 이름을 대며 실패한다. 이유: 빈 asset이 tag 뒤 upload 단계에서 release를 실패시켰고,
+  GitHub은 2 GiB 이상인 asset을 받지 않는다. `make release-platform-assets TAG=<tag> REHEARSAL=1
   WORK=<directory>`는 tag 전의 rehearsal이다(B2.496). 같은 검사를 돌고, upload 목록을 asset마다 한 줄
   `<size> <file>#<label>`로 `WORK/platform-assets.txt`에 쓰며, `WORK` 밖에는 쓰지 않고, `gh`도 `git`도 부르지 않으며,
   마지막 줄은 `no upload`다. `WORK` 없는 `REHEARSAL=1`은 거부된다. 이유: upload가 label 검사 바로 뒤에 이어져
