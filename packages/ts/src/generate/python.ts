@@ -4,7 +4,7 @@
 import type { Type, Unit } from '../contract.ts';
 import { variantPattern } from '../contract.ts';
 import { raisesAssertions } from './raises.ts';
-import { type FunctionType, recognizing, functionClosureHead, containerIn, containerOut, fieldInit, iterateItems, keptFunctionIn, resultCycles, scalarIn, scalarOut } from './bindings_shared.ts';
+import { type FunctionType, convertingFns, recognizing, functionClosureHead, containerIn, containerOut, fieldInit, iterateItems, keptFunctionIn, resultCycles, scalarIn, scalarOut } from './bindings_shared.ts';
 import { conversionsOf, convertedFn, ownerErrorClasses } from './model.ts';
 import { TAKES_PYTHON, functionGiven, givenRust, memberGiven, placeSubject } from './callback_arguments.ts';
 import { type Files, header, pyHeader, pyString, rustString, closure, optionRef, withUsedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
@@ -1211,9 +1211,8 @@ fn settled<'py>(py_: Python<'py>, value: binding_core::Passthrough, event_loop: 
 // another library's package: the row of its kind gives the class, the message, the status, the errno and the
 // forwarded properties are read from the exception, and the exception is the __cause__ of the converted one.
 function convertedRust(model: Model): string {
-  const fns = [...model.functions, ...model.objects.flatMap((o) => o.members)].filter((fn) => conversionsOf(model, fn).length > 0);
+  const { fns, failure } = convertingFns(model);
   if (fns.length === 0) return '';
-  const failure = `binding_core::Failure<${model.coreError ?? '()'}>`;
   const tables = fns.map((fn) => {
     const conversions = conversionsOf(model, fn);
     const lookups = conversions.map((c) => {

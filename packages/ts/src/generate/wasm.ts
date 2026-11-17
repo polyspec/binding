@@ -13,7 +13,7 @@ import { type Cycle, type CycleHost, cycleLeaf, cycleOf, cycles, cycleUnitRust, 
 import { WASM_NATIVE, aliasWasm, foreignFailureWasm, foreignRegistrationWasm, keptExportsWasm, wasmHost } from './alias_wasm.ts';
 import { jsErrorClasses, typeParameters } from './node.ts';
 import { raisesAssertions } from './raises.ts';
-import { type FunctionType, JS_CONTAINERS, callbackNames, argIn, recordParamLines, recognizedClassIndex, callbackImpl, recognizing, keptMethods, passes, passesAny, functionClosureHead, containerIn, containerOut, iterateItems, keptFunctionIn, plainCycleHost, type RecordForm, type VariantForm, recordFns, recordParts, resultCycles, variantFns, variantParts, scalarIn, scalarOut } from './bindings_shared.ts';
+import { type FunctionType, JS_CONTAINERS, callbackNames, convertingFns, convertedArms, argIn, recordParamLines, recognizedClassIndex, callbackImpl, recognizing, keptMethods, passes, passesAny, functionClosureHead, containerIn, containerOut, iterateItems, keptFunctionIn, plainCycleHost, type RecordForm, type VariantForm, recordFns, recordParts, resultCycles, variantFns, variantParts, scalarIn, scalarOut } from './bindings_shared.ts';
 import { TAKES_WASM, jsArguments, functionGiven, givenRust, memberGiven, placeSubject } from './callback_arguments.ts';
 import { type Files, header, jsString, rustString, closure, withUsedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
 
@@ -827,19 +827,12 @@ const hasProperties = (model: Model): boolean => model.errorUnits.some((u) => er
 // another library's package: the row of its kind gives the class, the message, the status, the errno and the
 // forwarded properties are read from the exception, and the exception is the own property cause of the converted one.
 function convertedRust(model: Model): string {
-  const fns = [...model.functions, ...model.objects.flatMap((o) => o.members)].filter((fn) => conversionsOf(model, fn).length > 0);
+  const { fns, failure } = convertingFns(model);
   if (fns.length === 0) return '';
-  const failure = `binding_core::Failure<${model.coreError ?? '()'}>`;
-  const unitIndex = (unit: ErrorUnit): number => model.classes.length + model.errorUnits.indexOf(unit);
-  const classIndex = (category: string): number => model.classes.findIndex((c) => c.category === category);
   const tables = fns.map((fn) => {
     const lookups = conversionsOf(model, fn).map((c) => {
       const base = convertedClassBase(model, c.library, 'wasm');
-      const arms = c.rows.flatMap((row) => {
-        const target = row.kind.unit === undefined ? classIndex(row.kind.category) : unitIndex(row.kind.unit);
-        const properties = row.properties.map(({ property }) => rustString(langName('wasm', property.member.name, 'variable')));
-        return row.kinds.map((kind) => `            ${rustString(kind)} => Some((${target}, ${rustString(kind)}, &[${properties.join(', ')}])),`);
-      });
+      const arms = convertedArms(model, c, 'wasm');
       return `read_converted(&value, ${base}..${base + ownerErrorClasses(c.owner, 'wasm').length}, |kind| match kind {
 ${arms.join('\n')}
             _ => None,

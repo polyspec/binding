@@ -4,7 +4,7 @@
 import type { Lang, Type, Unit } from '../contract.ts';
 import { functionGiven, givenRust, placeSubject } from './callback_arguments.ts';
 import { type Cycle, type CycleHost, cycles, holdsCycle } from './cycles.ts';
-import { type CaseField, caseFields, caseRead, caseStruct, caseType, UNIT_CASE_ALLOW, type Variant, absentInits, type Arg, argType, type CallbackUnit, callStruct, type ErrorUnit, keepsAny, lentCallbacks, usesNative, machineFunction, ownerRecognizedUnits, borrowedItem, boxed, caseLeftOut, type Fn, keptModel, leftOut, rustField, keptFunctionType, langName, type Model, narrowed, narrows, recordFn, recordInit, recordLocal, rustType, traitParam, tupleIn, tupleOut, Unsupported } from './model.ts';
+import { conversionsOf, type CaseField, caseFields, caseRead, caseStruct, caseType, UNIT_CASE_ALLOW, type Variant, absentInits, type Arg, argType, type CallbackUnit, callStruct, type ErrorUnit, keepsAny, lentCallbacks, usesNative, machineFunction, ownerRecognizedUnits, borrowedItem, boxed, caseLeftOut, type Fn, keptModel, leftOut, rustField, keptFunctionType, langName, type Model, narrowed, narrows, recordFn, recordInit, recordLocal, rustType, traitParam, tupleIn, tupleOut, Unsupported } from './model.ts';
 import { closure, optionRef, rustString } from './text.ts';
 
 // T-1: the input conversion of a scalar, by the helper of its name in the crate; overrides gives the helpers of a
@@ -241,6 +241,21 @@ ${reach(m, mutable)}
         ${lentCallbacks(model).includes(cb) ? cb.unit.core ?? '' : struct}::${rustField(m.member.name)}(&${mutable}borrowed${passed === '' ? '' : `, ${passed}`})
     }`;
   }).join('\n');
+}
+
+// B2.489 (GN-7c): the members with a conversion table, and the failure of the core that their functions take.
+export function convertingFns(model: Model): { fns: Fn[]; failure: string } {
+  return { fns: [...model.functions, ...model.objects.flatMap((o) => o.members)].filter((fn) => conversionsOf(model, fn).length > 0), failure: `binding_core::Failure<${model.coreError ?? '()'}>` };
+}
+
+// B2.489 (GN-7c): the arms of the match of the kinds of a conversion in node and wasm: the class of the row, after the
+// classes of the categories for an error unit, its kind, and the members of its forwarded properties.
+export function convertedArms(model: Model, c: ReturnType<typeof conversionsOf>[number], lang: 'node' | 'wasm'): string[] {
+  return c.rows.flatMap((row) => {
+    const target = row.kind.unit === undefined ? model.classes.findIndex((k) => k.category === row.kind.category) : model.classes.length + model.errorUnits.indexOf(row.kind.unit);
+    const properties = row.properties.map(({ property }) => rustString(langName(lang, property.member.name, 'variable')));
+    return row.kinds.map((kind) => `            ${rustString(kind)} => Some((${target}, ${rustString(kind)}, &[${properties.join(', ')}])),`);
+  });
 }
 
 // U-3: the names of a callback unit in the crate: its Rust name, its struct and its class in the language. GN-6s: a

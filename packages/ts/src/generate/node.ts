@@ -13,7 +13,7 @@ import { addonName, NODE_PLATFORM_JS } from './packages.ts';
 import { nodeTests } from './tests_node.ts';
 import { type Cycle, type CycleHost, cycleLeaf, cycleOf, cycles, cycleUnitRust, holdsCycle } from './cycles.ts';
 import { raisesAssertions } from './raises.ts';
-import { type FunctionType, JS_CONTAINERS, callbackNames, argIn, recordParamLines, recognizedClassIndex, callbackSignature, callbackImpl, holdsNative, recognizing, keptMethods, passes, passesAny, functionClosureHead, containerIn, containerOut, fieldInit, iterateItems, keptFunctionIn, type RecordForm, type VariantForm, recordFns, recordParts, resultCycles, variantFns, variantParts, scalarIn, scalarOut } from './bindings_shared.ts';
+import { type FunctionType, JS_CONTAINERS, callbackNames, convertingFns, convertedArms, argIn, recordParamLines, recognizedClassIndex, callbackSignature, callbackImpl, holdsNative, recognizing, keptMethods, passes, passesAny, functionClosureHead, containerIn, containerOut, fieldInit, iterateItems, keptFunctionIn, type RecordForm, type VariantForm, recordFns, recordParts, resultCycles, variantFns, variantParts, scalarIn, scalarOut } from './bindings_shared.ts';
 import { type Files, header, jsString, rustString, closure, optionRef, withUsedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
 
 const ROOT = 'packages/ts/generated';
@@ -1294,19 +1294,12 @@ const failedFn = (model: Model, fn: Fn): string => (conversionsOf(model, fn).len
 // conversion of the member, and the conversion itself, which runs where the failure is thrown: the one place that
 // holds the environment and the pending exception.
 function convertedRust(model: Model): string {
-  const fns = [...model.functions, ...model.objects.flatMap((o) => o.members)].filter((fn) => conversionsOf(model, fn).length > 0);
+  const { fns, failure } = convertingFns(model);
   if (fns.length === 0) return '';
-  const failure = `binding_core::Failure<${model.coreError ?? '()'}>`;
-  const unitIndex = (unit: ErrorUnit): number => model.classes.length + model.errorUnits.indexOf(unit);
-  const classIndex = (category: string): number => model.classes.findIndex((c) => c.category === category);
   const tables = fns.map((fn) => {
     const lookups = conversionsOf(model, fn).map((c) => {
       const base = convertedClassBase(model, c.library, 'node');
-      const arms = c.rows.flatMap((row) => {
-        const target = row.kind.unit === undefined ? classIndex(row.kind.category) : unitIndex(row.kind.unit);
-        const properties = row.properties.map(({ property }) => rustString(langName('node', property.member.name, 'variable')));
-        return row.kinds.map((kind) => `            ${rustString(kind)} => Some((${target}, ${rustString(kind)}, &[${properties.join(', ')}])),`);
-      });
+      const arms = convertedArms(model, c, 'node');
       return `    if let Some(error) = converted_from(env_, value, ${base}..${base + ownerErrorClasses(c.owner, 'node').length}, |kind| match kind {
 ${arms.join('\n')}
             _ => None,

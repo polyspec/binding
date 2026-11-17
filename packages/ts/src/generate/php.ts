@@ -12,7 +12,7 @@ import { phpCaseTests } from './samples.ts';
 import { phpTests } from './tests_php.ts';
 import { type Cycle, type CycleHost, cycleLeaf, cycleOf, cycles, cycleUnitRust, holdsCycle } from './cycles.ts';
 import { raisesAssertions } from './raises.ts';
-import { type FunctionType, callbackNames, callbackImpl, holdsNative, recognizing, keptMethods, passes, functionClosureHead, containerIn, containerOut, fieldInit, iterateItems, keptFunctionIn, plainCycleHost, resultCycles, scalarIn, scalarOut } from './bindings_shared.ts';
+import { type FunctionType, callbackNames, convertingFns, callbackImpl, holdsNative, recognizing, keptMethods, passes, functionClosureHead, containerIn, containerOut, fieldInit, iterateItems, keptFunctionIn, plainCycleHost, resultCycles, scalarIn, scalarOut } from './bindings_shared.ts';
 import { type Files, header, phpText, rustString, closure, optionRef, withUsedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
 
 const ROOT = 'packages/php-ext/generated';
@@ -1399,9 +1399,8 @@ ext_php_rs::zend_fastcall! {
 // another library's package: the row of its kind gives the class, and the message, the status, the errno and the
 // forwarded properties are read from the exception, which is the previous of the converted one.
 function convertedRust(model: Model): string {
-  const fns = [...model.functions, ...model.objects.flatMap((o) => o.members)].filter((fn) => conversionsOf(model, fn).length > 0);
+  const { fns, failure } = convertingFns(model);
   if (fns.length === 0) return '';
-  const failure = `binding_core::Failure<${model.coreError ?? '()'}>`;
   const unitIndex = (unit: ErrorUnit): number => model.classes.length + model.errorUnits.indexOf(unit);
   const classIndex = (category: string): number => model.classes.findIndex((c) => c.category === category);
   const stored = (name: Name): string => `polyspec_${langName('php', name, 'variable')}`;
