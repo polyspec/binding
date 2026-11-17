@@ -62,9 +62,13 @@ function functionIn(model: Model, type: { parameters: Type[]; returns: Type; asy
   // GN-6z: napi has no FnArgs of no arguments; a function without arguments takes (), which it calls with none.
   const argsType = type.parameters.length === 0 ? '()' : `FnArgs<(${type.parameters.map(() => "Unknown<'_>").join(', ')}${type.parameters.length === 1 ? ',' : ''})>`;
   const returned = type.returns === 'none' ? "let _returned: Unknown<'_> = returned;\n                    Ok(())" : `${convertIn(model, type.returns, 'returned', subject.startsWith('"') ? `${subject.slice(0, -1)} returns"` : '"the function returns"')}.map_err(Thrown::Binding)`;
-  return `kept_function_in(env_, ${value}, ${subject}, ${givenRust(functionGiven(type))}).map(|native| -> ${rustType(model, keptFunctionType(type))} {
+  // B2.531: the kept function lives for static, so a subject that is not a literal, such as the borrowed entry_ of an
+  // entry of a map (B2.475), is copied into it.
+  const held = subject.startsWith('"') ? '' : `\n            let subject_ = String::from(${subject});`;
+  const named = subject.startsWith('"') ? subject : '&subject_';
+  return `kept_function_in(env_, ${value}, ${subject}, ${givenRust(functionGiven(type))}).map(|native| -> ${rustType(model, keptFunctionType(type))} {${held}
             Box::new(move |${params.join(', ')}| -> Result<${result}, binding_core::Failure<${model.coreError ?? '()'}>> {
-                let env_ = match native_env(&native, ${subject}) {
+                let env_ = match native_env(&native, ${named}) {
                     Ok(env_) => env_,
                     Err(error) => return Err(thrown_elsewhere(error)),
                 };

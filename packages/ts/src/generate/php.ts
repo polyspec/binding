@@ -107,9 +107,13 @@ function functionIn(model: Model, type: { parameters: Type[]; returns: Type; asy
   const params = type.parameters.map((p, i) => `${names[i] ?? ''}: ${traitParam(model, p)}`);
   const outs = type.parameters.map((p, i) => `                    let arg${i}: Zval = ${convertOut(model, p, names[i] ?? '')}.map_err(Thrown::Binding)?;`);
   const returned = type.returns === 'none' ? 'let _returned: Zval = returned;\n                    Ok(())' : `${convertIn(model, type.returns, '&returned', subject.startsWith('"') ? `${subject.slice(0, -1)} returns"` : '"the function returns"').replace(/\?$/, '')}.map_err(Thrown::Binding)`;
-  return `kept_function_in(${value}, ${subject}, ${givenRust(functionGiven(type))}).map(|native| -> ${rustType(model, keptFunctionType(type))} {
+  // B2.531: the kept function lives for static, so a subject that is not a literal, such as the borrowed entry_ of an
+  // entry of a map (B2.475), is copied into it.
+  const held = subject.startsWith('"') ? '' : `\n            let subject_ = String::from(${subject});`;
+  const named = subject.startsWith('"') ? subject : '&subject_';
+  return `kept_function_in(${value}, ${subject}, ${givenRust(functionGiven(type))}).map(|native| -> ${rustType(model, keptFunctionType(type))} {${held}
             Box::new(move |${params.join(', ')}| -> Result<${result}, binding_core::Failure<${model.coreError ?? '()'}>> {
-                if let Err(error) = native_thread(&native, ${subject}) {
+                if let Err(error) = native_thread(&native, ${named}) {
                     return Err(thrown_elsewhere(error));
                 }
                 let call = || -> Result<${result}, Thrown> {
