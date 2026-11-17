@@ -13056,6 +13056,36 @@ test('B2.363: the check of this tree gives the whole copy of each consumer contr
   }
 });
 
+test('B2.497: the Go host describes an instance of a class with core_type that a Go in row of a value alias names as node 11 with the kind of the row, in the contracts of orm and json (GN-6af, GN-15c)', () => {
+  const copy = (name: string): WholeConsumer => {
+    const found = WHOLE_CONSUMERS.find((c) => c.name === name);
+    assert.ok(found !== undefined, name);
+    return found;
+  };
+  const goText = (name: string, path: string): string => {
+    const text = wholeConsumerTarget(name, wholeConsumer(copy(name)), 'go').get(path);
+    assert.equal(typeof text, 'string', `${name} ${path}`);
+    return text as string;
+  };
+  // orm: the row {"go": "integer_value", "cases": [{"kind": "int", "read": "integer_value.value"}]} of orm_value. The
+  // package of the class gives package binding the kind of the row (Int, 2) and its property, whose result the question
+  // read describes again.
+  const orm = goText('orm', 'packages/go/zz_generated_orm.go');
+  assert.match(orm, /binding\.ReadValues\(func\(value any\) \(byte, func\(\) \(any, error\), bool\) \{\s*switch found := value\.\(type\) \{\s*case \*IntegerValue:\s*if found == nil \{\s*return 0, nil, false\s*\}\s*return 2, func\(\) \(any, error\) \{ return found\.Value\(\) \}, true/);
+  const ormBinding = goText('orm', 'packages/go/internal/binding/zz_generated_binding.go');
+  assert.match(ormBinding, /func ReadValues\(read func\(value any\) \(byte, func\(\) \(any, error\), bool\)\)/);
+  assert.match(ormBinding, /for _, read := range readValues \{\s*if kind, content, ok := read\(found\); ok \{\s*c\.describeKept\(enc, kind, found, content\)/);
+  // json: the row of value names the class itself, so it is the in row of a value class (GN-6x), which no value alias of
+  // json holds; a consumer reads it by value.kind with one case each (orm's describeClass), and json's own Go passes a
+  // *Value by its handle.
+  assert.doesNotMatch(goText('json', 'packages/go/zz_generated_json.go'), /binding\.ReadValues/);
+  for (const [is, kind, read] of [['object', 9, 'Members'], ['array', 8, 'Items'], ['number', 5, 'NumberLiteral'], ['boolean', 1, 'BooleanValue']] as const) {
+    assert.match(ormBinding, new RegExp(`case "${is}":\\s*c\\.describeValue\\(enc, ${kind}, func\\(\\) \\(any, error\\) \\{ return found\\.${read}\\(\\) \\}, nil\\)`));
+  }
+  assert.match(ormBinding, /case "string":\s*c\.describeValue\(enc, 6, func\(\) \(any, error\) \{ return found\.StringText\(\) \}, func\(\) \(any, error\) \{ return found\.StringUnits\(\) \}\)/);
+  assert.match(ormBinding, /case "null":\s*c\.describeValue\(enc, 0, nil, nil\)/);
+});
+
 test('B2.418: every name that a generated Rust file imports is written bare in that file, in every target of every contract (GN-4e)', () => {
   const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/${path}`, import.meta.url), 'utf8'));
   const repo = (name: string, deps: string[] = []): Inputs => ({
