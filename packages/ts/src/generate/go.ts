@@ -2109,7 +2109,15 @@ export function goMakerTest(model: Model): string | undefined {
   const scope: GoScope = { model, module: '', imports: new Set() };
   const tests = goMade(model).flatMap(({ name, unit, category }) => {
     const kind = classKinds(model, unit ?? (category as Category))[0];
-    if (kind === undefined) return [];
+    const refused = `	if _, err := Make${name}("GN-7a: no kind", "GN-7a", nil, nil); err == nil {
+		t.Fatalf("GN-7a: Make${name} makes a kind that is no kind of it")
+	}
+}
+`;
+    // A type without a kind, whose maker refuses every kind, is tested by the refusal alone.
+    if (kind === undefined) return [`
+func TestGN7aMake${name}(t *testing.T) {
+${refused}`];
     const properties = (unit === undefined ? [] : errorProperties(unit)).map(({ property }) => {
       const type = goType(scope, property.returns);
       return `, ${name}${goName(property.member.name)}(${type.startsWith('*') ? 'nil' : `*new(${type})`})`;
@@ -2120,11 +2128,7 @@ func TestGN7aMake${name}(t *testing.T) {
 	if err != nil || made.Kind() != ${goString(kind)} {
 		t.Fatalf("GN-7a: %#v, %v", made, err)
 	}
-	if _, err := Make${name}("GN-7a: no kind", "GN-7a", nil, nil); err == nil {
-		t.Fatalf("GN-7a: Make${name} makes a kind that is no kind of it")
-	}
-}
-`];
+${refused}`];
   });
   if (tests.length === 0) return undefined;
   return `${goHeader()}
