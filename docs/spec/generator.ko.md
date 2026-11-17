@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 077a9f858c623ec552c049ebcc8665b3f82ba4656bcc2da85e064390712fdf17 -->
+<!-- source-sha256: f578374d36624584b81893d568c48da3ebadd6e16ca32561b40f5d4dc40e27a7 -->
 # 생성기
 
 [English](generator.md)
@@ -177,7 +177,7 @@
   Cargo를 어디서 어떻게 시작하느냐에 따라 다르게 링크된다. build script는 host에서 돌므로 대상의 OS는 `cfg!(target_os)`가
   아니라 `CARGO_CFG_TARGET_OS`다. 그 crate의 Rust 시험 실행 파일은 로드된 확장만 가진 PHP 기호가 필요하므로, 생성 시험은
   PHP에서 돈다.
-- **GN-3i** 빌드의 PHP는 PHP 바인딩 crate의 입력이고, ext-php-rs가 다른 PHP로 빌드된 빌드는 실패한다(B2.470). 그 crate의
+- **GN-3j** 빌드의 PHP는 PHP 바인딩 crate의 입력이고, ext-php-rs가 다른 PHP로 빌드된 빌드는 실패한다(B2.470). 그 crate의
   `build.rs`는 ext-php-rs의 build script가 찾는 대로 `php`와 `php-config`를 찾고(`PHP`나 `PHP_CONFIG`가 이름하는 경로, 없으면
   `PATH`에서 그 이름의 첫 파일), 두 파일과 자신에 `cargo:rerun-if-changed`를, `PHP`, `PHP_CONFIG`, `PATH`,
   `POLYSPEC_PHP_API`에 `cargo:rerun-if-env-changed`를 내고, `php -n -i`의 `PHP Extension`(module API), `Thread Safety`,
@@ -196,7 +196,13 @@
   변수가 맡는다. 매 빌드마다 도는 스크립트(없는 파일의 `rerun-if-changed`)는 변수 없이 모든 변경을 보지만, Cargo는
   build script가 돌 때마다 그 crate를 다시 컴파일하므로 매 빌드가 확장을 컴파일하게 된다. 손으로 하는 `cargo build`의
   입력은 그 두 파일과 ext-php-rs의 세 변수다. release recipe는 PHP minor와 빌드마다 자기 target 디렉터리에서 빌드하므로
-  (GN-19d) 낡은 ext-php-rs를 만나지 않는다.
+  (GN-19d) 낡은 ext-php-rs를 만나지 않는다. 이 확인이 잡지 못하는 경우가 하나 있다. wrapper와 세 변수는 그대로이고
+  wrapper 뒤의 링크만 마지막 빌드보다 오래된 파일로 옮겨 간 경우로, Cargo의 시각 비교는 이것을 바뀌지 않은 것으로
+  읽는다. `POLYSPEC_PHP_API`를 주는 recipe는 이 경우를 잡는다. 검증하지 않은 것: 실제 ext-php-rs로 PHP가 한 minor에서
+  다른 minor로 바뀌는 실행. 스크립트는 ext-php-rs와 PHP의 대역을 둔 crate에서 실행했고, 단언은 끝에서 끝까지 확인의
+  lint에서 실제 ext-php-rs의 상수에 대해 컴파일된다. 끝에서 끝까지 확인에는 이 단계가 없다. 그런 단계에는 한 job에서 한
+  경로 뒤에 놓인 PHP minor 둘이 필요하고(`PHP`의 값이 바뀌면 ext-php-rs의 build script가 스스로 다시 돈다), ext-php-rs를 한
+  번 더 빌드해야 한다.
 - **GN-3e** `scaffold`가 쓰는 manifest는 다른 polyspec 라이브러리(T-3)를 코어의 `polyspec-<library>` 의존 줄의 꼴대로 적는다.
   manifest가 적는 라이브러리는 생성된 코드가 그 타입을 이름하는 라이브러리다. 곧 계약이 unit과 types에서 이름하는 라이브러리,
   `errors.kinds`의 행이 그 오류를 그대로 전달하는 라이브러리(그 행의 `library`, E-1b (a)), 계약이 다른 라이브러리의 callback

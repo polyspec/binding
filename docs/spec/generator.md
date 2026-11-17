@@ -219,7 +219,7 @@ the design ids are those of the binding design.
   it, so the same tree would link differently by where and how Cargo starts; a build script runs on the host, so the OS
   of the target is `CARGO_CFG_TARGET_OS` and not `cfg!(target_os)`. A Rust test executable of the crate would need the
   symbols of PHP, which only the loaded extension has, so the generated tests run in PHP.
-- **GN-3i** The PHP of the build is an input of the PHP binding crate, and a build whose ext-php-rs is built for another
+- **GN-3j** The PHP of the build is an input of the PHP binding crate, and a build whose ext-php-rs is built for another
   PHP fails (B2.470). The `build.rs` of the crate finds `php` and `php-config` as the build script of ext-php-rs does
   (the path that `PHP` or `PHP_CONFIG` names, or the first file of that name in `PATH`), emits
   `cargo:rerun-if-changed` for both files and for itself and `cargo:rerun-if-env-changed` for `PHP`, `PHP_CONFIG`,
@@ -242,6 +242,13 @@ the design ids are those of the binding design.
   variable, and Cargo compiles the crate again after each run of its build script, so every build would compile the
   extension. A plain `cargo build` has the two files and the three variables of ext-php-rs as its inputs. The release
   recipe builds each PHP minor and build in a target directory of its own (GN-19d), so it meets no stale ext-php-rs.
+  The check does not catch one case: the wrapper and the three variables stay as they were and only the link behind
+  the wrapper moves to a file older than the last build, which the time comparison of Cargo reads as unchanged; a
+  recipe that gives `POLYSPEC_PHP_API` catches it. Not verified: a run with the real ext-php-rs in which PHP changes
+  from one minor to another. The script was run in a crate with a stand-in for ext-php-rs and for PHP, and the
+  assertion compiles against the constants of the real ext-php-rs in the lint of the end-to-end check. The end-to-end
+  check has no step for it: such a step needs two PHP minors in one job behind one path, since a changed value of
+  `PHP` runs the build script of ext-php-rs again by itself, and a second build of ext-php-rs.
 - **GN-3e** A manifest that `scaffold` writes names another polyspec library (T-3) in the form of the dependency line of
   the core on `polyspec-<library>`. The libraries that the manifests name are the libraries whose types the generated
   code names: each library that the contract names in its units and its types, each library whose error a row of

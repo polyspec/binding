@@ -71,9 +71,9 @@ include!(concat!(env!("CARGO_MANIFEST_DIR"), "/generated/lib.rs"));
 ${after}`;
 }
 
-// GN-3i: the line of the entry of the PHP extension crate that includes the comparison that its build script writes.
+// GN-3j: the line of the entry of the PHP extension crate that includes the comparison that its build script writes.
 const PHP_BUILD_CHECK = `
-// GN-3i: the build script writes this file: it fails the build when the ext-php-rs of the target directory is built
+// GN-3j: the build script writes this file: it fails the build when the ext-php-rs of the target directory is built
 // for another PHP than the PHP of this build.
 include!(concat!(env!("OUT_DIR"), "/php_build.rs"));
 `;
@@ -595,7 +595,7 @@ fn main() {
 // which RUSTFLAGS or rustflags of .cargo/config.toml would hide; and a build script is read wherever Cargo is started,
 // which .cargo/config.toml is not. The OS is CARGO_CFG_TARGET_OS, the target's, because a build script runs on the
 // host; without it the script fails (P-3).
-// GN-3i, B2.470: the script also names the PHP of the build as an input of this crate and compares it with the PHP
+// GN-3j, B2.470: the script also names the PHP of the build as an input of this crate and compares it with the PHP
 // that ext-php-rs is built for. Cargo runs the build script of ext-php-rs again only when the value of PHP, PHP_CONFIG
 // or PATH changes, so a PHP that changes behind one path leaves its bindings as they were, and no crate can make
 // Cargo build a dependency again. The script therefore runs again when the file of php or of php-config is newer or
@@ -606,7 +606,7 @@ const PHP_BUILD = `${header('//')}
 // BD-9: PHP resolves the symbols of an extension when it loads it, so on macOS the linker
 // leaves them undefined, for the cdylib of this crate alone. The target OS is the one that
 // Cargo gives the build script, not the OS of the host.
-// GN-3i: the PHP of the build is an input of this crate. Cargo does not build ext-php-rs
+// GN-3j: the PHP of the build is an input of this crate. Cargo does not build ext-php-rs
 // again when the PHP behind one path changes, so the script compares the PHP that
 // ext-php-rs is built for with the PHP of this build, and the build fails when they differ.
 
@@ -615,7 +615,7 @@ use std::process::Command;
 
 const TARGET_OS: &str = "CARGO_CFG_TARGET_OS";
 
-/// GN-3i: the executable that the build script of ext-php-rs runs: the path that the
+/// GN-3j: the executable that the build script of ext-php-rs runs: the path that the
 /// variable names, or the first file of that name in PATH.
 fn tool(variable: &str, name: &str) -> Result<PathBuf, String> {
     if let Some(path) = std::env::var_os(variable) {
@@ -631,14 +631,14 @@ fn tool(variable: &str, name: &str) -> Result<PathBuf, String> {
     Err(format!("no {name} in PATH, and {variable} names none"))
 }
 
-/// GN-3i: the value of the line \`<name> => <value>\` of \`php -n -i\`.
+/// GN-3j: the value of the line \`<name> => <value>\` of \`php -n -i\`.
 fn line<'a>(info: &'a str, name: &str) -> Result<&'a str, String> {
     let prefix = format!("{name} => ");
     let found = info.lines().find_map(|line| line.strip_prefix(&prefix));
     found.ok_or_else(|| format!("php -n -i has no line {name}"))
 }
 
-/// GN-3i: the inputs that name the PHP of the build, and the comparison with the PHP that
+/// GN-3j: the inputs that name the PHP of the build, and the comparison with the PHP that
 /// ext-php-rs is built for, which the entry of the crate includes.
 fn php_build() -> Result<(), String> {
     for name in ["PHP", "PHP_CONFIG", "PATH", "POLYSPEC_PHP_API"] {
@@ -662,7 +662,7 @@ fn php_build() -> Result<(), String> {
     let zts = line(&info, "Thread Safety")? == "enabled";
     let debug = line(&info, "Debug Build")? == "yes";
     let message = format!(
-        "GN-3i: the ext-php-rs of this target directory is built for another PHP than {} (module API {api}, {}{}): run cargo clean -p ext-php-rs with the profile and the target of this build and build again, or build for each PHP in a target directory of its own",
+        "GN-3j: the ext-php-rs of this target directory is built for another PHP than {} (module API {api}, {}{}): run cargo clean -p ext-php-rs with the profile and the target of this build and build again, or build for each PHP in a target directory of its own",
         php.display(),
         if zts { "zts" } else { "nts" },
         if debug { ", debug" } else { "" },
