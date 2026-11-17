@@ -618,7 +618,6 @@ export function collectModel(
         // GN-6ae, CK-69: a method with machine gives the core a clone of the value of its instance.
         if (kind === 'method' && typeof member.core === 'object' && member.core.receiver !== '&self') throw new Unsupported(`${member.id}: a method with machine names the receiver &self (GN-6ae, CK-69)`);
         for (const p of member.parameters ?? []) {
-          if (p.default !== undefined) throw new Unsupported(`${member.id}.${p.name.join('_')}: a parameter with a default of a member with machine is not generated yet (GN-6ab)`);
           if (p.core !== undefined && p.core !== 'value') throw new Unsupported(`${member.id}.${p.name.join('_')}: a machine owns its arguments, so a class parameter of a member with machine takes the borrow value (GN-6ab)`);
         }
       }

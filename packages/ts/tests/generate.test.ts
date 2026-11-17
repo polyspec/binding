@@ -7936,6 +7936,60 @@ test('Node makes a closure of a function that the machine owns, holds its value 
   assert.doesNotMatch(plain, /PASSED|Thrown::Held|fn boxed|outcome_of/);
 });
 
+// B2.486 (orm, db.transaction): a member with machine takes a function and then an options record with the default
+// {empty: "object"}, whose every field has a default.
+test('B2.486: a member with machine takes a parameter with a default, which the entry of each target leaves out as None (GN-6ab, GN-6i)', () => {
+  const optioned = (c: any): void => {
+    c.units.push({
+      id: 'transaction_options', name: ['transaction', 'options'], module: '', kind: 'record', visibility: 'public', origin: 'generated', core_type: 'polyspec_sample::TransactionOptions',
+      fields: [
+        { name: ['retry'], type: { optional: 'uint' }, default: { literal: null } },
+        { name: ['label'], type: 'text', default: { literal: 'plain' }, default_core: 'polyspec_sample::LABEL' },
+      ],
+    });
+    member(c, 'store.transaction').parameters.push({ name: ['options'], type: { unit: 'transaction_options' }, default: { empty: 'object' } });
+    member(c, 'scope.nested').parameters.push({ name: ['label'], type: 'text', default: { literal: 'plain' }, default_core: 'polyspec_sample::LABEL' });
+  };
+  // The machine owns its arguments, so it takes the record, and the Option of a parameter with a default, by value.
+  const record = /let options: polyspec_sample::TransactionOptions = polyspec_sample::TransactionOptions \{ retry, label \};/;
+  const taken = /polyspec_sample::Store::transaction\(Clone::clone\(receiver\), work, options\)/;
+  const nested = /polyspec_sample::Scope::nested\(Clone::clone\(receiver\), work, label\)/;
+  const node = scopedSample(['node'], optioned);
+  const wasm = scopedSample(['wasm'], optioned);
+  for (const [files, dir] of [[node, 'packages/ts/generated'], [wasm, 'packages/ts/wasm/generated']] as const) {
+    // Node and WASM: the options record is a trailing argument that may be missing or undefined, whose fields are then
+    // each left out (GN-6i), as for a member without a machine.
+    const lib = text(files, `${dir}/lib.rs`);
+    assert.match(lib, /let retry: Option<u64> = default_in\(&?member_or_undefined\(&?options, "retry", "options"\)\?, \|value\| optional_in\(value, \|value\| uint_in\(value, "retry"\)\)\)\.map\(Option::flatten\)\?;/);
+    assert.match(lib, /let label: Option<String> = default_in\(&?member_or_undefined\(&?options, "label", "options"\)\?, \|value\| text_in\(value, "label"\)\)\?;/);
+    assert.match(lib, record);
+    assert.match(lib, new RegExp(String.raw`let mut machine = binding_core::machine::Driving::new\(${taken.source}\);`));
+    assert.match(lib, /let label: Option<String> = default_in\(&?label, \|value\| text_in\(value, "label"\)\)\?;/);
+    assert.match(lib, new RegExp(String.raw`let mut machine = binding_core::machine::Driving::new\(${nested.source}\);`));
+    const dts = text(files, `${dir}/index.d.ts`);
+    assert.match(dts, /\n {2}transaction<T>\(work: \(arg0: Scope\) => T, options\?: TransactionOptions\): Promise<Awaited<T>>;\n/);
+    assert.match(dts, /\n {2}nested<T>\(work: \(arg0: Scope\) => T, label\?: string\): Promise<Awaited<T>>;\n/);
+    // The generated tests: a case that gives no options calls the member without them, and the tests of the fields
+    // give the record. No test compares the call without a field with the call with its default, because the member
+    // takes a function (GN-13a).
+    const tests = text(files, `${dir}/tests/generated.test.mjs`);
+    assert.match(tests, /test\('GN-13e: Store\.transaction the_entries_of_a_function_that_returns_are_committed', async \(\) => \{\n[^\n]*\n[^\n]*await receiver\.transaction\(\(arg0\) => \{[^\n]*return 'done'; \}\)\)\)/);
+    assert.match(tests, /test\('GN-12a: Store\.transaction refuses a retry of another type than uint'[^\n]*\n[^\n]*\n[^\n]*\.transaction\(\(arg0\) => \{ return null; \}, \{ retry: bad, label: 'a' \}\)/);
+    assert.match(tests, /test\('G-7: Store\.transaction counts and names its arguments'/);
+    assert.doesNotMatch(tests, /U-2: Store\.transaction without/);
+  }
+  // The JavaScript entry takes one or two arguments and gives the addon both places, the second undefined when it is
+  // left out.
+  assert.match(text(node, 'packages/ts/generated/index.cjs'), /async \['transaction'\]\(arg0, arg1\) \{\n\s+const args = arguments;\n\s+if \(args\.length < 1 \|\| args\.length > 2\) \{\n\s+throw new TypeError\(`Store\.transaction\(\) takes 1 to 2 arguments, \$\{args\.length\} given`\);\n\s+\}\n\s+checkRecord\('Store\.transaction\(\)', 'options', args\[1\], \['retry', 'label'\], \[\]\);\n\s+return drive\(Reflect\.apply\(original, this, \[args\[0\], args\[1\]\]\)\);/);
+  assert.match(text(wasm, 'packages/ts/wasm/generated/index.mjs'), /async transaction\(arg0, arg1\) \{\n\s+const args = arguments;\n\s+if \(args\.length < 1 \|\| args\.length > 2\) \{\n\s+throw new TypeError\(`Store\.transaction\(\) takes 1 to 2 arguments, \$\{args\.length\} given`\);\n\s+\}\n\s+checkRecord\('Store\.transaction\(\)', 'options', args\[1\], \['retry', 'label'\], \[\]\);\n\s+return drive\(SampleInternalError, enter\(SampleInternalError, \(\) => glue\.__Store_transaction\(this\.#handle, args\[0\], args\[1\]\)\)\);/);
+  // Python, PHP and Go drive the machine with the same owned arguments.
+  for (const [target, path] of [['python', 'packages/python/generated/lib.rs'], ['php', 'packages/php-ext/generated/lib.rs'], ['go', 'packages/go/internal/ffi/generated/lib.rs']] as const) {
+    const lib = text(scopedSample([target], optioned), path);
+    assert.match(lib, new RegExp(String.raw`binding_core::machine::drive\(&mut ${taken.source}, `));
+    assert.match(lib, new RegExp(String.raw`binding_core::machine::drive\(&mut ${nested.source}, `));
+  }
+});
+
 // GN-6ae: the function drive of a generated JavaScript entry, run against a machine that the test plays: each advance
 // records the outcome that it got and gives the next step of the script.
 function driveOf(entry: string, pattern: RegExp): (...args: unknown[]) => Promise<unknown> {
