@@ -8,7 +8,7 @@ import { type Model, type ValueAlias, langName, rustField, aliasFn, aliasFailure
 import { type ContainerMake, type Fill, type Walk, type WalkShape, NEXT_ENTRY, PUT_ENTRY, container, outArms, ownedNatives, readAsVariants, refuseForeignReads, walkRust } from './alias_shared.ts';
 import { type CaseTest, caseKey, phpFormless } from './samples.ts';
 import { rustString } from './text.ts';
-import { convertIn } from './php.ts';
+import { convertIn, foreignPhpClass } from './php.ts';
 import { classIn, classMakes, type ReadCase } from './value_class.ts';
 import { type Member, type Unit, variantPattern } from '../contract.ts';
 
@@ -141,9 +141,7 @@ ${fields.join('\n')}
 
 // GN-6x: the PHP name of a class of the owner of a value class of another repository.
 function ownerName(alias: ValueAlias, unit: Unit): string {
-  const namespace = (alias.owner?.packages['php'] as { namespace: string } | undefined)?.namespace ?? '';
-  const module = unit.module === '' ? '' : `\\${unit.module.split('/').map((part) => langName('php', [part], 'class')).join('\\')}`;
-  return `${namespace}${module}\\${langName('php', unit.name, 'class')}`;
+  return foreignPhpClass(alias.owner, alias.library ?? '', alias.unit, unit);
 }
 
 // GN-6x: the PHP conversions of a value class of another repository: an instance enters as HostValue::Value, which the

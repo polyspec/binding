@@ -267,7 +267,12 @@ the design ids are those of the binding design.
   value class has its Composer package in `require` beside its extension. A value alias of another library, which
   the core of its owner converts without a class of its extension, and a callback unit whose members recognize no
   error, which is called on the object that the caller gave, add no requirement. One function of the generator names
-  these kinds, and both the model that the PHP emitter reads and `scaffold` take them from it. Why: in crud-ui the
+  these kinds, and both the model that the PHP emitter reads and `scaffold` take them from it. The emitters of the
+  extension take the PHP name of a class of another library from one function, which refuses, by the name of the
+  library and of the unit, a unit of a kind that the first function does not know, and an owner that names no PHP
+  namespace; a map class of a value class and an error unit that a callback unit recognizes are named through that
+  value class or callback unit (B2.454). So a lookup of a class cannot be written without the requirement of its
+  extension, where before only a test that compares the two sets on the generated text stood between them. Why: in crud-ui the
   generator takes the callback unit `file_loader` of its validator, and its tests failed with
   `Class "Polyspec\CrudUi\Validator\Errors\ComposeLoadError" not found` until the generator loaded the validator
   extension (`BINDING_PHP_REQUIRES_generator = validator` of its Makefile), while the composer.json of the generator

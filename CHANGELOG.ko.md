@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 699ce6dd43430a158c26c1649796e61cf23f31107b84f9e89c0d47a0dd651c17 -->
+<!-- source-sha256: 7ca8b58191f97211abcce367405cd7abaddaf3e7a16b507f64fb7927b0b76590 -->
 <!-- source-sha256: cfa54c3f8f39682e72777a5567ac382242f1fe10dac5f69c2bc4369cda67435f -->
 <!-- source-sha256: 1ea3f2ff8f567bdef531a277708cacdaa3c87c9aa072ad3ac3094e32ca0caa31 -->
 <!-- source-sha256: b3a9882faef4af19b0b9af0b8d8b2d25f8d9ab9dfe71416a6a6cbd56741f7f26 -->
@@ -11,6 +11,7 @@
 
 ## Unreleased
 
+- PHP 확장의 emitter는 다른 라이브러리 class의 PHP 이름을 함수 하나, `packages/ts/src/generate/php.ts`의 `foreignPhpClass`에서 받고, 그 함수는 `composer.json`이 확장을 요구하지 않는 종류의 unit을 거부한다(`ownerClasses`, GN-3e, B2.454). T-3의 record, value class의 class와 map class(GN-6x), callback unit이 인식하는 error unit(GN-6s)이 각자 이름을 계산했고, 생성된 글이 이름하는 namespace와 요구를 비교하는 시험(B2.441) 하나만 요구 없는 조회를 막았다. `tests/e2e`의 모든 contract에서 생성된 확장은 바뀌지 않는다. 두 경우가 바뀐다. contract가 PHP namespace를 이름하지 않는 소유자는 이름으로 거부된다. 전에는 value class나 인식되는 error가 빈 namespace로 이름되었고 record는 문장 없이 생성기를 끝냈다. 그리고 이름에 밑줄이 있는 module의 value class의 class는 소유자의 확장이 등록하는 대로 이름된다(`FlatPlane`, P-2). 전에는 `Flat_plane`으로 이름되었다. 소비자가 할 일은 없다. 검증: `packages/ts`에서 `node --test --test-name-pattern=B2.454 tests/generate.test.ts`. 변경 전에는 그 함수가 없어서 실패했다.
 - none을 돌려주는 member의 결과는 규칙이 하나다(GN-13e, CK-22, B2.466). case가 그것을 적는 어느 자리에서나, 곧 case의 결과 키, `after`의 호출, function fixture의 step, callback fixture의 row에서 그것은 `null`이고, 생성된 시험은 거기서 값 없음을 요구한다(Node와 WASM에서는 `undefined`, Go는 호출만 실행한다). 그런 member의 `"result": null`을 적은 case는 `binding check`가 받아들이는데도 실패하는 시험을 받았고, 이제 통과하는 시험을 받는다. `binding check`는 이 자리들에서 `null`이 아닌 값을 거부한다. 전에는 `after`의 호출만 판정했다. 저장소가 할 일: none을 돌려주는 member의 결과에 `null`이 아닌 값을 적은 case는 `null`을 적거나 키를 생략한다.
 - 생성된 PHP 시험은 case의 가장 작은 int64인 -9223372036854775808을 contract 타입의 인자, 기대 결과, keyed map의 정수 key에서도 `\PHP_INT_MIN`으로 적는다. 전에는 값 alias의 값에서만 그렇게 적었다(B2.464). PHP는 그 literal을 float로 읽고, binding은 그것을 int64가 아니라고 거부했다.
 - `binding check --release`는 계약의 release recipe가 읽는 레포의 설정을 recipe의 reader 그대로 읽고 빠진 것을 하나씩 이름한다(CK-102, B2.471): target `php`는 `config/toolchain.json`의 `phpExtension.minors`와 `llvm.version`, target `go`는 Go module의 디렉터리를 이름하는 `packages.go`의 module path. 그리고 recipe `release-binding-check`는 계약의 release recipe가 읽는 Makefile의 변수(`BINDING_RUN`, `CARGO`, target에 따라 `UV`, `NPM`, `NODE`)를 모두 먼저 요구한다. session-store의 release는 검사를 통과한 뒤 tag 뒤의 `release-platform-assets`에서 `names no PHP minor of the extension in phpExtension.minors (GN-19a)`로 멈췄을 것이다. 이 버전으로 옮기는 레포가 할 일: target `php`가 있는 레포는 `config/toolchain.json`에 `phpExtension.minors`(예: `["8.4", "8.5"]`)와 `llvm.version`을 적는다. 뒤의 것은 recipe가 읽는 대로 `"llvm": {` 줄 아래 `"version": "<major>"` 줄에 적는다. Makefile이 recipe의 변수를 일부 goal에서만 정의하는 레포는 `release-binding-check`에서도 include 앞에 그것을 정의한다.

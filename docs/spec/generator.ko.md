@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 0d8cf37fd67a236067af1505b533d869f2f6673fbcaf8f0f7552fb2591429f2a -->
+<!-- source-sha256: 7d64641fdc44f5b7f3f0068c6f63846c41fd4d9327dd92cbcca1962d475aafac -->
 # 생성기
 
 [English](generator.md)
@@ -218,7 +218,11 @@
   recognize하는 callback unit은 그 오류 class와 category class를 읽는다(GN-6s). record나 값 class의 소유자는 확장 옆에
   Composer package도 `require`에 가진다. 다른 라이브러리의 값 alias는 소유자의 코어가 그 확장의 class 없이 변환하고, member가
   아무 오류도 recognize하지 않는 callback unit은 호출자가 준 객체에서 호출되므로, 둘 다 require를 더하지 않는다. 생성기의
-  함수 하나가 이 종류를 이름하고, PHP emitter가 읽는 model과 `scaffold`가 모두 거기서 가져온다. 이유: crud-ui에서 generator는 validator의
+  함수 하나가 이 종류를 이름하고, PHP emitter가 읽는 model과 `scaffold`가 모두 거기서 가져온다. 확장의 emitter는 다른
+  라이브러리 class의 PHP 이름을 함수 하나에서 받는다. 그 함수는 앞의 함수가 모르는 종류의 unit과 PHP namespace를 이름하지
+  않는 소유자를 라이브러리와 unit의 이름으로 거부한다. value class의 map class와 callback unit이 인식하는 error unit은 그
+  value class나 callback unit을 통해 이름한다(B2.454). 그래서 class를 찾는 코드는 그 확장의 요구 없이 쓸 수 없다. 전에는
+  생성된 글에서 두 집합을 비교하는 시험 하나만 그 사이에 있었다. 이유: crud-ui에서 generator는 validator의
   callback unit `file_loader`를 받고, 그 시험은 generator가 validator 확장을 로드할 때까지(Makefile의
   `BINDING_PHP_REQUIRES_generator = validator`) `Class "Polyspec\CrudUi\Validator\Errors\ComposeLoadError" not found`로
   실패했는데, generator의 composer.json은 자기 확장 말고는 아무 확장도 require하지 않았다(B2.441). 다른 라이브러리의 계약이 다른

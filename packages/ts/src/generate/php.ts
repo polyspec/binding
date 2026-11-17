@@ -1,6 +1,7 @@
 // The PHP binding (ext-php-rs 0.16): the extension crate, its stub and the generated PHPUnit tests (G-5).
 
-import { type Name, type Type, type Unit, variantPattern } from '../contract.ts';
+import { type Contract, type Name, type Type, type Unit, variantPattern } from '../contract.ts';
+import { ownerClasses } from './model.ts';
 import { convert } from '../names.ts';
 import { defaultAsserts, declaredValue } from './defaults.ts';
 import { absentInits, categoryClass,classKinds, DRIVEN, cancelsAny, cleanupAsserts, cleanupMade, cleanupWarning, drivenCall, waitsAsync, type Arg, type CallbackUnit, type Fn, type ErrorProperty, type ErrorUnit, errorProperties, type Model, isInternal, interfaceOf, implementorsOf, Unsupported, argType, leftOut, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, recordLocal, recordInit, rustIdent, rustType, rustVariant, unitOf, usesNative, takesFunction, keepsAny, keptCallbacks, keptModel, nativeRoundTrip, traitParam, keepsThrown, boxed, type Variant, type VariantCase, caseFields, caseRead, caseStruct, caseType, caseUnits, caseValue, caseWritten, implementsClause, UNIT_CASE_ALLOW, tupleIn, narrows, narrowed, tupleOut, propertyValue, errorMatched, recognizedFn, recognizedMatch, unitFn, libraryBlocks, machineFunction, countsThrown, takenCallbacks, lentCallbacks, convertsKept, callStruct , anchorCalls, lentRust} from './model.ts';
@@ -29,6 +30,21 @@ export function phpNamespace(layout: PhpLayout, module: string): string {
   if (module === '') return layout.namespace;
   const segments = module.split('/').map((s) => s.split('_').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(''));
   return [layout.namespace, ...segments].join('\\');
+}
+
+// GN-3e, B2.454: the PHP name of a class of another library that the extension finds by name in the extension of that
+// library. Every emitter of the extension takes such a name here and nowhere else. unit is the unit of the owner that
+// the type names, and it must be of a kind that ownerClasses knows, since composer.json requires the extension of the
+// owner by that function alone; named is the class to name, which is the unit itself or a class that belongs to it:
+// a map class of a value class (GN-6x) or an error unit that a member of a callback unit recognizes (GN-6s). A lookup
+// of another unit would name a class of an extension that composer.json does not require, so it is refused by name.
+export function foreignPhpClass(owner: Contract | undefined, library: string, unit: Unit, named: Unit = unit): string {
+  if (ownerClasses(unit) === undefined) {
+    throw new Error(`${library}.${unit.id}: the PHP extension looks for a class of ${library} through the unit ${unit.id}, of a kind for which composer.json requires no extension of ${library} (ownerClasses, GN-3e)`);
+  }
+  const namespace = (owner?.packages['php'] as { namespace?: string } | undefined)?.namespace;
+  if (namespace === undefined) throw new Unsupported(`${library}.${unit.id}: ${library} names no PHP namespace (packages.php.namespace), and the PHP extension finds its class by that name (GN-3e)`);
+  return `${phpNamespace({ namespace, extension: '' }, named.module)}\\${langName('php', named.name, 'class')}`;
 }
 
 const phpEnumType = (unit: Unit): string => `Php${langName('php', unit.name, 'class')}`;
@@ -617,8 +633,7 @@ function recordParts(model: Model, layout: PhpLayout, unit: Unit, index: number,
   const core = unit.core_type ?? '';
   const fields = unit.fields ?? [];
   const kids = mode === 'kids';
-  const owner = library === undefined ? layout : { ...layout, namespace: (model.foreign.get(library)?.packages['php'] as { namespace: string }).namespace };
-  const phpName = `${phpNamespace(owner, unit.module)}\\${langName('php', unit.name, 'class')}`;
+  const phpName = library === undefined ? `${phpNamespace(layout, unit.module)}\\${langName('php', unit.name, 'class')}` : foreignPhpClass(model.foreign.get(library), library, unit);
   // T-3: the class of another repository's record is registered by that repository's extension, found by its name.
   const entry = library === undefined ? `RECORDS[${index}].get().copied()` : `ClassEntry::try_find(${rustString(phpName)}).map(Class)`;
   const missing = library === undefined ? 'B-4: the record class is not registered' : `T-3: the class ${phpName} is not loaded`;
@@ -1103,9 +1118,9 @@ ${outs.join('\n')}
   const recognizedClasses = (m: (typeof cb.members)[number]): string => {
     if (cb.library === undefined) return `kind_of_recognized(exception, &[${(m.recognized?.units ?? []).map(classIndex).join(', ')}])`;
     const owner = model.foreign.get(cb.library);
-    const namespace = (owner?.packages['php'] as { namespace: string } | undefined)?.namespace ?? '';
+    const library = cb.library;
     const pairs = (m.recognized?.units ?? []).map((u) => {
-      const name = `${phpNamespace({ namespace, extension: '' }, u.unit.module)}\\${langName('php', u.unit.name, 'class')}`;
+      const name = foreignPhpClass(owner, library, cb.unit, u.unit);
       const category = owner?.errors.classes[u.category]?.['php'];
       if (category === undefined) throw new Unsupported(`${cb.library}.${m.member.id}: errors.classes.${u.category} of ${cb.library} names no PHP class (GN-6s)`);
       return `(${rustString(name)}, ${rustString(category)})`;

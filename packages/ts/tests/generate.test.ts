@@ -13,6 +13,7 @@ import { caseTestTargets, generate as generateTargets, isGoGenerated, type Input
 import { generateOnStack } from '../src/generate/stack.ts';
 import { checkContract } from '../src/index.ts';
 import { carriers, categoryClass } from '../src/generate/model.ts';
+import { foreignPhpClass } from '../src/generate/php.ts';
 import { CASE_JSON_STRING_GOLDENS, caseFilesOf, casePathOf, caseTextParts, fromJson } from '../src/generate/samples.ts';
 import { closure, featureItems, INTO_CORE, PARTS, jsString, phpText, pyString, usedHelpers, WIDEN } from '../src/generate/text.ts';
 import { categoryType, goString } from '../src/generate/go.ts';
@@ -2644,6 +2645,42 @@ test('B2.441: composer.json of the extension requires the extension of every oth
   assert.deepEqual(none.require, { php: '>=8.4' });
   // The extension of sample names no unit of another library, so it requires PHP alone.
   assert.deepEqual(JSON.parse(String(trackedPackages(consumerSample().foreign.get('sample'), '0.0.0').get('packages/php-ext/composer.json'))).require, { php: '>=8.4' });
+});
+
+// B2.454: the emitters of the PHP extension take the PHP name of a class of another library from one function, which
+// refuses a unit of a kind that ownerClasses does not know, so no lookup can be added without the requirement of
+// composer.json. B2.441 compares the two sets on the generated text; this is the guard at the place of the name.
+test('B2.454: the PHP name of a class of another library is refused for a unit that ownerClasses does not know (GN-3e)', () => {
+  const sample = consumerSample().foreign.get('sample');
+  const unitOf = (contract: any, id: string): any => contract.units.find((u: any) => u.id === id);
+  // A value alias is converted by the core of its owner, and a callback unit whose members recognize no error is
+  // called on the object of the caller: composer.json requires no extension for either, so a lookup is refused.
+  assert.throws(() => foreignPhpClass(sample, 'sample', unitOf(sample, 'data')), /^Error: sample\.data: the PHP extension looks for a class of sample through the unit data, of a kind for which composer\.json requires no extension of sample \(ownerClasses, GN-3e\)$/);
+  assert.throws(() => foreignPhpClass(sample, 'sample', unitOf(sample, 'source')), /^Error: sample\.source: [^\n]+\(ownerClasses, GN-3e\)$/);
+  // An error unit is named through the callback unit whose member recognizes it, and not by itself.
+  assert.throws(() => foreignPhpClass(sample, 'sample', unitOf(sample, 'refused_error')), /^Error: sample\.refused_error: /);
+  assert.equal(foreignPhpClass(sample, 'sample', unitOf(sample, 'lookup'), unitOf(sample, 'refused_error')), 'Polyspec\\Sample\\RefusedError');
+  // A record by itself, and a value class by itself and for its map class.
+  const points = plotSample().foreign.get('points');
+  assert.equal(foreignPhpClass(points, 'points', unitOf(points, 'point')), 'Polyspec\\Points\\Point');
+  const owner = valueClassSample().foreign.get('owner');
+  assert.equal(foreignPhpClass(owner, 'owner', unitOf(owner, 'value')), 'Polyspec\\Owner\\Value');
+  assert.equal(foreignPhpClass(owner, 'owner', unitOf(owner, 'value'), unitOf(owner, 'ordered_map')), 'Polyspec\\Owner\\OrderedMap');
+  assert.throws(() => foreignPhpClass(owner, 'owner', unitOf(owner, 'ordered_map')), /^Error: owner\.ordered_map: /);
+  // A class of a module is in the namespace of the module, as the extension of its owner registers it (P-2).
+  assert.equal(foreignPhpClass(points, 'points', { ...unitOf(points, 'point'), module: 'flat_plane/near' }), 'Polyspec\\Points\\FlatPlane\\Near\\Point');
+  // An owner without a PHP namespace has no class to find, which is a refusal of the generator.
+  assert.throws(() => foreignPhpClass({ ...points, packages: {} }, 'points', unitOf(points, 'point')), /points\.point: points names no PHP namespace \(packages\.php\.namespace\)/);
+  assert.throws(() => foreignPhpClass(undefined, 'points', unitOf(points, 'point')), /points names no PHP namespace/);
+  // The three emitters name what the function gives: the record of T-3, the classes of GN-6x and the pairs of GN-6s.
+  const lib = ({ contract, caseFiles, foreign }: { contract: any; caseFiles: Map<string, unknown>; foreign: Map<string, any> }): string =>
+    text(generate({ contract, version: '0.0.0', coreLib: `polyspec_${contract.library.replaceAll('-', '_')}`, caseFiles, foreign, targets: ['php'] }), 'packages/php-ext/generated/lib.rs');
+  assert.ok(lib(plotSample()).includes('ClassEntry::try_find("Polyspec\\\\Points\\\\Point").map(Class)'));
+  const valueClass = lib(valueClassSample());
+  assert.ok(valueClass.includes('ClassEntry::try_find("Polyspec\\\\Owner\\\\Value")'));
+  assert.ok(valueClass.includes('php_instance(value, "Polyspec\\\\Owner\\\\OrderedMap")'));
+  assert.ok(valueClass.includes('php_new("Polyspec\\\\Owner\\\\OrderedMap")'));
+  assert.ok(lib(consumerSample()).includes('kind_of_owner_recognized(exception, &[("Polyspec\\\\Sample\\\\RefusedError", "Polyspec\\\\Sample\\\\SampleValueError")])'));
 });
 
 test('CK-19 reads in the package.json of a host package each npm package that the generated code imports (GN-3b, GN-3e)', () => {
