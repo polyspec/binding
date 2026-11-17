@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: a34a246f5173465e9d7d78e425831680c5a5a9b8899660d316b86aa04a0dbb84 -->
+<!-- source-sha256: 0d4c1c63373343e26f7f8e6c89bb49d212806c0872405f7993107a700ac1d18b -->
 # 생성기
 
 [English](generator.md)
@@ -3326,7 +3326,10 @@
   `mise.lock`의 Go와 `goMusl`의 정확한 버전인 Alpine의 `gcc`와 `musl-dev`로(`docs/operations/dependencies.md`), 그
   proxy를 `GOPROXY`로 써서 소비자와 받은 모듈의 모든 패키지의 `go test -tags musl`을 실행하고, go가 linker의 것 같은 빌드 오류를 보고하는
   `go test -json`의 모든 `build-output` event의 출력을 찍으며(B2.416), 시험이 하나도 실행되지 않거나 하나라도 실패하면
-  실패한다. released form의 소비자가 없는 work 디렉터리(refusal fixture(GN-14k)의 것 같은)는 컨테이너가 시작하기 전에 그
+  실패한다. `make ci-e2e`가 주는 `REPO`가 있으면, 실패한 시험은 대신 GN-14n의 규칙으로 판정한다(`scripts/go-musl-judge.mts`):
+  시험 하나가 통과하고, 실패한 시험은 레포의 `expected-failures.json`이 `go`에 이름한 것들이며 각각 그 text를 가진다.
+  그 파일이 없는 레포는 실패한 시험이 없어야 한다. `tests/e2e/falsepass`의 musl 실행은 그것이 실패하도록 만든 시험을
+  실패하기 때문이다(B2.509). released form의 소비자가 없는 work 디렉터리(refusal fixture(GN-14k)의 것 같은)는 컨테이너가 시작하기 전에 그
   이름과 함께 실패한다(B2.417). 모듈은 소비자의 `go.sum`이 고정한 것이므로 Git은 쓰지 않는다. 컨테이너는
   `DOCKER_HOST`의 Docker가 있는 기계에서 돌고, 그 기계는 작업 디렉터리를 `WORK`에 가지며, 컨테이너 이름은
   `polyspec-`로 시작한다. 컨테이너인 이유: end-to-end 검사는 GNU C library의 기계에서 돌고, musl의 C 컴파일러가 링크하고

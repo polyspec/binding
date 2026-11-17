@@ -4050,7 +4050,10 @@ the design ids are those of the binding design.
   exact versions of `goMusl` (`docs/operations/dependencies.md`), it runs `go test -tags musl` of the consumer and of
   every package of the fetched modules with that proxy as `GOPROXY`, prints the output of every `build-output` event of
   `go test -json`, where go reports the error of a build such as one of the linker (B2.416), and fails unless a test
-  ran and none failed. A work directory without the consumer of a released form, such as the one of a refusal fixture
+  ran and none failed. With `REPO`, which `make ci-e2e` gives, the failed tests are judged by the rules of GN-14n
+  instead (`scripts/go-musl-judge.mts`): a test passed, and the failed tests are those that `expected-failures.json` of
+  the repository names for `go`, each with its text, or none when the repository has no such file, because the musl
+  run of `tests/e2e/falsepass` fails the test that it is built to fail (B2.509). A work directory without the consumer of a released form, such as the one of a refusal fixture
   (GN-14k), fails with its name before the container starts (B2.417). The
   modules are those that `go.sum` of the consumer pins, so no Git takes part. The container runs on the machine of
   the Docker of `DOCKER_HOST`, which holds the work directory at `WORK`, and has a name that starts with `polyspec-`.

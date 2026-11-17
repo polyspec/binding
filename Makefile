@@ -100,7 +100,7 @@ e2e-lint: ## Lint the generated crates of the repositories of tests/e2e with the
 # container there. It downloads the Go of mise.lock and the packages of Alpine of config/toolchain.json; ONLINE.
 .PHONY: go-musl-check
 go-musl-check: ## Run the consumer of the released Go module of a Linux e2e run on musl: WORK=<work directory on the machine of DOCKER_HOST>
-	$(ONLINE) sh scripts/go-musl.sh "$(WORK)" "$(CURDIR)/mise.lock" "$(CURDIR)/config/toolchain.json"
+	$(ONLINE) NODE="$(NODE)" sh scripts/go-musl.sh "$(WORK)" "$(CURDIR)/mise.lock" "$(CURDIR)/config/toolchain.json"$(if $(REPO), "$(abspath $(REPO))")
 
 # GN-14i: the compile check of the generated bindings of consumer repositories with the CLI and the binding_core of this
 # tree. DIRS names consumer checkouts or package directories inside one (packages/<component>); each committed tree is
@@ -246,7 +246,7 @@ ci-e2e: ## Run the e2e job of ci.yml: REPO=<repository of tests/e2e> [DEPS="<rep
 	$(MAKE) --no-print-directory e2e REPO=$(REPO) DEPS="$(DEPS)" WORK="$$work" || exit $$?; \
 	if [ -f "$(REPO)/refused.json" ]; then \
 	echo "ci-e2e: $(REPO) is a refusal fixture (refused.json), whose run makes no released form of a Go module, so go-musl-check does not run (GN-14k)"; \
-	else $(MAKE) --no-print-directory go-musl-check WORK="$$work"; fi
+	else $(MAKE) --no-print-directory go-musl-check WORK="$$work" REPO=$(REPO); fi
 
 # GN-14g, GN-15g: the job e2e-amd64 runs the job e2e of the sample on linux/amd64.
 ci-e2e-amd64: ## Run the e2e-amd64 job of ci.yml: the e2e job of tests/e2e/sample

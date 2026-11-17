@@ -16,15 +16,21 @@
 # build, such as one of the linker (B2.416), and fails unless a test ran and none failed. A work directory without
 # the consumer of a released form, such as that of a refusal fixture (GN-14k), fails before the container starts. The container has a
 # name that starts with polyspec- and is removed when it ends (docker run --rm), also on SIGINT and SIGTERM (HR-87).
+#
+# B2.509: with a fourth argument, the repository of the run, the container keeps the events of go test in the work
+# directory and scripts/go-musl-judge.mts (with the node of NODE) judges them by the rules of make e2e (GN-14n): the
+# failed tests must be those that expected-failures.json of tests/e2e/falsepass names, and a repository without that
+# file passes only when no test failed.
 set -eu
 
-if [ "$#" -ne 3 ] || [ -z "$1" ] || [ ! -f "$2" ] || [ ! -f "$3" ]; then
-  echo 'usage: make go-musl-check WORK=<work directory of a run of make e2e on Linux>' >&2
+if [ "$#" -lt 3 ] || [ "$#" -gt 4 ] || [ -z "$1" ] || [ ! -f "$2" ] || [ ! -f "$3" ] || { [ "$#" -eq 4 ] && [ ! -d "$4" ]; }; then
+  echo 'usage: make go-musl-check WORK=<work directory of a run of make e2e on Linux> [REPO=<repository of the run>]' >&2
   exit 2
 fi
 work=$1
 lock=$2
 toolchain=$3
+repo=${4:-}
 if [ ! -d "$work/go-release/consumer" ]; then
   echo "go-musl-check: $work holds no released form of a Go module (go-release/consumer): make e2e on Linux makes it for a contract with the Go target, and a refusal fixture (GN-14k) makes none" >&2
   exit 2
@@ -75,6 +81,12 @@ grep "\"Action\":\"output\"" /tmp/events.json | grep -E "FAIL|panic|undefined|ca
 passed=$(grep -c "\"Action\":\"pass\",\"Package\":\"[^\"]*\",\"Test\"" /tmp/events.json || true)
 failed=$(grep -c "\"Action\":\"fail\",\"Package\":\"[^\"]*\",\"Test\"" /tmp/events.json || true)
 echo "go test -tags musl on $(cat /etc/alpine-release) (musl): $passed passed, $failed failed, exit $status"
+if [ -n "$JUDGED" ]; then cp /tmp/events.json "$WORK_ROOT/go-musl-events.json"; exit 0; fi
 [ "$status" -eq 0 ] && [ "$failed" -eq 0 ] && [ "$passed" -gt 0 ]'
 
-docker run --rm --name "$name" -v "$work:/work" -e WORK_ROOT=/work -e "PACKAGES=$packages" -e "GO_URL=$url" -e "GO_SUM=$sum" "$image" sh -c "$inner"
+judged=
+[ -z "$repo" ] || judged=1
+docker run --rm --name "$name" -v "$work:/work" -e WORK_ROOT=/work -e "JUDGED=$judged" -e "PACKAGES=$packages" -e "GO_URL=$url" -e "GO_SUM=$sum" "$image" sh -c "$inner"
+if [ -n "$repo" ]; then
+  "${NODE:-node}" "$(dirname "$0")/go-musl-judge.mts" "$work/go-musl-events.json" "$repo"
+fi
