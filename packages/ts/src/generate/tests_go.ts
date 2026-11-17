@@ -20,7 +20,7 @@ import { classIn, holdsForeign } from './value_class.ts';
 import { defaultCaseValue } from './defaults.ts';
 import { countsThrownGo, numberTypes } from './go_rust.ts';
 import {
-  type GoScope, callbackOf, callablesOf, categoryType, goBytes, goErrorTypes, goHeader, goImport, goImportBlock, goMemberName, goName,
+  type GoScope, callbackOf, callablesOf, categoryType, goBytes, goHeader, goImport, goImportBlock, goMemberName, goName,
   foreignPackage, goDefault, goPackage, goParam, importForeign, goResultCount, goString, goTupleArray, goType, nilAbsent, keptField, ownerCall, ownerErrors, ownerType,
   goOrder, goTestTag, goBuildConstraint, GO_TAG_GUARD_FILE,
 } from './go.ts';
@@ -1280,7 +1280,6 @@ ${arms.join('\n').split('\n').map((line) => (line === '' ? line : `\t${line}`)).
 
 function memberTests(v: Values, out: Out, fn: Fn): void {
   const model = v.model;
-  const types = Object.fromEntries(goErrorTypes(model.contract));
   const label = labelOf(fn);
   const sample = fn.receiver === undefined ? undefined : sampleReceiver(model, fn);
   const reachable = fn.receiver === undefined || sample !== undefined;
@@ -1319,15 +1318,15 @@ ${indent([...b.lines, callLine(fn, invoke(v, fn, args, receiver)), ...check], 1)
     }
     if (base === 'int' || base === 'uint') {
       // GN-12a: an int or a uint outside the safe integers is kind invalid_number.
-      single('B-2', `refuses ${argName} above the safe integers`, arg, () => wrap('9007199254740992'), expectKind(types['value'] ?? '', 'invalid_number', 'B-2'));
-      if (base === 'int') single('B-2', `refuses ${argName} below the safe integers`, arg, () => wrap('-9007199254740992'), expectKind(types['value'] ?? '', 'invalid_number', 'B-2'));
+      single('B-2', `refuses ${argName} above the safe integers`, arg, () => wrap('9007199254740992'), expectKind(categoryType(model, 'value'), 'invalid_number', 'B-2'));
+      if (base === 'int') single('B-2', `refuses ${argName} below the safe integers`, arg, () => wrap('-9007199254740992'), expectKind(categoryType(model, 'value'), 'invalid_number', 'B-2'));
     }
     // GN-6y: a path with a NUL byte is kind invalid_path.
-    if (base === 'path') single('T-1', `refuses a nul byte in ${argName}`, arg, () => wrap('"a\\x00b"'), expectKind(types['value'] ?? '', 'invalid_path', 'T-1'));
-    if (base === 'text') single('B-3', `refuses ${argName} that is not UTF-8`, arg, () => wrap('"\\xff"'), expectKind(types['value'] ?? '', 'invalid_text', 'B-3'));
+    if (base === 'path') single('T-1', `refuses a nul byte in ${argName}`, arg, () => wrap('"a\\x00b"'), expectKind(categoryType(model, 'value'), 'invalid_path', 'T-1'));
+    if (base === 'text') single('B-3', `refuses ${argName} that is not UTF-8`, arg, () => wrap('"\\xff"'), expectKind(categoryType(model, 'value'), 'invalid_text', 'B-3'));
     if (base === 'latin1') {
-      single('B-8', `refuses ${argName} above U+00FF`, arg, () => wrap('"\\u0100"'), expectKind(types['value'] ?? '', 'invalid_text', 'B-8'));
-      single('B-8', `refuses ${argName} that is not UTF-8`, arg, () => wrap('"\\xff"'), expectKind(types['value'] ?? '', 'invalid_text', 'B-8'));
+      single('B-8', `refuses ${argName} above U+00FF`, arg, () => wrap('"\\u0100"'), expectKind(categoryType(model, 'value'), 'invalid_text', 'B-8'));
+      single('B-8', `refuses ${argName} that is not UTF-8`, arg, () => wrap('"\\xff"'), expectKind(categoryType(model, 'value'), 'invalid_text', 'B-8'));
     }
     if (typeof base === 'object' && 'keyed_map' in base) {
       // T-2: a key of a kind that the contract does not list is kind invalid_argument_type.
@@ -1335,17 +1334,17 @@ ${indent([...b.lines, callLine(fn, invoke(v, fn, args, receiver)), ...check], 1)
       const missing = (['int', 'bytes', 'text'] as const).find((kind) => !keyedType.key.includes(kind));
       if (keyedType.key.includes('int')) {
         // GN-12a: an int key outside the safe integers is kind invalid_number.
-        single('B-2', `refuses ${argName} with a key outside the safe integers`, arg, (b) => wrap(mapLocal(b, b.lines, `binding.KeyedMap[${typeName(v, keyedType.keyed_map)}]`, [`binding.IntKey(9007199254740992), ${placeholder(v, b, keyedType.keyed_map)}`])), expectKind(types['value'] ?? '', 'invalid_number', 'B-2'));
+        single('B-2', `refuses ${argName} with a key outside the safe integers`, arg, (b) => wrap(mapLocal(b, b.lines, `binding.KeyedMap[${typeName(v, keyedType.keyed_map)}]`, [`binding.IntKey(9007199254740992), ${placeholder(v, b, keyedType.keyed_map)}`])), expectKind(categoryType(model, 'value'), 'invalid_number', 'B-2'));
       }
       if (missing !== undefined) {
         const key = { int: 'binding.IntKey(1)', bytes: 'binding.BytesKey([]byte("b"))', text: 'binding.TextKey("t")' }[missing];
-        single('T-2', `refuses ${argName} with a ${missing} key`, arg, (b) => wrap(mapLocal(b, b.lines, `binding.KeyedMap[${typeName(v, keyedType.keyed_map)}]`, [`${key}, ${placeholder(v, b, keyedType.keyed_map)}`])), expectKind(types['type'] ?? '', 'invalid_argument_type', 'T-2'));
+        single('T-2', `refuses ${argName} with a ${missing} key`, arg, (b) => wrap(mapLocal(b, b.lines, `binding.KeyedMap[${typeName(v, keyedType.keyed_map)}]`, [`${key}, ${placeholder(v, b, keyedType.keyed_map)}`])), expectKind(categoryType(model, 'type'), 'invalid_argument_type', 'T-2'));
       }
     }
     const unit = unitOf(model, base);
     if (unit?.kind === 'enum') {
       const enumType = typeName(v, base);
-      single('T-6', `refuses ${argName} that is no constant`, arg, () => wrap(`${enumType}("\\x00")`), expectKind(types['type'] ?? '', 'invalid_argument_type', 'T-6'));
+      single('T-6', `refuses ${argName} that is no constant`, arg, () => wrap(`${enumType}("\\x00")`), expectKind(categoryType(model, 'type'), 'invalid_argument_type', 'T-6'));
     }
     // U-7: a kind of an alias's in function reaches the caller of a member that takes the alias.
     const alias = aliasOf(model, arg.type);
@@ -1355,7 +1354,7 @@ ${indent([...b.lines, callLine(fn, invoke(v, fn, args, receiver)), ...check], 1)
     const callback = callbackOf(model, arg.type);
     if (callback !== undefined) {
       out.callbacks.add(callback);
-      single('K-2', `refuses a nil ${argName}`, arg, () => 'nil', expectKind(types['type'] ?? '', 'invalid_callback', 'K-2'), true);
+      single('K-2', `refuses a nil ${argName}`, arg, () => 'nil', expectKind(categoryType(model, 'type'), 'invalid_callback', 'K-2'), true);
     }
     // K-2: the error and the panic of a callback reach the caller of a member that calls it during the call: a callback
     // with keeps is kept for a later member, unless the member names core.failure (GN-7).
@@ -1380,7 +1379,7 @@ ${indent([...b.lines, callLine(fn, invoke(v, fn, args, receiver)), 'if err != ra
       const written = writer === undefined ? [] : [
         '{',
         `	${callLine(writer, invoke(v, writer, callArgs(v, p, writer, (a) => (a.default === undefined ? placeholder(v, p, a.type) : undefined)), again))}`,
-        `	if failure, ok := err.(*liberrors.${types['busy'] ?? ''}); ok && failure.Kind() == "busy" {`,
+        `	if failure, ok := err.(*liberrors.${categoryType(model, 'busy')}); ok && failure.Kind() == "busy" {`,
         `		t.Fatalf("U-3: the panic of the callback left ${writer.member.id} busy: %v", err)`,
         '	}',
         '}',
@@ -1406,7 +1405,7 @@ ${indent([
       // keeps is stored by the member, which never calls it, so only the later call that runs it has these tests.
       const kept = arg.type.function;
       const stores = !arg.field && (fn.member.parameters ?? []).some((p) => p.name === arg.name && p.keeps === true);
-      single('GN-6z', `refuses a nil ${argName}`, arg, () => 'nil', expectKind(types['type'] ?? '', 'invalid_argument_type', 'GN-6z'));
+      single('GN-6z', `refuses a nil ${argName}`, arg, () => 'nil', expectKind(categoryType(model, 'type'), 'invalid_argument_type', 'GN-6z'));
       const calling = stores ? undefined : resultCases(model, fn).find((k) => k.refused === undefined && k.serves === undefined && (((k.args.get(arg) as { function?: unknown } | null | undefined)?.function as unknown[] | undefined)?.length ?? 0) > 0);
       const ends = (end: string): { lines: string[]; call: string } | string => {
         const b = new Body();
@@ -1437,7 +1436,7 @@ ${indent(typeof panicked === 'string' ? [`t.Fatal(${goString(panicked)})`] : [`r
     }
     if (machineFunction(arg.type)) {
       const head = funcHead(v, arg.type.function, () => '_');
-      single('GN-6ae', `refuses a nil ${argName}`, arg, () => 'nil', expectKind(types['type'] ?? '', 'invalid_callback', 'GN-6ae'));
+      single('GN-6ae', `refuses a nil ${argName}`, arg, () => 'nil', expectKind(categoryType(model, 'type'), 'invalid_callback', 'GN-6ae'));
       const ends = (end: string): { lines: string[]; call: string } => {
         const b = new Body();
         const receiver = sample === undefined ? '' : made(v, b, sample);
@@ -1725,7 +1724,6 @@ function raisedLines(v: Values, kase: RaisingCase): string[] {
 // Each test is one body, so that the locals of its calls are distinct.
 function heldTests(v: Values, out: Out, objects: ObjectClass[]): void {
   const model = v.model;
-  const types = Object.fromEntries(goErrorTypes(model.contract));
   const objectOf = (fn: Fn): ObjectClass | undefined => model.objects.find((o) => o.unit === fn.unit);
   const takes = (fn: Fn, object: ObjectClass): Arg | undefined => fn.args.find((a) => !a.field && heldParam(model, a.type)?.unit === object.unit);
   const callables = callablesOf(model).filter((m) => m.kind !== 'iterate' && m.special === undefined && m.module === v.module);
@@ -1748,7 +1746,7 @@ function heldTests(v: Values, out: Out, objects: ObjectClass[]): void {
       const owner = objectOf(fn);
       return fn.receiver === undefined || (owner !== undefined && factoryOf(model, owner) !== undefined);
     });
-    const internal: [string, string, string] = [types['internal'] ?? '', 'internal', 'B-5c'];
+    const internal: [string, string, string] = [categoryType(model, 'internal'), 'internal', 'B-5c'];
     const b = new Body();
     const held = placeholder(v, b, { unit: object.unit.id });
     b.lines.push(`if err := binding.PanicTestHeld(${model.objects.indexOf(object)}, ${held}.handle()); err == nil {`, '\tt.Fatal("B-5c: the poison entry point did not panic")', '}');
@@ -1774,12 +1772,12 @@ ${indent(b.lines, 1)}
       if (armed !== undefined) c.lines.push('runtime.LockOSThread()', 'defer runtime.UnlockOSThread()');
       const instance = placeholder(v, c, { unit: object.unit.id });
       if (armed !== undefined) c.lines.push(`armed, armErr := binding.ArmFaults(${goString(fn.member.id)}, ${goString(armed.faults)})`, 'if armErr != nil {', '\tt.Fatalf("G-5: %v", armErr)', '}');
-      check(c, fn, instance, arg, instance, [types['busy'] ?? '', 'busy', 'B-5c']);
+      check(c, fn, instance, arg, instance, [categoryType(model, 'busy'), 'busy', 'B-5c']);
       if (receiverFn !== undefined) check(c, receiverFn, instance, undefined, instance, undefined);
       if (armed !== undefined) {
         // GN-8a: the refused call did not reach the core, so the next call, with another instance, takes the arming.
         const other = placeholder(v, c, { unit: object.unit.id });
-        check(c, fn, instance, arg, other, [types[armed.category] ?? '', armed.kind, 'GN-8a']);
+        check(c, fn, instance, arg, other, [categoryType(model, armed.category), armed.kind, 'GN-8a']);
         c.lines.push('if left, leftErr := binding.FaultLeft(armed); leftErr != nil || len(left) != 0 {', '\tt.Fatalf("G-5: the faults %v did not fire (%v)", left, leftErr)', '}');
       }
       (armed === undefined ? out.main : out.fault).push(`
@@ -1899,7 +1897,6 @@ func sameFailure(a, b error) bool {
 // writer that sends each message to a channel, runs a collection and receives the warning, so no time orders them.
 function consumerTests(v: Values, out: Out, objects: ObjectClass[]): void {
   const model = v.model;
-  const types = Object.fromEntries(goErrorTypes(model.contract));
   for (const object of objects) {
     const name = goName(object.unit.name);
     for (const fn of object.members.filter((m) => m.receiver === 'self')) {
@@ -1909,7 +1906,7 @@ function consumerTests(v: Values, out: Out, objects: ObjectClass[]): void {
       const held = made(v, b, sample);
       const call = (): string => invoke(v, fn, callArgs(v, b, fn, (a) => (a.default === undefined ? placeholder(v, b, a.type) : undefined)), held);
       const blanks = Array.from({ length: goResultCount(fn) + 1 }, () => '_').join(', ');
-      b.lines.push(`${blanks} = ${call()}`, callLine(fn, call()), ...expectKind(types['type'] ?? '', 'consumed', 'GN-6o'));
+      b.lines.push(`${blanks} = ${call()}`, callLine(fn, call()), ...expectKind(categoryType(model, 'type'), 'consumed', 'GN-6o'));
       out.main.push(`
 func TestGN6o${name}${goMemberName(fn)}ConsumesItsObject(t *testing.T) {
 ${indent(b.lines, 1)}

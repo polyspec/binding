@@ -6,7 +6,7 @@ import { variantPattern } from '../contract.ts';
 import { raisesAssertions } from './raises.ts';
 import { type Files, header, pyHeader, pyString, rustString, closure, optionRef, withUsedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
 import { defaultAsserts, declaredValue } from './defaults.ts';
-import { absentInits, type Arg, type CallbackUnit, classKinds, type ErrorUnit, type Fn, type Model, isInternal, interfaceOf, implementorsOf, Unsupported, argType, leftOut, aliasOf, errorProperties, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, awaits, cleanupAsserts, cleanupMade, cleanupWarning, waitsAsync, waitsIo, waitsProcess, drivenCall, DRIVEN, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, recordLocal, recordInit, rustIdent, rustType, rustVariant, unitOf, traitParam, holdsFunction, keepsThrown, boxed, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, caseWritten, UNIT_CASE_ALLOW, tupleIn, caseLeftOut, narrows, narrowed, tupleOut, propertyValue, errorMatched, recognizedFn, recognizedMatch, unitFn, libraryBlocks, machineFunction, countsThrown, takenCallbacks , anchorCalls, lentRust} from './model.ts';
+import { absentInits, categoryClass,type Arg, type CallbackUnit, classKinds, type ErrorUnit, type Fn, type Model, isInternal, interfaceOf, implementorsOf, Unsupported, argType, leftOut, aliasOf, errorProperties, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, awaits, cleanupAsserts, cleanupMade, cleanupWarning, waitsAsync, waitsIo, waitsProcess, drivenCall, DRIVEN, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, recordLocal, recordInit, rustIdent, rustType, rustVariant, unitOf, traitParam, holdsFunction, keepsThrown, boxed, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, caseWritten, UNIT_CASE_ALLOW, tupleIn, caseLeftOut, narrows, narrowed, tupleOut, propertyValue, errorMatched, recognizedFn, recognizedMatch, unitFn, libraryBlocks, machineFunction, countsThrown, takenCallbacks , anchorCalls, lentRust} from './model.ts';
 import { HOST_PYTHON_SUBPACKAGE } from './packages.ts';
 import { aliasPython, foreignFailurePython, keptPython, pythonHost } from './alias_python.ts';
 import { pythonTests } from './tests_python.ts';
@@ -1332,7 +1332,7 @@ ${arms}
 function coreErrorRust(model: Model): string {
   if (model.coreError === undefined) return '';
   const unitClass = (unit: ErrorUnit): string => langName('python', unit.unit.name, 'class');
-  const arms = model.kinds.map((k) => `        ${variantPattern(k.variant)} => ${rustString(k.unit === undefined ? k.className : unitClass(k.unit))},`).join('\n');
+  const arms = model.kinds.map((k) => `        ${variantPattern(k.variant)} => ${rustString(k.unit === undefined ? categoryClass(model, k.category) : unitClass(k.unit))},`).join('\n');
   const doc = `/// I-2 (3): the class of each variant of the core error, by a match without a wildcard. The pattern \`{ .. }\` matches a
 /// variant with or without data, which the generator does not see (I-2: binding reads no Rust source).
 #[allow(clippy::unneeded_struct_pattern, reason = "I-2")]`;
@@ -1377,7 +1377,7 @@ ${propertyArms}
 }
 
 function libRust(model: Model, layout: PythonLayout): string {
-  const classOf = (category: string): string => model.classes.find((c) => c.category === category)?.name ?? '';
+  const classOf = (category: string): string => categoryClass(model, category);
   const constants = model.constants
     .map((c) => `const _: () = assert!(${c.member.core as string} == ${String(c.member.value)});`)
     .join('\n') + defaultAsserts(model);
@@ -1591,7 +1591,7 @@ class ${c.name}(builtins.${pythonBase(c.category)}):
   // E-2, I-3: an error unit extends the class of its parent or of its category; a property is read-only.
   const units = model.errorUnits.map((u) => {
     const name = langName('python', u.unit.name, 'class');
-    const base = u.parent === undefined ? model.classes.find((c) => c.category === u.category)?.name ?? '' : langName('python', u.parent.unit.name, 'class');
+    const base = u.parent === undefined ? categoryClass(model, u.category) : langName('python', u.parent.unit.name, 'class');
     const properties = u.properties.map(({ member, returns }) => {
       const attribute = langName('python', member.name, 'variable');
       // An instance that the core did not make has no value.
@@ -1626,18 +1626,18 @@ def _check_error(name: str, kinds: frozenset[str], message: object, kind: object
     """GN-7a: the arguments of the constructor of a library class: the message is a str of Unicode scalar values (B-3),
     the kind one of the kinds of the class that is made, and the status and the errno each None or an int, not a bool."""
     if not isinstance(message, str):
-        raise ${model.classes.find((c) => c.category === 'type')?.name ?? ''}(f"the message of {name} is not a str", "invalid_argument_type")
+        raise ${categoryClass(model, 'type')}(f"the message of {name} is not a str", "invalid_argument_type")
     try:
         message.encode("utf-8")
     except UnicodeEncodeError:
-        raise ${model.classes.find((c) => c.category === 'value')?.name ?? ''}(f"the message of {name} holds a surrogate", "invalid_text") from None
+        raise ${categoryClass(model, 'value')}(f"the message of {name} holds a surrogate", "invalid_text") from None
     if not isinstance(kind, str):
-        raise ${model.classes.find((c) => c.category === 'type')?.name ?? ''}(f"the kind of {name} is not a str", "invalid_argument_type")
+        raise ${categoryClass(model, 'type')}(f"the kind of {name} is not a str", "invalid_argument_type")
     if kind not in kinds:
-        raise ${model.classes.find((c) => c.category === 'type')?.name ?? ''}(f"{kind!r} is no kind of {name}", "invalid_argument_type")
+        raise ${categoryClass(model, 'type')}(f"{kind!r} is no kind of {name}", "invalid_argument_type")
     for part, value in (("status", status), ("errno", errno)):
         if value is not None and (not isinstance(value, int) or isinstance(value, bool)):
-            raise ${model.classes.find((c) => c.category === 'type')?.name ?? ''}(f"the {part} of {name} is not an int or None", "invalid_argument_type")
+            raise ${categoryClass(model, 'type')}(f"the {part} of {name} is not an int or None", "invalid_argument_type")
 `;
 }
 

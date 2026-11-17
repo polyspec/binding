@@ -12,10 +12,10 @@ import type { Lang } from '../src/contract.ts';
 import { caseTestTargets, generate as generateTargets, isGoGenerated, type Inputs } from '../src/generate/index.ts';
 import { generateOnStack } from '../src/generate/stack.ts';
 import { checkContract } from '../src/index.ts';
-import { carriers } from '../src/generate/model.ts';
+import { carriers, categoryClass } from '../src/generate/model.ts';
 import { CASE_JSON_STRING_GOLDENS, caseFilesOf, casePathOf, caseTextParts, fromJson } from '../src/generate/samples.ts';
 import { closure, featureItems, INTO_CORE, PARTS, jsString, phpText, pyString, usedHelpers, WIDEN } from '../src/generate/text.ts';
-import { goString } from '../src/generate/go.ts';
+import { categoryType, goString } from '../src/generate/go.ts';
 import { bindingCoreFinding, goSumModule, goSumOf, hostRequirements, releaseRequires, trackedPackages } from '../src/generate/packages.ts';
 import { parse } from 'smol-toml';
 
@@ -11590,6 +11590,74 @@ test('B2.433: the raises of a case with a kind of E-1a alone takes its fixed cat
   assert.doesNotMatch(near('packages/go/zz_generated_test.go', /AKeyWithoutAValueIsMissing/), /errors\.As\(err, &\*?\)|var target \*?\s*$/m);
   // A kind of neither errors.kinds nor E-1a names no class, and the generator refuses it by name.
   assert.throws(() => run('no_such_kind'), /raises the kind no_such_kind without a category, which is no kind of errors\.kinds nor of E-1a \(GN-13bd\)/);
+});
+
+test('B2.448: a case with raises, with and after names the class of its category in the five targets, and a category that is none or not that of the kind is refused by name (GN-13bh)', () => {
+  // orm query.update: {"receiver", "with", "raises": {"kind": "revision_changed", "category": "state"}, "after"} wrote
+  // `failure, ok := err.(*liberrors.)` in Go and `catch (\Polyspec\Orm\ $error)` in PHP.
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/sample/${path}`, import.meta.url), 'utf8'));
+  const ID = 'a_slip_of_a_cleared_shelf_is_missing';
+  const run = (category: unknown, targets: Lang[]): ReturnType<typeof generateTargets> => {
+    const contract = read('packages/rust/interface.json');
+    const cases = read('contracts/cases.json');
+    const kase = cases.slip_read.find((c: any) => c.id === ID);
+    assert.deepEqual(Object.keys(kase), ['id', 'receiver', 'raises']);
+    kase.with = { other: { new: 'shelf.new', args: { count: 3 } } };
+    kase.after = [{ on: 'other', call: 'shelf.clear', args: {}, result: null }];
+    if (category === undefined) delete kase.raises.category;
+    else kase.raises.category = category;
+    return generateTargets({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: new Map([['contracts/cases.json', cases]]), targets });
+  };
+  const FILES: Record<Lang, [string, RegExp, RegExp]> = {
+    go: ['packages/go/zz_generated_test.go', /ASlipOfAClearedShelfIsMissing/, /failure, ok := err\.\(\*liberrors\.SampleValueError\)/],
+    php: ['packages/php-ext/generated/tests/GeneratedTest.php', /ASlipOfAClearedShelfIsMissing/, /catch \(\\Polyspec\\Sample\\SampleValueError \$error\)/],
+    python: ['packages/python/generated/tests/test_generated.py', /a_slip_of_a_cleared_shelf_is_missing/, /assertRaises\(pkg\.SampleValueError\)/],
+    node: ['packages/ts/generated/tests/generated.test.mjs', /a_slip_of_a_cleared_shelf_is_missing/, /error\.constructor === pkg\.SampleValueError &&/],
+    wasm: ['packages/ts/wasm/generated/tests/generated.test.mjs', /a_slip_of_a_cleared_shelf_is_missing/, /error\.constructor === pkg\.SampleValueError &&/],
+  };
+  const EMPTY = /liberrors\.\)|\\Polyspec\\Sample\\ \$error|pkg\.\)|pkg\.\s*&&|pkg\.\s*$/m;
+  const all = Object.keys(FILES) as Lang[];
+  // The form is allowed: with the category of the kind, written or left out, every target names the class.
+  for (const category of ['value', undefined]) {
+    const out = run(category, all);
+    for (const target of all) {
+      const [path, id, wanted] = FILES[target];
+      const body = text(out, path);
+      const at = body.search(id);
+      assert.ok(at >= 0, `${path} ${id}`);
+      const near = body.slice(at, at + 2500);
+      assert.match(near, wanted, `${target} ${String(category)}`);
+      assert.match(near, /shelf|Shelf/, `${target}: the call of after on the value of with`);
+      assert.doesNotMatch(body, EMPTY, `${target} ${String(category)}`);
+    }
+  }
+  // Each target refuses a text that is no category and a category of another kind, and writes no file.
+  for (const target of all) {
+    assert.throws(() => run('state', [target]), new RegExp(`the case ${ID} of slip\\.read raises the kind missing with the category "state", which is no category: a category is one of value, type, io, store, busy, internal \\(GN-13bh, E-1\\)`), target);
+    assert.throws(() => run('io', [target]), new RegExp(`the case ${ID} of slip\\.read raises the kind missing with the category io, but the kind missing is of the category value \\(GN-13bh, E-1\\)`), target);
+    assert.throws(() => run(7, [target]), /raises the kind missing with the category 7, which is no category/, target);
+  }
+});
+
+test('B2.448: the one function that names the class of a category refuses a text that is no category, for the class table and for Go (GN-13bh)', () => {
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/sample/${path}`, import.meta.url), 'utf8'));
+  const contract = read('packages/rust/interface.json');
+  const classes = [{ category: 'value' as const, name: 'SampleValueError', names: {} }, { category: 'io' as const, name: '', names: {} }];
+  assert.equal(categoryClass({ classes }, 'value'), 'SampleValueError');
+  assert.throws(() => categoryClass({ classes }, 'state'), /"state" is no category, so it names no error class: a category is one of value, type, io, store, busy, internal \(GN-13bh, E-1\)/);
+  assert.throws(() => categoryClass({ classes }, ''), /"" is no category/);
+  // A category whose class the table does not name is refused too, never written as an empty name.
+  assert.throws(() => categoryClass({ classes }, 'io'), /the category io names no error class in errors\.classes \(GN-13bh, E-2\)/);
+  assert.throws(() => categoryClass({ classes }, 'busy'), /the category busy names no error class in errors\.classes/);
+  assert.equal(categoryType({ contract } as any, 'value'), 'SampleValueError');
+  assert.throws(() => categoryType({ contract } as any, 'state'), /"state" is no category, so it names no error class/);
+  // No emitter keeps a fallback of its own for the class of a category.
+  const dir = new URL('../src/generate/', import.meta.url);
+  for (const file of readdirSync(dir).filter((name) => name.endsWith('.ts') && name !== 'model.ts')) {
+    const source = readFileSync(new URL(file, dir), 'utf8');
+    assert.doesNotMatch(source, /classes\.find\(\(c\) => c\.category === [^)]*\)\?\.name \?\? ''/, file);
+    assert.doesNotMatch(source, /types\[[^\]]*\] \?\? ''/, file);
+  }
 });
 
 test('B2.373: a Go entry point gives the core a parameter named input by the local that its decoding binds (GN-15)', () => {

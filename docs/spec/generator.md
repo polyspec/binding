@@ -2975,7 +2975,8 @@ the design ids are those of the binding design.
   float, and one case cannot state the two results. A negative zero, which Node and WASM can tell apart, is refused
   there as in PHP and Python (GN-12a), so it needs no `targets`. The pair keeps every target tested on the input.
 - **GN-13bd** The `raises` of a case may leave out `category`: the generated test takes the category of its kind from
-  `errors.kinds` of the contract, which gives every kind its category (E-1), and a case that writes it keeps its own.
+  `errors.kinds` of the contract, which gives every kind its category (E-1), and a case that writes it writes the
+  category of its kind (GN-13bh).
   Why: the contract check takes `{"kind": <kind>}` alone, and the tests named the class of the category of the case, so
   hyper `csrf.mask`, whose cases give the kind alone, made Node write `error.constructor === pkg. &&` 180 times, which
   does not parse; Python, PHP, WASM and Go read the same empty category. A kind that the binding raises itself (E-1a:
@@ -3017,6 +3018,21 @@ the design ids are those of the binding design.
   compared the result of a call of `after` and the arguments of a fixture by their handles too, and it added the
   statements that make an instance of an expected call to the lines of the test after it had written them, so the
   test named a local that it did not declare (B2.445).
+- **GN-13bh** The `category` that the `raises` of a case writes is one of the six categories of E-1 (`value`, `type`,
+  `io`, `store`, `busy`, `internal`), and it is the category of the kind where the kind has one: the category that
+  `errors.kinds` gives the kind (its own rows and the rows with `library`), or the fixed category of a kind of E-1a.
+  `binding check` refuses another `category` (CK-22), and the generator refuses it with a sentence that names the
+  case, the kind and the category. The form of the case does not change the rule: a case with `raises` may also name
+  `receiver`, `with` and `after`. Every generated file names the class of a category through one function for the
+  class table of the language (`categoryClass`) and one for the Go error types (`categoryType`); both refuse a text
+  that is no category and a category without a class by name, so no emitter holds a fallback of its own and none
+  writes an empty class name. Why: two cases of orm `query.update` wrote `"category": "state"`, which is no
+  category. The check read only `kind` and `errno` of a `raises` and passed, each test generator looked the category
+  up in its class table and took an empty text for a category that the table does not have, and the Go test wrote
+  `failure, ok := err.(*liberrors.)` and the PHP test `catch (\Polyspec\Orm\ $error)`: neither file compiles or
+  parses, so no generated test of those two targets ran, and Python, Node and WASM wrote `pkg.` in the same place. A
+  category that is one of the six but not that of the kind names the class of another category, which the test of
+  the case then fails at run time for a reason that the contract already shows (B2.448).
 - **GN-13g** Go: a parameter of a number type holds only values of its Go type, so the B-2 values of GN-13 of another
   Go type (true, "7", 1.5, NaN and the infinities at an `int`, `uint` or `int64`, -1 at a `uint`, true, "7" and an
   integer at a `float`) cannot be the argument of a call. For each number type of a parameter of the contract, the

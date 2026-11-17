@@ -355,7 +355,20 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   kind is refused, so the case of an input rule is an input. The `errno` of a case's `raises`, when it is a text, is
   such a symbol. A case's `raises` that leaves out `category` gives a kind of `errors.kinds` (its own rows and the
   rows with `library`) or of E-1a, whose category the generated test takes (generator GN-13bd); another kind is
-  refused by name, because its test would name no class (B2.433). A kind of the category `internal` needs no case of each member (X-1), because the match that maps the
+  refused by name, because its test would name no class (B2.433). A `category` that the `raises` of a case writes is
+  one of the six categories of E-1 and the category of its kind, where `errors.kinds` or E-1a gives the kind one;
+  another is refused with the case, the kind and the category (generator GN-13bh, B2.448). The kind of the `raises`
+  of a case is a kind that the call of the case can give: a kind of the `raises` of its member (a row with `library`
+  gives the kinds of the row of that library, GN-7c); a kind of E-1a, which the binding raises itself before or
+  around the core and no member declares; a kind of `in_raises` of a value alias that the type of a parameter holds,
+  which the in function of the argument gives (U-7); for a case of a member with a receiver that gives no `receiver`,
+  `faults` or `after`, also a kind of the `raises` of a factory of the class, a constructor or a member without a
+  receiver, or of `in_raises` of an alias of its parameters, because the failure of such a case is that of making the
+  receiver or of the call (generator GN-13f); and for a case that arms a fault injection point, a kind of the
+  category `internal` (X-1). A case that raises another kind is refused with the case, the kind and the member. Why:
+  the check compared the kind of a step, of a call of `after` and of a call of `then` with the `raises` of the member
+  of that call, and read the kind of the case itself only to count it as a case of a kind, so a case that expects a
+  kind that its member does not declare passed, and its test could only fail on every target (B2.449). A kind of the category `internal` needs no case of each member (X-1), because the match that maps the
   core error is one for every member: each error enum that has such a kind, the contract's own and that of each
   library whose kinds it passes on (E-1b (a)), has one case of any member that arms `<library>.internal` as `broken`
   and raises a kind of the category `internal`. The kinds of `in_raises` of a value alias have their cases in the
