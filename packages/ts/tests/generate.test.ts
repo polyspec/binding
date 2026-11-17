@@ -10832,6 +10832,27 @@ for (const [target, path, given] of [
   });
 }
 
+// GN-6z, B2.531: the function that PHP and Node keep lives for static, and the subject of an entry of a map (B2.475) is
+// the borrowed entry_ of map_in, so the kept function holds its own copy of the subject; a borrow of entry_ inside it
+// is a crate that does not compile (lifetime may not live long enough).
+for (const [target, path, call] of [
+  ['php', 'packages/php-ext/generated/lib.rs', 'native_thread'],
+  ['node', 'packages/ts/generated/lib.rs', 'native_env'],
+] as const) {
+  test(`${target}: the kept function of an entry of a map holds its own copy of the subject (GN-6z, B2.531)`, () => {
+    const { contract, caseFiles } = shapes();
+    unitOf(contract, 'shapes').members.push({
+      id: 'shapes.open', name: ['open'], kind: 'function', visibility: 'public', returns: 'text', raises: [], wait: 'none', core: 'polyspec_shapes::open',
+      parameters: [{ name: ['functions'], type: { map: { function: { parameters: ['text'], returns: 'text', async_allowed: false } } }, required: true }],
+    });
+    const lib = text(generate({ contract, version: '0.0.0', coreLib: 'polyspec_shapes', caseFiles, targets: [target] }), path);
+    assert.match(lib, /map_in\([^\n]*\|entry_, item\| kept_function_in/, path);
+    assert.doesNotMatch(lib, new RegExp(`${call}\\(&native, entry_\\)`), path);
+    assert.match(lib, /let subject_ = String::from\(entry_\);/, path);
+    assert.match(lib, new RegExp(`${call}\\(&native, &subject_\\)`), path);
+  });
+}
+
 // Q-4, B2.254: a field with only is a field of the record of the targets that it lists alone. The record point of the
 // end-to-end check gets a field z that only Python and Node have; Go, PHP and WASM have a record without it, their
 // binding gives the core struct None for it, and a case whose record gives z is no case of theirs.
