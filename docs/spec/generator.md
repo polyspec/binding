@@ -2412,8 +2412,17 @@ the design ids are those of the binding design.
   serve its tests, such as a probe that a test starts. Why the package clause and not a directory `tests`: the
   clause is what Go reads to tell a program from a package, while the name of a directory would leave out a
   package that a consumer can import and carry a program placed elsewhere. A repository that publishes a command
-  for `go install` gives it a Go module of its own. The `go.mod` and the `go.sum` of the released form are those
-  of the commit of the tag, byte for byte. A requirement that only a left-out test or program used stays in that
+  for `go install` gives it a Go module of its own. The `go.mod` of the released form is the one
+  of the commit of the tag, byte for byte. Its `go.sum` holds the lines of the `go.sum` of the commit of the tag
+  and, for each Go module of the same repository that the `go.mod` requires at a release version and each one that
+  such a module requires in turn, the two lines of that module, its hash and the hash of its `go.mod`, sorted in as
+  binding sorts a `go.sum` (GN-15l); a released form whose `go.mod` requires no module of its own repository has
+  the `go.sum` of the commit of the tag, byte for byte, or none when that commit tracks none (B2.479). Why the
+  command writes those lines: a module builds alone inside the commit of its tag (GN-15l), and `go build` in the
+  generator module of crud-ui at its tag failed with `missing go.sum entry for module providing package` of the
+  validator module that it requires. Why no tracked file holds them: they are the hashes of the commit that the
+  release of the required module makes, with its static libraries, so they exist only after that run (GN-19f). A
+  requirement that only a left-out test or program used stays in that
   `go.mod`: it takes part in the version selection of a consumer, and no package of the form imports it, so the
   build of a consumer compiles none of its source. The command names no such requirement, which only `go mod tidy`
   over the released form finds, and it writes no `go.mod`, because the result would be a file that no commit of
@@ -3872,6 +3881,12 @@ the design ids are those of the binding design.
     the tag `<directory>/vX.Y.Z` is the one that Go reads for it.
   - The `go.mod` of that commit holds no `replace` line and requires no module at `v0.0.0`: both are development
     forms (GN-15f), which a consumer of a tag cannot resolve.
+  - The repository holds the tag `<directory of that module>/vA.B.C` of each Go module of the same repository (a
+    module path with the same first three elements, GN-14f) that the `go.mod` requires at a release version
+    `vA.B.C`, and of each one that the `go.mod` of such a module at its tag requires in turn (B2.479). The command
+    names each module whose tag is missing and the `go.mod` that requires it, and says to run `binding
+    release-go-module` of that module first. So the modules of one repository are released in the order of their
+    requirements: the required module first.
   - The work tree holds, for each platform, `internal/binding/zz_generated_link_<platform>.go` and
     `internal/ffi/lib/<platform>/zz_generated_lib.go`: without them the generation did not run, and no file names
     the directory of a library.
@@ -3895,7 +3910,8 @@ the design ids are those of the binding design.
   of the file and by its package clause in the commit of the tag (`git show`) and names to the reader of the run,
   `git update-index --add --cacheinfo` with mode 100644 for each generated file
   that a release carries (GN-15g) and for `internal/ffi/lib/<platform>/libpolyspec_<repository>_go.a` of each platform, whose objects `git
-  hash-object -w --no-filters` writes, `git write-tree`, and `git commit-tree -p <commit of the tag>` with the
+  hash-object -w --no-filters` writes, in the same way for the `go.sum` of the released form when the `go.mod`
+  requires a module of the same repository (GN-15g, B2.479), `git write-tree`, and `git commit-tree -p <commit of the tag>` with the
   message `chore(release): Carry the Go module of vX.Y.Z`. Its author and committer dates are the committer date of
   the commit of the tag and its identity is the one of the Git of the run, so the same inputs under the same
   identity give the same commit. A tag `<directory>/vX.Y.Z` of the repository or of the remote that names another
@@ -3911,7 +3927,20 @@ the design ids are those of the binding design.
   `GOENV=off`, `GOTOOLCHAIN=local`, `GOWORK=off`, `GOFLAGS` and `CGO_LDFLAGS` empty, `CGO_ENABLED=1` and the module
   and build caches of `--work`, and the command fails when the `go.mod` of the consumer then holds a `replace`. It
   removes the module cache with `go clean -modcache`. A Go module of another repository that the `go.mod` requires is
-  fetched from its own remote, so the repositories are released in the order of their Go requirements. The proof
+  fetched from its own remote, so the repositories are released in the order of their Go requirements. A Go module
+  of the same repository that the `go.mod` requires at a release version, a sibling, is fetched from the bare
+  repository of `--work`, because Git reads that repository for every module of
+  `https://github.com/<owner>/<repository>`: before the commit, the command pushes the commit of the tag of each
+  sibling of the check above into it under that tag, and runs `go mod download -json <module>@<version>` for each
+  in a module of `--work` with the settings of the consumer, whose `Sum` and `GoModSum` are the lines of the
+  `go.sum` of the commit (GN-15g); it removes the module cache after it, so the consumer fetches each sibling
+  again. A tracked `go.sum` that gives a sibling another hash is refused with its line, before the commit. Before
+  B2.479 that repository held the tag of the module of the run alone: the release of the generator module of
+  crud-ui, which requires the validator module of the same repository, failed in `go mod tidy` of the consumer
+  with `unknown revision packages/validator/go/v0.0.1` in either order of the two runs, with no word of the cause.
+  A release that stopped between two modules of a repository is run again as it is: the command leaves the tag of
+  the first module, which names the commit of this run, as it is and gives no reference when the remote holds it,
+  and the run of the second module finds that tag in the repository. The proof
   links the library of the platform of the run alone; the libraries of the other platforms are checked by their
   objects.
   Then the command creates the annotated tag `<directory>/vX.Y.Z` at the commit (`git tag -a`, with the same date)
@@ -3954,6 +3983,11 @@ the design ids are those of the binding design.
   | `release-assets-npm` | `node` or `wasm` | GN-19i, the build of the job `npm` |
   | `install-wasm-bindgen` | `wasm` | installs the wasm-bindgen CLI of `mise.toml` alone |
   | `checkout-node-addon` | `node` | GN-3c, the addon of the checkout beside the generated entry |
+
+  A repository with two contracts of which the Go module of one requires the Go module of the other at a release
+  version (crud-ui: the generator requires the validator) runs `release-go-module-<component>` of the required
+  module before that of the module that requires it (GN-19f, B2.479): the second run reads the tag of the first in
+  the repository, and a run in the other order is refused with the name of the module whose tag is missing.
 
   The Makefile of the repository defines, before its line `include <path of the file>`, the variables that the
   recipes read: `BINDING_RUN`, the command that starts binding (such as `$(NODE) $(BINDING)` or the bin link of the

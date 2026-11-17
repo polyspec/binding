@@ -10,6 +10,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, wri
 import { join } from 'node:path';
 import { GO_PLATFORMS, GO_TAG_GUARD_FILE, goLinkFile, goTestTagsOf } from '../generate/go.ts';
 import { isGoGenerated } from '../generate/index.ts';
+import type { GoDownload } from '../generate/packages.ts';
 import { goCommand } from '../go-command.ts';
 
 export type GoPlatform = (typeof GO_PLATFORMS)[number];
@@ -129,26 +130,81 @@ export function testEntrySymbol(prefix: string): RegExp {
 // forms of a dependency (GN-15f), which a consumer of the tag cannot resolve. Both forms of a directive are read: the
 // line `require <module> <version>` and the lines of a block `require (...)`.
 export function goModFindings(goMod: string): string[] {
-  const required: string[] = [];
+  const { required, replaced } = goModDirectives(goMod);
+  return [
+    ...required.map(({ line }) => line.split(/\s+/)).filter(([, version]) => version === 'v0.0.0').map(([module]) => `go.mod requires ${String(module)} at v0.0.0, the development form of a dependency`),
+    ...replaced.map((line) => `go.mod holds the line \`replace ${line}\``),
+  ];
+}
+
+// The `require` and `replace` directives of a go.mod, in both forms, a line of its own and a line of a block: each
+// without its comment, and a requirement with that comment, which says of a line `// indirect` what it is.
+function goModDirectives(goMod: string): { required: { line: string; comment: string }[]; replaced: string[] } {
+  const required: { line: string; comment: string }[] = [];
   const replaced: string[] = [];
   let block: 'require' | 'replace' | undefined;
   for (const raw of goMod.split('\n')) {
     const line = raw.replace(/\/\/.*$/, '').trim();
     if (line === '') continue;
+    const comment = /\/\/(.*)$/.exec(raw)?.[1]?.trim() ?? '';
+    const take = (directive: 'require' | 'replace', text: string): void => {
+      if (directive === 'require') required.push({ line: text, comment });
+      else replaced.push(text);
+    };
     if (block !== undefined) {
       if (line === ')') block = undefined;
-      else (block === 'require' ? required : replaced).push(line);
+      else take(block, line);
       continue;
     }
     const [, directive, rest] = /^(require|replace)\s+(.*)$/.exec(line) ?? [];
     if (directive !== 'require' && directive !== 'replace') continue;
     if (rest === '(') block = directive;
-    else if (rest !== undefined) (directive === 'require' ? required : replaced).push(rest);
+    else if (rest !== undefined) take(directive, rest);
   }
-  return [
-    ...required.map((line) => line.split(/\s+/)).filter(([, version]) => version === 'v0.0.0').map(([module]) => `go.mod requires ${String(module)} at v0.0.0, the development form of a dependency`),
-    ...replaced.map((line) => `go.mod holds the line \`replace ${line}\``),
-  ];
+  return { required, replaced };
+}
+
+export interface GoRequirement {
+  module: string;
+  version: string;
+  // The line ends with the comment `// indirect`: no package of the module itself imports the required one.
+  indirect: boolean;
+}
+
+// The requirements of a go.mod, of both forms of the directive, in their order.
+export function goModRequires(goMod: string): GoRequirement[] {
+  return goModDirectives(goMod).required.map(({ line, comment }) => {
+    const [module = '', version = ''] = line.split(/\s+/);
+    return { module, version, indirect: /^indirect\b/.test(comment) };
+  });
+}
+
+// GN-14f: the repository of a Go module, the first three elements of its module path.
+const repositoryOf = (module: string): string => module.split('/').slice(0, 3).join('/');
+
+// GN-19f, B2.479: the release requirements of `goMod`, the go.mod of `module`, that name another module of the same
+// repository. The commit that carries such a module at its version is made by the release of that module, so its tag
+// is the first to exist, and no tracked go.sum holds its hash (GN-15l).
+export function siblingRequires(goMod: string, module: string): GoRequirement[] {
+  return goModRequires(goMod).filter((r) => r.module !== module && r.version !== 'v0.0.0' && repositoryOf(r.module) === repositoryOf(module));
+}
+
+// GN-15g, B2.479: the go.sum of the commit of a release: the lines of `goSum`, the go.sum of the commit of the tag
+// ('' when it tracks none), and the two lines of each sibling module that `go mod download -json` gave, sorted as
+// binding writes a go.sum (GN-15l). A line of `goSum` that gives a sibling another hash is named: the tracked go.sum
+// holds no line of a module of its own repository.
+export function goSumWith(goSum: string, downloads: readonly GoDownload[]): string {
+  const lines = new Set(goSum.split('\n').filter((line) => line !== ''));
+  for (const d of downloads) {
+    if (d.Error !== undefined) throw new Error(`go mod download gave no sum: ${d.Error}`);
+    if (d.Version === undefined || d.Sum === undefined || d.GoModSum === undefined) throw new Error(`go mod download gave no sum of ${d.Path} ${d.Version ?? ''}`);
+    for (const [key, hash] of [[`${d.Path} ${d.Version}`, d.Sum], [`${d.Path} ${d.Version}/go.mod`, d.GoModSum]] as const) {
+      const other = [...lines].find((line) => line.startsWith(`${key} `) && line !== `${key} ${hash}`);
+      if (other !== undefined) throw new Refused([`go.sum holds the line \`${other}\` of a Go module of this repository, and the commit of its tag has the hash ${hash}: remove the line, since no tracked go.sum holds the hash of a module that the release itself commits (GN-15l)`]);
+      lines.add(`${key} ${hash}`);
+    }
+  }
+  return `${[...lines].sort().join('\n')}\n`;
 }
 
 // The name of the package clause of a Go file, the first token of the file after its comments, which hold its build
@@ -400,6 +456,28 @@ export function releaseGoModule(release: GoModuleRelease): GoModuleReleased {
   const goMod = run('git', ['-C', root, 'show', `${parent}:${directory}/go.mod`]);
   findings.push(...goModFindings(goMod));
 
+  // B2.479: the modules of this repository that the go.mod requires at a release version, and those that they require
+  // in turn. Go fetches each at its tag from the same remote as this module, so the proof needs every one of those
+  // tags, and the go.sum of the commit takes the hashes of their commits: a missing tag is named before any write.
+  interface Sibling { module: string; version: string; tag: string; commit: string }
+  const siblings = new Map<string, Sibling>();
+  const asked = new Set<string>();
+  const pending = siblingRequires(goMod, module).map((r) => ({ ...r, by: 'go.mod' }));
+  for (let r = pending.shift(); r !== undefined; r = pending.shift()) {
+    const key = `${r.module} ${r.version}`;
+    if (r.module === module || asked.has(key)) continue;
+    asked.add(key);
+    const its = goRemote(r.module, r.version);
+    const found = named(`refs/tags/${its.tag}`);
+    if (found === undefined) {
+      findings.push(`${r.by} requires ${key}, a Go module of this repository, and the repository has no tag ${its.tag}: run binding release-go-module of that module first (the recipe release-go-module of its contract), because the proof fetches that module at its tag and the go.sum of this commit holds the hashes of the commit of that tag (GN-19f)`);
+      continue;
+    }
+    siblings.set(key, { module: r.module, version: r.version, tag: its.tag, commit: found });
+    const itsGoMod = run('git', ['-C', root, 'show', `${found}:${its.directory === '' ? '' : `${its.directory}/`}go.mod`]);
+    pending.push(...siblingRequires(itsGoMod, r.module).map((next) => ({ ...next, by: `the go.mod of ${key}` })));
+  }
+
   // The generated files of the Go module in the work tree, by their paths in the module, and of them those that the
   // commit of a release carries (GN-15g).
   const written = new Map<string, string>();
@@ -479,8 +557,67 @@ export function releaseGoModule(release: GoModuleRelease): GoModuleReleased {
   }
   if (findings.length > 0) throw new Refused(findings);
 
+  // ---- The repository of the proof ------------------------------------------------------------------------------------
+  const bare = join(work, 'remote.git');
+  const consumer = join(work, 'consumer');
+  const gitConfig = join(work, 'gitconfig');
+  // No setting of the machine reaches Go, no proxy and no checksum database is asked, and the library is the one that
+  // the module carries: GOFLAGS and CGO_LDFLAGS are empty.
+  const goEnv = {
+    GIT_CONFIG_GLOBAL: gitConfig, GIT_CONFIG_NOSYSTEM: '1', GOENV: 'off', GOTOOLCHAIN: 'local', GOWORK: 'off', GOPROXY: 'direct', GOSUMDB: 'off',
+    GOMODCACHE: join(work, 'modcache'), GOCACHE: join(work, 'gocache'), GOFLAGS: '', CGO_ENABLED: '1', CGO_LDFLAGS: '',
+  };
+  // Every call of Go of the run: the go command with the settings above.
+  const go = (argv: string[], cwd?: string): string => run(goProgram, [...goPrefix, ...argv], goEnv, cwd);
+  // Go keeps the directories of a module cache read-only, so Go removes it.
+  const cleanCache = (): void => {
+    if (existsSync(goEnv.GOMODCACHE)) go(['clean', '-modcache']);
+  };
+  const goVersion = /^go (\S+)$/m.exec(goMod)?.[1];
+  // The bare repository that Git reads in place of the remote of the repository, made once in a run.
+  let opened = false;
+  const openBare = (): void => {
+    if (opened) return;
+    opened = true;
+    cleanCache();
+    mkdirSync(work, { recursive: true });
+    rmSync(bare, { recursive: true, force: true });
+    rmSync(consumer, { recursive: true, force: true });
+    run('git', ['init', '--quiet', '--bare', bare]);
+    for (const [key, value] of [['maintenance.auto', 'false'], ['gc.auto', '0'], ['receive.autogc', 'false']] as const) run('git', ['--git-dir', bare, 'config', key, value]);
+    writeFileSync(gitConfig, `[url "${bare}"]\n\tinsteadOf = https://github.com/${at.owner}/${at.repository}\n`);
+  };
+
+  // ---- The go.sum of the commit ---------------------------------------------------------------------------------------
+  // GN-15g, B2.479: a module builds alone inside the commit of its tag (GN-15l), so the go.sum of that commit holds the
+  // hashes of each sibling module, which Go gives for the tag of the sibling in the repository of the proof. No
+  // tracked go.sum can hold them: they are the hashes of a commit that the release of the sibling made.
+  let goSum: string | undefined;
+  if (siblings.size > 0) {
+    if (goVersion === undefined) throw new Error(`${directory}/go.mod names no Go version (GN-15)`);
+    openBare();
+    git(['push', '--quiet', bare, ...[...siblings.values()].map((s) => `${s.commit}:refs/tags/${s.tag}`)]);
+    const sums = join(work, 'sums');
+    rmSync(sums, { recursive: true, force: true });
+    mkdirSync(sums, { recursive: true });
+    writeFileSync(join(sums, 'go.mod'), `module example.invalid/sums\n\ngo ${goVersion}\n`);
+    mkdirSync(goEnv.GOMODCACHE, { recursive: true });
+    const downloads: GoDownload[] = [];
+    try {
+      for (const s of siblings.values()) downloads.push(JSON.parse(go(['mod', 'download', '-json', `${s.module}@${s.version}`], sums)) as GoDownload);
+    } finally {
+      // The consumer of the proof fetches each module again, from the repository of the proof.
+      cleanCache();
+    }
+    goSum = goSumWith(tracked.includes('go.sum') ? run('git', ['-C', root, 'show', `${parent}:${directory}/go.sum`]) : '', downloads);
+  }
+
   // ---- The commit -----------------------------------------------------------------------------------------------------
   const added =new Map<string, string>(generated.map((file) => [`${directory}/${file}`, join(root, directory, file)]));
+  if (goSum !== undefined) {
+    writeFileSync(join(work, 'go.sum'), goSum);
+    added.set(`${directory}/go.sum`, join(work, 'go.sum'));
+  }
   for (const platform of GO_PLATFORMS) added.set(`${directory}/internal/ffi/lib/${platform}/lib${release.library}.a`, libraryOf(platform));
   for (const [path, source] of carried) added.set(path, source);
   mkdirSync(join(work, 'link'), { recursive: true });
@@ -518,29 +655,9 @@ export function releaseGoModule(release: GoModuleRelease): GoModuleReleased {
   if (pushed !== undefined && pushed !== commit) throw new Refused([`the tag ${moduleTag} of the remote ${remote} names the commit ${pushed}, not the commit ${commit} of this run`]);
 
   // ---- The consumer ---------------------------------------------------------------------------------------------------
-  const bare = join(work, 'remote.git');
-  const consumer = join(work, 'consumer');
-  const gitConfig = join(work, 'gitconfig');
-  // No setting of the machine reaches Go, no proxy and no checksum database is asked, and the library is the one that
-  // the module carries: GOFLAGS and CGO_LDFLAGS are empty.
-  const goEnv = {
-    GIT_CONFIG_GLOBAL: gitConfig, GIT_CONFIG_NOSYSTEM: '1', GOENV: 'off', GOTOOLCHAIN: 'local', GOWORK: 'off', GOPROXY: 'direct', GOSUMDB: 'off',
-    GOMODCACHE: join(work, 'modcache'), GOCACHE: join(work, 'gocache'), GOFLAGS: '', CGO_ENABLED: '1', CGO_LDFLAGS: '',
-  };
-  // Every call of Go of the run: the go command with the settings above.
-  const go = (argv: string[], cwd?: string): string => run(goProgram, [...goPrefix, ...argv], goEnv, cwd);
-  // Go keeps the directories of a module cache read-only, so Go removes it.
-  const cleanCache = (): void => {
-    if (existsSync(goEnv.GOMODCACHE)) go(['clean', '-modcache']);
-  };
-  cleanCache();
-  rmSync(bare, { recursive: true, force: true });
-  rmSync(consumer, { recursive: true, force: true });
-  run('git', ['init', '--quiet', '--bare', bare]);
-  for (const [key, value] of [['maintenance.auto', 'false'], ['gc.auto', '0'], ['receive.autogc', 'false']] as const) run('git', ['--git-dir', bare, 'config', key, value]);
+  // The repository of the proof holds the tag of this module beside the tags of its siblings (B2.479).
+  openBare();
   git(['push', '--quiet', bare, `${commit}:${reference}`]);
-  writeFileSync(gitConfig, `[url "${bare}"]\n\tinsteadOf = https://github.com/${at.owner}/${at.repository}\n`);
-  const goVersion = /^go (\S+)$/m.exec(goMod)?.[1];
   if (goVersion === undefined) throw new Error(`${directory}/go.mod names no Go version (GN-15)`);
   mkdirSync(consumer, { recursive: true });
   for (const [name, text] of consumerFiles(goVersion, [{ module, version: tag, packages: publicPackages(form.carried, read) }])) writeFileSync(join(consumer, name), text);
