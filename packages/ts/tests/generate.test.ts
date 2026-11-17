@@ -12655,6 +12655,96 @@ const usesBare = (source: string, name: string): boolean => {
   return new RegExp(`(?<!::\\s*)\\b${name}\\b`).test(code);
 };
 
+// B2.363: the whole copies of the contracts of the consumers under tests/fixtures/consumers, whose sources its README.md
+// names. The directory of a copy stands for the root of the repository: interface.json is the contract, and each case
+// file that the contract names is at its path from that root. `foreign` gives each library that the contract names
+// the contract of another copy. The copies of json and session-store are cut to the first case of each group, which
+// the check refuses (CK-22 reads the cases of every kind that a member raises), so only generation reads those two.
+interface WholeConsumer {
+  name: string;
+  coreLib: string;
+  foreign?: Readonly<Record<string, string>>;
+}
+const WHOLE_CONSUMERS: readonly WholeConsumer[] = [
+  { name: 'php-serialization', coreLib: 'polyspec_php_serialization' },
+  { name: 'http-media-type', coreLib: 'polyspec_http_media_type' },
+  { name: 'http-cookie', coreLib: 'polyspec_http_cookie' },
+  { name: 'http-negotiation', coreLib: 'polyspec_http_negotiation', foreign: { 'http-media-type': 'http-media-type/interface.json' } },
+  { name: 'http-form', coreLib: 'polyspec_http_form' },
+  { name: 'fsm', coreLib: 'polyspec_fsm' },
+  { name: 'template', coreLib: 'polyspec_template', foreign: { json: 'json/interface.json' } },
+  { name: 'orm', coreLib: 'polyspec_orm', foreign: { json: 'json/interface.json' } },
+  { name: 'crud-ui-validator', coreLib: 'polyspec_crud_ui_validator', foreign: { json: 'json/interface.json' } },
+  { name: 'crud-ui-generator', coreLib: 'polyspec_crud_ui_generator', foreign: { json: 'json/interface.json', 'crud-ui-validator': 'crud-ui-validator/interface.json' } },
+  {
+    name: 'hyper',
+    coreLib: 'polyspec_hyper',
+    foreign: {
+      template: 'template/interface.json',
+      json: 'json/interface.json',
+      'http-negotiation': 'http-negotiation/interface.json',
+      'http-media-type': 'http-media-type/interface.json',
+      'http-cookie': 'http-cookie/interface.json',
+      'session-store': 'session-store/interface.json',
+      'php-serialization': 'php-serialization/interface.json',
+    },
+  },
+];
+// G-5: an integer of a case file outside the safe integers is read as a bigint from its token, as the command line
+// reads it.
+const caseInteger = (_key: string, value: unknown, context?: { source?: string }): unknown =>
+  typeof value === 'number' && !Number.isSafeInteger(value) && context?.source !== undefined && /^-?(0|[1-9][0-9]*)$/.test(context.source) ? BigInt(context.source) : value;
+const consumerFile = (path: string): any => JSON.parse(readFileSync(new URL(`fixtures/consumers/${path}`, import.meta.url), 'utf8'), caseInteger as (key: string, value: unknown) => unknown);
+const wholeConsumer = ({ name, coreLib, foreign = {} }: WholeConsumer): Inputs => {
+  const contract = consumerFile(`${name}/interface.json`);
+  const files = [...new Set((contract.cases as { file: string }[]).map((row) => row.file))];
+  return {
+    contract,
+    caseFiles: new Map(files.map((file) => [file, consumerFile(`${name}/${file}`)])),
+    foreign: new Map(Object.entries(foreign).map(([library, path]) => [library, consumerFile(path)])),
+    version: '0.0.0',
+    coreLib,
+  };
+};
+// One generation of each target of each whole copy, which the tests of B2.363 and of B2.418 both read.
+const wholeConsumerTargets = new Map<string, ReadonlyMap<string, string | Buffer>>();
+const wholeConsumerTarget = (name: string, inputs: Inputs, target: Lang): ReadonlyMap<string, string | Buffer> => {
+  const key = `${name} ${target}`;
+  const made = wholeConsumerTargets.get(key) ?? generateOnStack({ ...inputs, targets: [target] });
+  wholeConsumerTargets.set(key, made);
+  return made;
+};
+
+test('B2.363: the check of this tree gives the whole copy of each consumer contract the findings that findings.json records and no other, and the generator writes each of its targets (G-4)', () => {
+  // findings.json: the findings that a copy has under the check of this tree, each with its reason and the condition
+  // that ends it, which is a task of that repository. A copy that is not listed has no finding.
+  const recorded = consumerFile('findings.json') as { consumers: { consumer: string; reason: string; until: string; keys: Record<string, string[]> }[] };
+  const names = WHOLE_CONSUMERS.map((copy) => copy.name);
+  for (const entry of recorded.consumers) {
+    assert.deepEqual(Object.keys(entry).sort(), ['consumer', 'keys', 'reason', 'until'], 'an entry of findings.json names its consumer, its keys, its reason and its until');
+    assert.ok(names.includes(entry.consumer), `findings.json names ${entry.consumer}, which is no whole copy`);
+    assert.ok(entry.reason.trim() !== '' && entry.until.trim() !== '', `${entry.consumer} of findings.json states its reason and the condition that ends it`);
+  }
+  assert.equal(new Set(recorded.consumers.map((entry) => entry.consumer)).size, recorded.consumers.length);
+  for (const copy of WHOLE_CONSUMERS) {
+    const inputs = wholeConsumer(copy);
+    // CK-96 of a case key that no row declares, as member -> keys; every other finding by its text.
+    const keys: Record<string, string[]> = {};
+    const others: string[] = [];
+    for (const finding of checkContract(inputs.contract, { dependencies: inputs.foreign ?? new Map(), caseFiles: inputs.caseFiles })) {
+      const key = finding.check === 'CK-96' ? /^the case \S+ of (\S+) has the key (\S+), which is no parameter/.exec(finding.message) : null;
+      const [, member, name] = key ?? [];
+      if (member === undefined || name === undefined) others.push(`${finding.path}: ${finding.check} ${finding.message}`);
+      else if (!(keys[member] ??= []).includes(name)) keys[member].push(name);
+    }
+    assert.deepEqual(others, [], `${copy.name}: the check of this tree has a finding that findings.json does not record`);
+    const sorted = Object.fromEntries(Object.keys(keys).sort().map((member) => [member, [...(keys[member] ?? [])].sort()]));
+    assert.deepEqual(sorted, recorded.consumers.find((entry) => entry.consumer === copy.name)?.keys ?? {}, `${copy.name}: the keys that CK-96 reports are those that findings.json records`);
+    // G-4: no target of a real contract is refused, and each has its files.
+    for (const target of inputs.contract.targets as Lang[]) assert.ok(wholeConsumerTarget(copy.name, inputs, target).size > 0, `${copy.name} ${target}`);
+  }
+});
+
 test('B2.418: every name that a generated Rust file imports is written bare in that file, in every target of every contract (GN-4e)', () => {
   const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/${path}`, import.meta.url), 'utf8'));
   const repo = (name: string, deps: string[] = []): Inputs => ({
@@ -12684,15 +12774,18 @@ test('B2.418: every name that a generated Rust file imports is written bare in t
         coreLib: 'polyspec_session_store',
       },
     ],
+    // B2.363: the whole copies of the contracts of the other consumers.
+    ...WHOLE_CONSUMERS.map((copy): [string, Inputs] => [copy.name, wholeConsumer(copy)]),
   ];
+  const whole = new Set(WHOLE_CONSUMERS.map((copy) => copy.name));
   const unused: string[] = [];
   let files = 0;
   for (const [name, inputs] of contracts) {
     for (const target of inputs.contract.targets as Lang[]) {
-      let out: Map<string, string | Buffer>;
+      let out: ReadonlyMap<string, string | Buffer>;
       try {
         // The stack of the command line, which the case tests of json need for its nested values.
-        out = generateOnStack({ ...inputs, targets: [target] });
+        out = whole.has(name) ? wholeConsumerTarget(name, inputs, target) : generateOnStack({ ...inputs, targets: [target] });
       } catch (error) {
         // G-4: a target that the generator refuses for this contract by name has no crate to read.
         if (Array.isArray((error as { refusals?: unknown }).refusals)) continue;

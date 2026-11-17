@@ -1,0 +1,54 @@
+{
+  "comment": "B2.363: the findings that the check of this tree gives a whole copy of a consumer contract of this directory, each with its reason and the condition that ends it, which is a task of that repository and not of binding. keys is the CK-96 finding of each member: the keys of its cases that are no parameter, no key of its result, no key of a case and no key that its row of cases names in reads. packages/ts/tests/generate.test.ts fails a finding that is not here and an entry whose finding is gone; a copy that is not listed has no finding.",
+  "consumers": [
+    {
+      "consumer": "http-form",
+      "reason": "CK-96 is a rule of binding 0.0.12 (B2.312, with reads since B2.319), and http-form v0.0.1 was released with binding 0.0.10: its cases hold keys that its own tests read and that no row of cases declares, and its branch lane/binding-0.0.17 of 2026-11-17 holds them too",
+      "until": "http-form releases a contract whose rows of cases name these keys in reads, or as result where the key is the result of the member, and the copy is taken again from that release tag",
+      "keys": {
+        "forms.fields_from_body": ["fields", "files", "label", "rules"],
+        "forms.file_over": ["label", "rules"],
+        "forms.files_from_body": ["fields", "files", "label", "rules"],
+        "forms.is_urlencoded": ["boundary", "label", "media_type", "rules", "urlencoded"],
+        "forms.media_type": ["boundary", "label", "media_type", "rules", "urlencoded"],
+        "forms.multipart_boundary": ["boundary", "label", "media_type", "rules", "urlencoded"],
+        "forms.parse_urlencoded": ["fields", "label", "names"],
+        "forms.read_body": ["fields", "files", "label", "rules"],
+        "forms.read_held_body": ["fields", "files", "label", "rules"],
+        "request_body.directory": ["directory", "held", "label", "rules", "size", "streamed"],
+        "request_body.feed": ["label", "rules"],
+        "request_body.finish": ["label", "rules"],
+        "request_body.held": ["directory", "held", "label", "rules", "size", "streamed"],
+        "request_body.parts": ["label", "rules"],
+        "request_body.remove": ["label", "rules"],
+        "request_body.size": ["directory", "held", "label", "rules", "size", "streamed"],
+        "request_body.start": ["label", "rules"],
+        "request_body.streamed": ["directory", "held", "label", "rules", "size", "streamed"],
+        "uploaded_file.content": ["file", "label", "rules"],
+        "uploaded_file.content_type": ["file", "label"],
+        "uploaded_file.filename": ["file", "label"],
+        "uploaded_file.held_content": ["file", "label", "rules"],
+        "uploaded_file.move_to": ["label", "rules"],
+        "uploaded_file.name": ["file", "label"],
+        "uploaded_file.new": ["file", "label"],
+        "uploaded_file.size": ["file", "label"]
+      }
+    },
+    {
+      "consumer": "fsm",
+      "reason": "CK-96 is a rule of binding 0.0.12 (B2.312), and fsm v0.0.16 was released with binding 0.0.8: each case of its nine members gives its expected value under the key returns, which no row of cases names as result, so no generated test compares it",
+      "until": "fsm releases a contract whose rows of cases name returns as result, or in reads where its own tests alone read it, and the copy is taken again from that release tag",
+      "keys": {
+        "machine.apply": ["returns"],
+        "machine.code": ["returns"],
+        "machine.events_from": ["returns"],
+        "machine.from_code": ["returns"],
+        "machine.initial": ["returns"],
+        "machine.is_final": ["returns"],
+        "machine.key": ["returns"],
+        "machine.target": ["returns"],
+        "machine.validate": ["returns"]
+      }
+    }
+  ]
+}
