@@ -810,6 +810,7 @@ const CARRIED_OF_SAMPLE = [
   'internal/binding/zz_generated_link_linux_arm64.go',
   'internal/binding/zz_generated_link_musl_linux_amd64.go',
   'internal/binding/zz_generated_link_musl_linux_arm64.go',
+  'internal/binding/zz_generated_maker_test.go',
   'internal/binding/zz_generated_map_test.go',
   'internal/binding/zz_generated_passed_test.go',
   'internal/ffi/lib/darwin_arm64/zz_generated_lib.go',
