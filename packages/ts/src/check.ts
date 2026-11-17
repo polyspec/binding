@@ -1525,6 +1525,7 @@ class Checker {
         const armedThen = this.caseInstances(row.member, record, `/cases/${i}`, row.only?.targets);
         this.caseKeys(row.member, record, row.result ?? 'result', row.reads ?? [], `/cases/${i}`);
         this.caseRange(row.member, record, row.result ?? 'result', `/cases/${i}`);
+        this.caseNoResult(row.member, record, row.result ?? 'result', `/cases/${i}`);
         this.caseCancel(row.member, record, `/cases/${i}`);
         this.caseScope(row.member, record, `/cases/${i}`);
         this.caseService(row.member, row.only?.targets, record, `/cases/${i}`);
@@ -2276,6 +2277,20 @@ class Checker {
   stepCalled = new Set<string>();
 
   // GN-13o: the raises of a step or of a call of after, {"kind": <kind>} of a kind of the raises of its member.
+  // GN-13e, B2.466 (B2.374): the result of a member without a result is null wherever a case writes it, under `key`
+  // of `holder`: the result key of a case, a call of after, a step of a function fixture and a row of a callback
+  // fixture. Each language tests it as no value, so another value there has a test that fails.
+  statesNoResult(member: Member, holder: Record<string, unknown>, key: string): boolean {
+    return member.returns === 'none' && Object.hasOwn(holder, key) && holder[key] !== null;
+  }
+
+  // GN-13e, B2.466: the result of a case of a member without a result, which the case may leave out.
+  caseNoResult(memberId: string, record: Record<string, unknown>, resultKey: string, path: string): void {
+    const found = this.members.get(memberId);
+    if (found === undefined || !this.statesNoResult(found.member, record, resultKey)) return;
+    this.report('CK-22', path, `the case ${String(record['id'])} of ${memberId}: the ${resultKey} is ${JSON.stringify(record[resultKey], (_key, item: unknown) => (typeof item === 'bigint' ? String(item) : item))}, and ${memberId} has no result, so its result is null (G-5, GN-13e)`);
+  }
+
   callRaises(member: Member, call: Record<string, unknown>, at: string, report: (message: string) => void): void {
     if (!Object.hasOwn(call, 'raises')) return;
     const raises = call['raises'];
@@ -2356,6 +2371,7 @@ class Checker {
       const called = this.methodCall(unit.id, step, at, report);
       if (called !== undefined) this.stepCalled.add(called.id);
       if (called !== undefined) this.callRaises(called, step, at, report);
+      if (called !== undefined && this.statesNoResult(called, step, 'result')) report(`${at} calls ${called.id}, which has no result, so its result is null, not ${JSON.stringify(step['result'])} (GN-13e)`);
       this.stepAwaits = outer;
     }
   }
@@ -2589,7 +2605,7 @@ class Checker {
       if (Object.hasOwn(call, 'raises')) this.callRaises(called, call, `after ${i}`, report);
       else if (!Object.hasOwn(call, 'result')) report(`after ${i} names no result`);
       // B2.374: a member without a result states the result null, which each language tests as no value.
-      else if (called.returns === 'none' && call['result'] !== null) report(`after ${i} calls ${called.id}, which has no result, so its result is null`);
+      else if (this.statesNoResult(called, call, 'result')) report(`after ${i} calls ${called.id}, which has no result, so its result is null`);
     }
     } finally {
       this.boundScope.pop();
@@ -2635,6 +2651,7 @@ class Checker {
         for (const key of Object.keys(row)) if (!['args', 'result', 'raise', 'once', 'async'].includes(key)) report(`${at} has no key ${key}`);
         if (row['result'] !== undefined && row['raise'] !== undefined) report(`${at} has a result and a raise`);
         const found = members.get(owner);
+        if (found !== undefined && this.statesNoResult(found, row, 'result')) report(`${at} is of ${owner}, which has no result, so its result is null, not ${JSON.stringify(row['result'])} (GN-13e)`);
         if (row['async'] === true && found?.async_allowed !== true) report(`${at} is async, which ${owner} does not allow`);
         const raise = row['raise'];
         if (raise !== undefined && raise !== 'exception') {

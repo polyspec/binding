@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: a7dc763f6a808ad8b78ac02c150ecfa6a1293bf77ebf9dc4a8bace65c015254c -->
+<!-- source-sha256: 0d8cf37fd67a236067af1505b533d869f2f6673fbcaf8f0f7552fb2591429f2a -->
 # 생성기
 
 [English](generator.md)
@@ -238,10 +238,17 @@
   꼴이다. 다른 레포의 checkout을 이름하기 때문이다. 이유: crud-ui의 generator는 같은 레포의 라이브러리인 validator를
   `polyspec-crud-ui-validator = { path = "../../validator/rust", version = "0.0.20" }`로 이름한다. 이것은 Cargo가 한 tree의 두
   crate를 빌드하는 유일한 꼴인데, release 검사는 그 줄을 path라고 거부했고, 그래서 그 레포는 release 검사를 통과할 수
-  없었다(B2.460). 그 밖의 줄(레포를 벗어나는 path, branch, commit, 버전 범위)은 모두 개발 꼴이며, 라이브러리의 release가 나오기 전까지
+  없었다(B2.460). 코어가 workspace에서 물려받는 줄(`workspace = true`)은 root manifest의 `[workspace.dependencies]`의 줄의
+  꼴을 갖는다: manifest는 그 줄의 버전을 적고, 그 줄의 `path`는 레포의 root에서 읽으며, 같은 workspace의 member인 바인딩
+  crate는 코어처럼 그 줄을 물려받는다(`polyspec-<library> = { workspace = true }`, `polyspec-binding-core`는 바인딩 crate의
+  feature와 함께 `workspace = true`). workspace에 그 crate의 줄이 없는데 물려받는 줄은 버전을 이름하지 않는다. 전에는 그런
+  줄을 버전 없는 줄로 읽어서, tag를 물려받은 코어가 개발 꼴의 manifest를 얻었고 그 바인딩 crate는 출처가 없는
+  `polyspec-binding-core` 줄을 얻었다(B2.457). 그 밖의 줄(레포를 벗어나는 path, branch, commit, 버전 범위)은 모두 개발 꼴이며, 라이브러리의 release가 나오기 전까지
   레포가 쓴다. manifest는 release의 버전 없이 라이브러리를 적고(`go.mod` `v0.0.0`; `pyproject.toml`은 이름 `polyspec-<library>`만; `package.json`과 `composer.json`은 package와 `*`), 개발
   checkout은 그것을 개발 링크와 개발 설치로 해석한다. 줄의 어떤 꼴도 `scaffold`, `generate`, `check`를 멈추지 않는다. `binding check --release`가 개발 꼴을 하나씩
-  보고한다(CK-70). 바인딩 crate의 `polyspec-binding-core` 의존 줄도 같은 방식으로 코어의 그 줄을 따른다. `scaffold`는 코어가
+  보고한다(CK-70). 레포의 commit된 tree는 어느 branch에서든 release 꼴만 담고, 그 CI가 그 검사를 실행한다(GN-19i). checkout을
+  다른 레포의 checkout에 맞대어 개발하는 일은 추적하지 않는 링크로 하며, 개발 꼴은 release를 내지 않는 tree, 곧 binding의
+  end-to-end 검사의 레포(`tests/e2e`) 같은 것에 대해 `scaffold`가 쓰는 것으로 남는다. 바인딩 crate의 `polyspec-binding-core` 의존 줄도 같은 방식으로 코어의 그 줄을 따른다. `scaffold`는 코어가
   적은 출처(`git`과 그 `branch`나 `tag`, `version`, 또는 바인딩 crate의 자리까지 올라가는 `path`)를 바인딩 crate에 필요한
   feature와 함께 쓰고, 스스로 무엇도 고정하지 않는다. 그래서 binding의 release tag를 적은 코어는 그 release의 바인딩 crate를
   준다. 다른 라이브러리의 값을 넘겨주기만 하는 코어처럼 코어가 `polyspec-binding-core` 줄을 적지 않은 때에는 `scaffold`가
@@ -2207,7 +2214,10 @@
   `takes 0 positional arguments`와 `unexpected keyword argument`로 알린다. 각 시험은 그 형태의 말을 기대한다. case의 인자는 snake_case 키이고, record
   parameter는 field의 객체, enum은 값 텍스트, latin1 값은 U+0000~U+00FF의 텍스트다. 기본값이 없는 parameter의 키가 없는 case는 id로
   거부한다. 타입 `float`의 수는 Python과 PHP에서 float literal이다. 두 언어는 그 자리에서 정수를 거부하기 때문이다(B-2). JSON이
-  정수로 적은 수도 그렇다(`0`은 `0.0`, `1e20`은 `1e+20`). 음의 0은 부호를 지닌다(`-0.0`). JSON으로 적을 수 없는 값: bytes는 `{"hex": "<바이트마다 소문자 hex 두 자리>"}`, `source`는 텍스트 또는 텍스트가
+  정수로 적은 수도 그렇다(`0`은 `0.0`, `1e20`은 `1e+20`). 음의 0은 부호를 지닌다(`-0.0`). PHP는 가장 작은 `int64`인
+  -9223372036854775808을 case가 정수를 주는 모든 자리, 곧 인자, 기대 결과, keyed map의 정수 key, 값 alias의 값에서
+  `\PHP_INT_MIN`으로 적는다(B2.464). 이유: PHP는 그 literal을 float 9223372036854775808의 부정으로 읽어서, binding이
+  `int64`가 아닌 float를 받았다. JSON으로 적을 수 없는 값: bytes는 `{"hex": "<바이트마다 소문자 hex 두 자리>"}`, `source`는 텍스트 또는 텍스트가
   아닌 바이트일 때 같은 `{"hex": ...}`, 올바른 꼴이 아닌 텍스트는 `{"ill_formed": "<텍스트>"}`로 그 텍스트 뒤에 올바른
   텍스트가 담지 않는 code unit 하나가 온다(텍스트가 code point나 UTF-16인 Python·Node·WASM은 짝 없는 surrogate U+D800,
   텍스트가 바이트인 PHP·Go는 바이트 0xFF), 유한하지 않은 float는 `{"float": "nan" | "inf" | "-inf"}`, 값 타입(`json_value`,
@@ -2368,7 +2378,15 @@
   NaN payload는 계속 검사하지 않는다.
   결과를 담은 case의 키는 그 `cases` 행의 `result`이거나
   `result`다(CK-22). 값은 case가 주는 대로 쓴다. `int64` 결과는 Node `bigint`, tuple은 Python tuple과 Go 배열 또는 Go 함수의
-  결과들, `bytes`는 `{"hex": ...}`다. 키가 없는 case는 호출만 실행하며, 실패하면 시험이 실패한다. optional의 결과 `null`은 optional이 무엇을
+  결과들, `bytes`는 `{"hex": ...}`다. 키가 없는 case는 호출만 실행하며, 실패하면 시험이 실패한다.
+  none을 돌려주는 member의 결과는 case가 그것을 적는 어느 자리에서나 `null`이다. 곧 case의 결과 키, `after`의 호출,
+  function fixture의 step, callback fixture의 row에서 그렇다(B2.466). 그것은 값 없음으로 시험한다. 시험은 Python의
+  `None`, PHP의 `null`, Node와 WASM의 `undefined`를 요구하고, Go는 호출만 실행하며 그 함수는 error만 주고 값을 주지
+  않는다. 그런 member의 case는 키를 생략할 수 있고, `after`의 호출은 `result`나 `raises`를 적는다. 거기의 다른 값은
+  `binding check`가 거부하고(CK-22), 그 case의 시험은 그 이유로 실패한다. 이유: 없는 결과에 규칙이 둘이었다. case 맨
+  위의 `"result": null`에는 시험이 실패했고 `after`에서는 check가 그것을 요구해서(B2.374), none을 돌려주는 member의
+  `"result": null`을 적은 orm의 36 case가 check를 통과하고 시험에서 실패했다.
+  optional의 결과 `null`은 optional이 무엇을
   담든(class라도) case 형식이 있다. 각 target은 결과를 자기 null과 비교한다(Python `None`, Node, WASM, PHP `null`, Go는 결과 타입의
   `nil`). 계약의 값 alias인
   결과(다른 타입 안이 아니고, 생성자가 받은 값을 주는 값 class의 property도 아닌 것)는 그 자리들을 전위 순서, 깊이 우선으로
@@ -2391,7 +2409,7 @@
   생성기는 기대값을 같은 out 행의 Go 형태로 쓴다. 결과가 case의 kind가 아니라 그 형태를 가지기 때문이다. 행이 `text`를
   만드는 byte string은 `string`이고(행이 `bytes`를 만드는 text는 `[]byte`), 행이 `list`를 만드는 map은 그 값들의
   `[]any`이며, 행이 `keyed_map`을 만드는 map이나 list는 `*KeyedMap[any]`다. 그 keyed map의 key와 값 class field의
-  keyed map의 key는 keyed map이 text를 받고 key의 bytes가 UTF-8일 때만 text이고, 그 밖에는 bytes다. 결과에 case 형식이 없는 case(class, 결과 `none`), 값 alias에 그 언어에서 그 kind의
+  keyed map의 key는 keyed map이 text를 받고 key의 bytes가 UTF-8일 때만 text이고, 그 밖에는 bytes다. 결과에 case 형식이 없는 case(class, 결과 `none`에 `null`이 아닌 값), 값 alias에 그 언어에서 그 kind의
   내장 형태나 텍스트의 형태를 만드는 out 행이 없는 case, parameter나 receiver factory의 인자를 주지 않는 case는 그 이유로
   시험이 실패하므로, case는 빠지지 않는다. 시험이 함수나 메서드인 언어(Python,
   PHP, Go)에서 case 시험의 이름은 case id를 낱말로 담는다. id는 ASCII 글자와 숫자가 아닌 문자가 이어진 곳마다 나뉘고
@@ -3213,7 +3231,8 @@
   쓰지 않는다. 명령은 remote에 아무것도 push하지 않는다. 이유: 실행이 무엇을 공개하는지는 그것을 시작한 recipe가 정하고,
   push가 실패한 뒤 다시 실행한 명령은 같은 reference를 준다.
 - **GN-19g** release의 recipe는 archive를 빌드하기 전에 레포의 contract마다 `binding check <interface.json> --release`를
-  실행한다. 모두 끝까지 실행하고 하나라도 실패하면 멈춘다(CK-70). GitHub Release의 asset은 label
+  실행한다. 모두 끝까지 실행하고 하나라도 실패하면 멈춘다(CK-70). recipe `release-binding-check`가 그 호출이고, asset의 빌드
+  recipe는 CI에서도 release에서도 그것을 먼저 실행한다(GN-19i). GitHub Release의 asset은 label
   `<vendor>-<product>-<runtime>-<version>`을 갖고, 플랫폼의 asset은 그 뒤에 `-<platform>`, PHP 확장은
   `-php<X.Y>-<platform>`이 붙는다. `release-platform-assets`는 upload 전에 계약의 target이 정하는 집합 전체를, label마다
   asset 하나씩 요구한다. GN-19a의 플랫폼마다의 wheel, npm 패키지와 target `node`이면 플랫폼마다의 플랫폼 패키지, GN-19a의
@@ -3247,10 +3266,12 @@
   명령(`$(NODE) $(BINDING)`이나 설치된 패키지의 bin link 같은 것)이고, `CARGO`는 저장소의 cargo 명령, `CARGOFLAGS`는 그 build의
   인자로 비어 있을 수 있으며(GN-1d), `NODE`, `NPM`, `UV`는 절대 경로로 적은 checkout의
   도구이며, `BINDING_DEP`는 binding을 설치하는 target이 있으면 그 target이다. 빈 변수를 읽는 recipe는 실패하고 그 변수를
-  적는다. `GO`는 binding이 시작하는 go 명령이고 기본값은 `PATH`의 go인 `go`다. recipe는 Go를 시작할 수 있는 binding의 각
+  적는다. `release-binding-check`는 계약의 release recipe가 읽는 변수를 모두 요구하므로, tag 뒤의 recipe만 읽는 변수가 빠진 것도
+  tag 전에 실패한다(docs/spec/contract-check.md CK-102, B2.471). `GO`는 binding이 시작하는 go 명령이고 기본값은 `PATH`의 go인 `go`다. recipe는 Go를 시작할 수 있는 binding의 각
   명령, 곧 `release-binding-check`의 `binding check --release`(GN-15l)와 `release-go-module`의 `binding
   release-go-module`(GN-19f)에 `--go "$(GO)"`를 넘기고 스스로는 Go를 시작하지 않는다. 그래서 Makefile은 자기 go가 `PATH`의
-  `go`가 아닐 때만 `GO`를 정의하고, 두 recipe 중 하나를 실행하는 job에는 Go가 있다. Go가 필요한데 찾지 못한 명령은 도구와
+  `go`가 아닐 때만 `GO`를 정의하고, 두 recipe 중 하나를 실행하는 job에는 Go가 있다. `release-assets-<job>`을 실행하는
+  job은 모두 그렇다. 그 첫 단계가 `release-binding-check`이기 때문이다(GN-19i). Go가 필요한데 찾지 못한 명령은 도구와
   `--go`와 `GO`를 이름한다(GN-15l). `NAPI`, `WASM_BINDGEN`, `MISE`, `RELEASE_ASSETS`, `RELEASE_TARGET`, `LLVM_ROOT`는 기본값이 있고, Makefile이나
   명령줄이 그것을 바꿀 수 있다. 레포는 `@napi-rs/cli`를 devDependency로, LLVM의 major release를 `config/toolchain.json`의
   `llvm.version`에, 확장의 PHP minor를 그 파일의 `phpExtension.minors`에(GN-19a), 자기 arch의 musl target을 `rust-toolchain.toml`에 고정하고, recipe 파일과 npm 패키지의 폴더 `npm/`을
@@ -3272,7 +3293,13 @@
   손으로 지키는 recipe는 결함 하나를 레포마다 한 번씩 갖는다. 추적되지 않는 생성 파일은 레포가 고정한 binding에서
   벗어날 수 없고, 검사는 아직 복사본을 가진 Makefile을 찾는다.
 - **GN-19i** 플랫폼마다 asset을 빌드하는 workflow는 레포의 workflow(`assets.yml`)이고, 레포의 CI와 release workflow가
-  그것을 부른다(`workflow_call`, tag의 입력 `ref`와 먼저 `make release-binding-check`를 실행하는 입력 `release`).
+  그것을 부른다(`workflow_call`, tag의 입력 `ref`). workflow에는 release와 CI를 가르는 입력이 없고, 레포의 Makefile에는 그런
+  입력에 대한 조건이 없다: GN-19h의 파일의 빌드 recipe `release-assets-<job>`은 저마다 `release-binding-check`(GN-19g)를 첫
+  단계로 실행하고 그것이 실패하면 멈춘다. 그래서 CI의 실행과 release의 실행은 같은 tree에서 같은 recipe이고, 각 job에는 검사가
+  시작할 수 있는 Go가 있다(GN-15l). 레포의 commit된 tree는 어느 branch에서든 release 꼴만 담으므로(docs/spec/contract-check.md
+  CK-70) 검사는 release에서 통과하는 곳이면 CI에서도 통과하고, 개발 tree라는 선언은 없다. 이유: 검사는 레포마다 자기 Makefile에
+  쓴 조건(`$(if $(filter true,$(RELEASE)),…)`)에 따라 입력 `release`가 있을 때만 돌았고, 그래서 tag 뒤 release의 실행에서 처음
+  돌았다. template, http-negotiation, session-store가 저마다 CI가 한 번도 돌린 적 없는 검사에 tag를 잃었다(B2.457).
   독립 job이 PHP 외 asset을 플랫폼마다 한 번 빌드하고, PHP extension을 GN-19a의 플랫폼과 PHP minor마다 한 번
   빌드한다. 각 job은 그 플랫폼의 runner(`ubuntu-26.04`, `ubuntu-26.04-arm`, `macos-15`)에서 돌고, run step은 matrix 항목의
   값을 make 변수로 받는 `make ci-assets-<job>` 하나다. 다른 step은 모두 runner를 준비하거나(checkout, bootstrap, 항목의 PHP,
@@ -3282,7 +3309,8 @@
   전에는 없기 때문이다. 이 recipe는 레포의 도구를 설치하고 설치가 실패하면 멈추며, `make release-recipes`를 실행한 뒤 그
   파일의 빌드 recipe `release-assets-<job>`을 별도 make로 실행하므로 방금 쓴 파일을 읽는다. 빌드 recipe가 job의 순서와
   조건을 가진다. 어떤 recipe도 `sudo`를 실행하거나 기계에 설치하지 않는다.
-  - `ci-assets-platform`은 `make release-assets-platform`으로 끝난다. 이 recipe는 계약의 target에 따라 `release-go-static`,
+  - `release-assets-<job>`은 저마다 그 계약의 `make release-binding-check`로 시작한다. 이것은 별도의 make다.
+  - `ci-assets-platform`은 `make release-assets-platform`으로 끝난다. 이 recipe는 그 다음에 계약의 target에 따라 `release-go-static`,
     `release-wheel`, `release-npm-platform`을 하나씩 끝까지 실행하고 실패한 빌드를 모두 적으며 실패한다. job은
     `var/release/assets`를 artifact `assets-<platform>`으로 upload한다.
   - `ci-assets-php PHP_MINOR=${{ matrix.minor }}`는 `make release-assets-php EXPECTED_PHP_MINOR=<minor>`로 끝난다. 이

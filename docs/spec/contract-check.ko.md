@@ -1,5 +1,5 @@
 <!-- doc-id: contract-check -->
-<!-- source-sha256: 9e4015eb4c9480860448f2f2134f179abb0ced2f626f85b4203730fbbc72b77c -->
+<!-- source-sha256: 87b91143d4ba9e46efccac76392128a38335d2a802abf9823d0e60ebff9f8648 -->
 # 계약 검사
 
 [English](contract-check.md)
@@ -19,8 +19,14 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
 이유: 처음 실패한 검사에서 멈추는 실행은 다른 검사의 finding을 가린다. 예를 들어 계약의 finding 뒤에 다른 binding의 pin이
 숨는다.
 
-`binding check <interface.json> --release`는 release의 검사 CK-70도 실행한다. release의 recipe(생성기 GN-19g)가 이 옵션을 준다. 옵션이
-없는 검사는 CK-70을 실행하지 않는다. 개발 checkout은 release가 담으면 안 되는 개발 꼴을 담기 때문이다.
+`binding check <interface.json> --release`는 release의 검사 CK-70과 CK-102도 실행한다. recipe `release-binding-check`(생성기 GN-19g)가 이
+옵션을 주고, asset의 빌드 recipe는 CI에서도 release에서도 그 recipe를 첫 단계로 실행한다(생성기 GN-19i). 이 검사가 보는 규칙:
+레포의 commit된 tree는 어느 branch에서든 release 꼴만 담는다. 추적하는 파일은 다른 polyspec 레포를 tag나 release의 버전으로
+이름하고, branch나 commit이나 레포 옆의 checkout으로 이름하지 않으며, checkout을 다른 레포의 checkout에 맞대어 개발하는 일은
+추적하지 않는 링크로 한다. 그래서 개발 tree라는 선언은 없고, CK-70이 개발 꼴을 통과시키는 mode도 없다. 옵션이 없는 검사는
+CK-70을 실행하지 않는다. 옵션은 release를 내지 않는 tree, 곧 binding의 end-to-end 검사의 레포 같은 것과 아직 줄을 옮기지 않은
+레포를 위해 남는다. 이유: 검사가 release에서만 도는 동안에는 branch가 commit한 개발 꼴이 tag 뒤에야 처음
+발견되었다(생성기 GN-19i, B2.457).
 
 ## 검사
 
@@ -169,8 +175,44 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
   말한다: ``names the path <path>, which stays inside the repository, with no version beside it, and a release names beside
   such a path the one version of that library``. 개발
   꼴(레포를 벗어나는 path, branch, commit, 버전 범위)은 그 줄의 manifest, crate, 그 꼴을 이름하는 finding이다. `scaffold`가 그 줄에서 쓰는
-  manifest가 release의 버전을 적지 않기 때문이다(`go.mod` `v0.0.0`, 버전 없는 `pyproject.toml`의 의존). 이것은 CK-19의 일부가 아닌 별도의 검사다. 개발 checkout의
+  manifest가 release의 버전을 적지 않기 때문이다(`go.mod` `v0.0.0`, 버전 없는 `pyproject.toml`의 의존). 이 줄들이 `scaffold`가 manifest를 쓰는 근거가 되는 줄이다.
+  검사는 계약의 Cargo manifest, 곧 코어의 manifest, 추적하는 바인딩 crate 각각의 manifest, root manifest에서 polyspec crate를
+  이름하는 그 밖의 모든 줄도 읽는다(B2.457). 줄의 crate, 곧 `package`가 있으면 그것이고 없으면 key가 `polyspec-<name>`이면
+  polyspec crate를 이름하는 줄이다. `[dev-dependencies]`의 crate는 어떤 계약도 이름하지 않으므로 이름이 정한다. 읽는 table은
+  manifest가 crate를 출처와 함께 이름하는 table이다: `[dependencies]`, `[dev-dependencies]`, `[build-dependencies]`,
+  `[target.<target>]`마다 같은 셋, 그리고 모든 member에 대해 crate의 출처를 바꾸는 `[patch.<source>]`. 거기서 branch, commit,
+  버전 범위, 레포를 벗어나는 path를 이름하는 줄은 table을 이름하는 finding이다(``the dependency line of polyspec-json in
+  [dev-dependencies] names the branch main, a development form``). crate가 자기 자신을 이름하는 줄(CK-65)과 레포 안에 머무는
+  path는 버전이 있든 없든 finding이 아니다. 다른 레포를 이름하지 않고, 바인딩 package의 어떤 manifest도 그 줄에서 버전을 적지
+  않기 때문이다. `workspace = true`인 줄은 어느 table에서든 그것이 물려받는 root manifest의 `[workspace.dependencies]`의 줄로
+  판정하고(generator GN-3e), finding이 그렇게 말한다(``names the branch main, by the line of [workspace.dependencies] of the
+  root manifest``). 읽는 manifest 중 어느 것도 물려받지 않는 `[workspace.dependencies]`의 줄은 읽지 않는다. 레포의 다른 crate의
+  manifest와 `scaffold`가 쓰지 않는 다른 생태계의 manifest는 읽지 않는다. 이유: 한 소비자가 `[dev-dependencies]`에 branch 줄을
+  갖고 있었고, 계약이 이름하는 줄만 보는 검사는 그것을 통과시켰다. CK-70은 줄의 tag가 있는지는 묻지 않는다. 가져오는 쪽이 자기
+  말로, 그리고 레포의 tag보다 먼저 말하기 때문이다: Cargo는 어떤 빌드에서든 workspace의 모든 줄을 해석하므로 레포 install의
+  `cargo fetch --locked`와 job의 첫 `$(CARGO)` 빌드는 crate의 이름과 그 레포의 URL 아래에 ``failed to find tag `vX.Y.Z` ``로
+  끝나고, `binding check` 자신도 그 crate의 계약을 `cargo metadata`로 읽을 때 같은 Cargo의 오류와 generator GN-15f의 안내로
+  끝난다. Go module은 `go mod download`가 알 수 없는 revision을 이름하며, 그것이 `go.sum`에 대한 CK-19의 finding이다(generator
+  GN-15l). CI가 release의 빌드 recipe를 실행하므로(generator GN-19i) 이것들은 CI에서 실패한다. 이것은 CK-19의 일부가 아닌 별도의 검사다. 개발 checkout의
   추적 파일은 `scaffold`가 쓰는 그대로여서 CK-19는 통과시키고, CK-70의 질문은 release가 무엇을 담아도 되는가이기 때문이다.
+- **CK-102** release recipe의 설정(generator GN-19h), `binding check --release`만 실행한다: release의 검사는 계약의 release
+  recipe가 읽는 레포의 설정을 그 recipe의 reader 그대로 읽고, 빠진 것마다 그 파일, key, 그것을 읽는 recipe, 규칙의 id와 함께
+  보고한다. 계약의 target에 필요한 설정만 읽는다. target `php`: `config/toolchain.json`의 `phpExtension.minors`, 곧 비어 있지 않은
+  `<major>.<minor>`의 목록. `release-platform-assets`가 PHP minor마다 확장을 요구하려고 읽으며(generator GN-19a), 그 recipe의
+  Node.js script로 읽는다(``release-platform-assets: config/toolchain.json names no PHP minor of the extension in
+  phpExtension.minors``). 그리고 같은 파일의 `llvm.version`. `release-php-ext`가 읽으며(generator GN-19d), recipe의 `sed`
+  script로 읽는다. 그 script는 `"llvm": {` 줄 아래 `"version": "<major>"` 줄의 값을 가져오므로 한 줄로 쓴 파일은 아무것도
+  고정하지 않는다. target `go`: `packages.go`의 module path, 곧
+  `github.com/<owner>/<repository>/<Go module의 디렉터리>`(generator GN-15, GN-19f). `binding release-go-module`이 다른 path를
+  거부할 때 쓰는 함수로 읽는다. recipe `release-binding-check` 자신은 계약의 release recipe가 읽는 Makefile의 변수를
+  모두(`BINDING_RUN`, `CARGO`, target에 따라 `UV`, `NPM`, `NODE`) 먼저 요구한다. 명령인 검사는 그것을 읽을 수 없기 때문이다.
+  이유: session-store의 release는 `binding check --release`를 통과한 뒤 tag 뒤의 `release-platform-assets`에서
+  `phpExtension.minors`가 없는 `config/toolchain.json` 때문에 멈췄을 것이고, 예행연습이 그것을 찾았다. 검사가 CI의 빌드 recipe의
+  첫 단계이므로(generator GN-19i) 그런 설정은 tag 전에 실패한다. recipe와 검사의 reader가 하나인 것은, 두 번째 reader는 recipe가
+  거부하는 파일을 통과시킬 것이기 때문이다. 검사가 읽지 않는 것: recipe가 시작하는 도구와 그 도구가 스스로 읽는
+  파일(devDependency `@napi-rs/cli`의 napi CLI, `mise.toml`의 wasm-bindgen, `rust-toolchain.toml`의 target과 component,
+  `LLVM_ROOT`의 LLVM). CI의 빌드 recipe가 그것을 시작하므로 tag 전에 실패한다. 그리고 한 실행의 입력(`TAG`,
+  `EXPECTED_PHP_MINOR`, asset, `gh`, Git remote). 어떤 tree도 그것을 담지 않는다.
 - **CK-71** 코어의 licence(generator GN-3f): 코어 manifest는 `package.license`를 스스로, 또는 root manifest의
   `workspace.package.license`에서 받아 적는다. 그것이 없는 코어는 코어 manifest를 이름하는 finding이다. 그 바인딩 package의
   모든 manifest가 그 licence를 담기 때문이다.
@@ -346,6 +388,10 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
   B2.361) `args`는 그 호출의 인자이며(CK-101), 결과가 없는 member의 `result`는 `null`이고 각 언어는 그것을 값 없음으로
   시험하며(Node와 WASM에서는 `undefined`, B2.374), 생성된 시험은 case의 호출
   뒤에, 예외로 끝난 호출 뒤에도, receiver에서 그것을 호출하고 `result`를 요구한다.
+  결과가 없는 member의 결과는 case가 그것을 적는 어느 자리에서나 그 한 규칙을 따른다(생성기 GN-13e, B2.466). 곧 case의
+  결과 키(그런 case는 생략할 수 있다), `result`나 `raises`를 적는 `after`의 호출, function fixture의 step, callback
+  fixture의 row에서 그것은 `null`이고, 거기의 다른 값은 보고된다. 이유: 생성기는 이 자리마다 그것을 값 없음으로
+  시험하므로, 거기에 값을 적은 case는 실패하는 시험을 받는데, check가 그것을 먼저 말한다.
   method의 case는 `with`, 곧 `{"<name>": <instance value>}`를 적을 수 있다(생성기 GN-13pa). 각 값은 이 계약의 class를
   만드는 member의 `{"new": <member id>, ...}`이고 그 class의 instance value로 판정된다. 각 이름은 snake_case이고
   `receiver`가 아니며, case의 어떤 function fixture도 그 이름을 다시 주지 않는다. 그러면 function fixture의 step과
