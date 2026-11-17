@@ -14693,6 +14693,10 @@ test('no generated Rust calls into_iter on a lent slice, which clippy names into
   }
 });
 
+// The error of a spawn that did not start or did not end, with its code, for the message of an assertion: the CI run
+// of the release commit printed only "undefinedundefined" for B2.507 and B2.510, so it named no cause.
+const spawnError = (error: Error | undefined): string => (error === undefined ? '' : `spawn failed: ${(error as NodeJS.ErrnoException).code ?? 'no code'} ${error.message}\n`);
+
 test('B2.507: the Python _same compares an instance of a value class of the contract by its type and the values of its properties, through lists, maps and nested value classes (GN-13e)', () => {
   // orm 0.0.34: a result of list<map<orm_value>> such as [{"qty": {"kind": "int", "value": 1}}] fell to
   // actual == expected, and IntegerValue, which has no __eq__, compared by identity and failed.
@@ -14750,7 +14754,8 @@ assert _same(Ratio(float("nan")), Ratio(float("nan")))
 print("ok")
 `;
   const run = spawnSync('python3', ['-I', '-c', script], { encoding: 'utf8' });
-  assert.equal(run.status, 0, `${run.stdout}${run.stderr}\n${same}`);
+  // A spawn that fails sets run.error and leaves stdout and stderr undefined, so the message names its error.
+  assert.equal(run.status, 0, `${spawnError(run.error)}${run.stdout}${run.stderr}\n${same}`);
   assert.equal(run.stdout.trim(), 'ok');
 });
 
@@ -14781,7 +14786,7 @@ const found = {
 console.log(JSON.stringify(found));
 `;
     const run = spawnSync(process.execPath, ['-e', script], { encoding: 'utf8' });
-    assert.equal(run.status, 0, `${target}: ${run.stderr}\n${ordered}`);
+    assert.equal(run.status, 0, `${target}: ${spawnError(run.error)}${run.stderr}\n${ordered}`);
     assert.deepEqual(JSON.parse(run.stdout), { equal: true, other: false, class: false, nested: false }, `${target}: ${run.stdout}\n${ordered}`);
   }
 });
