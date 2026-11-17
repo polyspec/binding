@@ -7,7 +7,7 @@ import { header, jsString } from './text.ts';
 import { jsArguments, jsDeclaredMember, placeTests, refusedJs } from './callback_arguments.ts';
 import { wasmGlue } from './wasm.ts';
 import { isHost } from './packages.ts';
-import { linuxOnlyTests, NODE_CASE_FILE, NODE_CASE_LISTENER, NODE_CASE_PATH, NODE_FIXTURE, nodeFixture, nodeFixtureChecks, NODE_SETTLED,awaitedTest, nodeOutcome, nodeCaseFileLines, scoped, nodeCaseImports, nodeOrdered, nodeCaseTextScope, nodeCaseTextProof, NODE_CASE_TEXT } from './tests_node.ts';
+import { linuxOnlyTests, NODE_CASE_FILE, NODE_CASE_LISTENER, NODE_CASE_PATH, NODE_FIXTURE, nodeFixture, nodeFixtureChecks, NODE_SETTLED,awaitedTest, nodeOutcome, nodeCaseFileLines, scoped, nodeCaseImports, nodeOrdered, nodeValueClasses, nodeCaseTextScope, nodeCaseTextProof, NODE_CASE_TEXT } from './tests_node.ts';
 import { foreignReaders, foreignClassNames, holdsForeign, nodeForeignRead } from './value_class.ts';
 import type { Unit } from '../contract.ts';
 
@@ -607,7 +607,7 @@ test('B-10: ${label} warns when it is destroyed without ${memberName('wasm', cle
   // GN-13e, B2.121: ordered reads an instance of a value class of another repository through its in row.
   const readers = usesOrdered ? foreignReaders(model, 'wasm') : [];
   const foreignClass = ctx.foreignClass as (library: string, unit: Unit) => string;
-  const ordered = nodeOrdered(foreignClassNames(readers, foreignClass), nodeForeignRead(readers, 'wasm', foreignClass));
+  const ordered = nodeOrdered(foreignClassNames(readers, foreignClass), nodeForeignRead(readers, 'wasm', foreignClass), usesOrdered ? nodeValueClasses(model, 'wasm') : []);
   // GN-13e, GN-6ar: the classes that a result of an alias holds; a class of another repository is read through the
   // package of its owner, which the test imports.
   const forms = usesTokens ? tokenForms(model, 'node') : [];
