@@ -14419,3 +14419,35 @@ print("ok")
   assert.equal(run.status, 0, `${run.stdout}${run.stderr}\n${same}`);
   assert.equal(run.stdout.trim(), 'ok');
 });
+
+test('B2.510: ordered of Node and WASM reads an instance of a value class of the contract as its class and the values of its properties, so two instances that hold other values differ (GN-13e)', () => {
+  // A napi or wasm-bindgen class has its getters on the prototype and no own property, so assert.deepStrictEqual
+  // compared the prototypes alone and passed two instances whose values differ.
+  const contract = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['node', 'wasm'] });
+  for (const target of ['node', 'wasm'] as const) {
+    const tests = text(out, STATEFUL_TESTS[target]);
+    const start = tests.indexOf('\nfunction ordered(value) {\n');
+    assert.ok(start >= 0, `${target}: ${tests.slice(0, 2000)}`);
+    const ordered = tests.slice(start, tests.indexOf('\n}\n', start) + 3);
+    const script = `const assert = require('node:assert/strict');
+class Ratio { constructor(value) { this.#value = value; } #value; get value() { return this.#value; } }
+class Weight { constructor(value) { this.#value = value; } #value; get value() { return this.#value; } }
+class Cell { constructor(value) { this.#value = value; } #value; get value() { return this.#value; } }
+class Box { constructor(entries) { this.#entries = entries; } #entries; get entries() { return this.#entries; } }
+const pkg = { Ratio, Weight, Cell, Box };
+${ordered}
+const same = (a, b) => { try { assert.deepStrictEqual(ordered(a), ordered(b)); return true; } catch { return false; } };
+const found = {
+  equal: same([new Map([['qty', new Ratio(1)]])], [new Map([['qty', new Ratio(1)]])]),
+  other: same([new Map([['qty', new Ratio(1)]])], [new Map([['qty', new Ratio(2)]])]),
+  class: same(new Ratio(1), new Weight(1)),
+  nested: same(new Cell([new Ratio(1)]), new Cell([new Ratio(3)])),
+};
+console.log(JSON.stringify(found));
+`;
+    const run = spawnSync(process.execPath, ['-e', script], { encoding: 'utf8' });
+    assert.equal(run.status, 0, `${target}: ${run.stderr}\n${ordered}`);
+    assert.deepEqual(JSON.parse(run.stdout), { equal: true, other: false, class: false, nested: false }, `${target}: ${run.stdout}\n${ordered}`);
+  }
+});
