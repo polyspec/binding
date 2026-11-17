@@ -635,18 +635,23 @@ const generatedName = (p: Prepared, base: string, extension: string): string => 
 if (targets.includes('python')) {
   const venv = join(work, 'venv');
   const wheels = join(work, 'wheels');
-  stepOf(['python'], 'build the wheels and install them into a venv of the Python of mise.toml', () => {
+  stepOf(['python'], 'build the wheels and install them by their URLs into a venv of the Python of mise.toml', () => {
     run(pythonTool, ['-m', 'venv', '--clear', venv]);
     rmSync(wheels, { recursive: true, force: true });
+    const built: string[] = [];
     for (const p of copiesOf('python')) {
-      // The wheel is built for the Python of the venv, the one of mise.toml, and installed from the local directory alone.
+      // The wheel is built for the Python of the venv, the one of mise.toml.
       run(maturin, ['build', '--interpreter', join(venv, 'bin/python'), '--features', testFeatures(p, 'python'), '--out', wheels], { cwd: packageDir(p, 'python') });
       const python = p.contract.packages['python'] as { package: string };
       const prefix = `${python.package.replaceAll('-', '_')}-`;
       const wheel = readdirSync(wheels).find((name) => name.startsWith(prefix) && name.endsWith('.whl'));
       if (wheel === undefined) throw new Error(`maturin wrote no wheel of ${python.package}`);
-      run(join(venv, 'bin/pip'), ['install', '-q', '--no-index', '--force-reinstall', '--find-links', wheels, join(wheels, wheel)]);
+      if (!built.includes(wheel)) built.push(wheel);
     }
+    // GN-3h: a consumer of a release gives pip every wheel of its graph by the URL of its asset in one install, which
+    // reads no index, so the run installs every wheel that it built by its URL on the loopback (e2e-pip-install.mts):
+    // the requirement of a wheel on the wheel of a dependency is satisfied by the URL of that wheel.
+    run(process.execPath, [join(here, 'scripts/e2e-pip-install.mts'), wheels, join(venv, 'bin/pip'), ...built]);
   });
   for (const p of mainsOf('python')) {
     const generatedPython = at(p, 'packages/python/generated/tests');

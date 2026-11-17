@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: a0c244e7f613ffdb5c5296fb08a81680b7d5e4bd236152f85172631ad60b4393 -->
+<!-- source-sha256: 69df7b8234f1f706382e8c64f846e6351418b86ceffad45116b6a17c0f66506a -->
 # 생성기
 
 [English](generator.md)
@@ -112,7 +112,9 @@
   addon을 갖지 않는다. 플랫폼 패키지는 바인딩을 가진 레포의 release가 빌드해 낸다(K-3). 패키지의 추적하는 manifest도 release가 pack하는 manifest도
   플랫폼 패키지를 적지 않는다. release는 `optionalDependencies`를 쓰지 않는다. 플랫폼 패키지는 소비자가 적는다. 소비자의 root
   `package.json`은 `dependencies`에 `<npm 패키지>`를 패키지의 asset URL로, `optionalDependencies`에 각 `<npm 패키지>-<platform>`을
-  그 플랫폼 패키지의 asset URL로 적으며, 모두 한 release의 것이다. 소비자는 `allow-remote=root`를 적은 `.npmrc`를 추적한다.
+  그 플랫폼 패키지의 asset URL로 적으며, 모두 한 release의 것이다. 소비자는 npm에 `allow-remote=root`를 준다. 그것을 어디서
+  주는지, 곧 추적하는 `.npmrc`인지 설치를 실행하는 도구인지는 소비자의 일이다. pack한 manifest가 require하는 다른
+  라이브러리의 패키지도 같은 root manifest에 적는다(GN-3h).
   asset URL은 `https://github.com/<owner>/<repository>/releases/download/v<version>/<file>`이고, `<file>`은 `npm pack`이 지은
   이름이다(GN-19e). 패키지는 `<scope>-<name>-<version>.tgz`, 플랫폼 패키지는 `<scope>-<name>-<platform>-<version>.tgz`이며
   scope에는 `@`가 없다. `polyspec/sample`의 `@polyspec/sample` 0.0.3이면:
@@ -146,7 +148,7 @@
   checkout에 연결한 소비자가 로드하는 것이기 때문이다. release의 addon은 `release-npm-platform`만 빌드한다. 이유: 소비자마다
   빌드, 플랫폼 이름, 복사를 손으로 썼고, php-serialization에는 그것이 없어서 그 checkout을 연결한 소비자가 addon load에
   실패했다(T2.43). 경로를 정하는 쪽이 그 자리를 채우는 recipe도 주므로, 파일 이름의 규칙이 하나다. 끝에서 끝까지 확인은 그 기계의 플랫폼 패키지를 배포처럼 pack하고, tarball을 loopback의
-  HTTP로 내어, 위 형식의 root `package.json` 하나와 그 `.npmrc`로 설치한다.
+  HTTP로 내어, 위 형식의 root `package.json` 하나와 `allow-remote=root`로 설치하며, 그것을 그 manifest 옆의 `.npmrc`로 준다.
   target `node`를 가진 라이브러리에 `scaffold`가 쓰는 `package.json`은 배포의 napi CLI가 읽는 설정을 적는다.
   `napi.binaryName`은 scope 없는 npm 이름이며 진입점이 로드하는 addon 파일의 `<name>`이다. `napi.targets`는 위 순서의
   플랫폼의 Rust triple(`x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`, `aarch64-apple-darwin`)이다. release는 둘을
@@ -221,6 +223,37 @@
   보고하며 다른 package를 비교하고, `generate`는 추적 package를 읽지 않는다. 이유: Go module의 버전은 한 target의 한
   manifest의 문제이므로 다른 target을 멈추지 않으며, release가 담으면 안 되는 것은 그 줄을 이름하는 finding이고, 던진 오류는
   그 줄을 이름하지 않았다.
+- **GN-3h** release 형식의 설치(GN-3e, B2.458). 버전 0.1까지는 어떤 registry도 polyspec 패키지를 담지 않는다(AGENTS). 각
+  패키지는 그 저장소의 GitHub Release의 asset이다(GN-3c). 그래서 release된 manifest가 다른 라이브러리의 패키지에 두는
+  요구는 어떤 registry도 답하지 않는 버전을 적고, 소비자가 그 패키지 자체를 package manager에 준다. Go 모듈은 그 remote의
+  tag에서 받는다(GN-15l, GN-14f, GN-19f). 나머지 셋은 다음과 같다.
+  - npm: 소비자는 자신의 root `package.json`에, 자신의 그래프에 있는 모든 polyspec 라이브러리의 npm 패키지를 그 release
+    asset의 URL로 적고(GN-3c), 다른 패키지만 require하는 패키지도 적으며, 각 패키지의 플랫폼 패키지도 적는다.
+    `overrides`는 쓰지 않는다. 각 URL이 적는 release는 pack한 manifest들이 require하는 버전의 release다. 이유: npm은 pack한
+    manifest의 요구 `X.Y.Z`를, 그 이름의 root 의존의 URL에 있는 패키지가 그 버전일 때 그 root 의존으로 만족시키고 그것을
+    한 벌만 설치한다. 그렇지 않으면 그 버전을 registry에 묻는데, registry에는 없다. pack한 manifest 안의 URL은
+    `allow-remote=root`에서 거부되고(GN-3c), `overrides` 항목은 패키지의 manifest가 이미 적은 버전을 한 번 더 적게 된다.
+  - Python: 소비자는 자신의 그래프에 있는 모든 polyspec 라이브러리의 wheel, 곧 자신의 플랫폼의 wheel을 그 release asset의
+    URL로 installer에 주며, 모두 한 번의 설치에 준다(프로젝트의 요구 `polyspec-<library> @ <URL>`, 또는 `pip install`의
+    인자인 URL). 각 URL이 적는 release는 wheel들의 metadata가 require하는 버전의 release다. 이유: pip와 uv는 wheel의
+    metadata의 `polyspec-<library>==X.Y.Z`를, 같은 설치가 URL로 받은 그 이름과 버전의 wheel로 만족시키고, pip는 받은 것이
+    없거나 그 버전이 다르면 실패한다. release에는 installer가 읽는 index 페이지가 없으므로 `--find-links`로 적을 수 없다.
+    wheel의 파일 이름은 플랫폼마다 다르므로(GN-19c) wheel의 metadata는 URL 하나를 적을 수 없다.
+  - PHP: 소비자는 자신의 그래프에 있는 각 라이브러리의 release의 `packages.json`, 곧 release utility가 archive 옆에 쓰는
+    Composer repository(`https://github.com/<owner>/<repository>/releases/download/v<version>/packages.json`)를 PIE의
+    `composer` repository로 더하고(`pie repository:add composer <URL>`), 확장을 의존 순서대로 각각
+    `pie install <package>:X.Y.Z`로 설치한다. 소비자 자신의 프로젝트는 `ext-<extension name>`만 require한다. 이유:
+    Composer는 type `php-ext`인 패키지를 싣지 않으므로, 확장의 `composer.json`의 요구 `<vendor>/<package>: X.Y.Z`는 PIE만
+    풀며, PIE는 받은 repository에서 그것을 푼다. PIE는 요청받은 확장만 설치하고 다른 확장은 설치하지 않으며, 그
+    `ext-<extension name>` 요구를 그 기계의 PHP가 싣지 않은 확장은 거부한다. 그래서 의존의 확장을 먼저 설치한다. PIE는
+    release의 binary를 GitHub의 API로 찾는데, loopback은 그것을 대신하지 못한다. 그래서 끝에서 끝까지 확인에는 이 설치의
+    단계가 없다. 그 증거는 실제 release의 PIE 단계이며, loopback이 끝나는 자리에서 PIE의 실패를 기대하는 단계는 증거가
+    아니다.
+  끝에서 끝까지 확인은 실행의 npm 패키지와 wheel을 이 두 형식으로 설치한다(GN-3c, GN-14a). npm이 시작하기 전에 각 tarball의
+  manifest를 읽는다. 실행의 다른 패키지에 대한 요구 `X.Y.Z` 가운데 그 버전의 tarball을 실행이 갖지 않은 것은 두 이름과
+  함께 실패한다(`scripts/e2e-npm-install.mts`). npm은 그것을 registry에 묻고 어느 이름도 대지 않기 때문이다. `tests/e2e`의
+  모든 저장소는 의존을 path로 적으므로, 실행의 설치가 만족시키는 요구는 development 형식이다(GN-3e). npm의 release 형식의
+  설치는 `packages/ts`의 시험이며, 그 시험은 패키지 둘을 pack하고 그 script를 그 위에서 실행한다.
 - **GN-3f** `scaffold`가 쓰는 manifest 가운데 licence 항목이 있는 것은 모두 코어 crate의 licence를 담는다. 그것은 코어
   manifest의 `package.license`이며, 코어가 `license.workspace = true`를 적으면 root manifest의 `workspace.package.license`다.
   바인딩 crate의 Cargo manifest는 그것을 `license`로, `pyproject.toml`은 `project.license`로, `package.json`과
@@ -2768,7 +2801,8 @@
   커밋이고, `binding scaffold`가 쓰는 manifest는 checkout에만 있는 `binding_core`의 feature를 필요로 할 수 있기 때문이다.
 - **GN-14a** 끝에서 끝까지 확인은 계약의 모든 target을 실행한다. 어떤 단계보다 먼저 각 target의 도구를 checkout이 고정하고
   `make install`이 설치한 도구 가운데서 찾는다(AGENTS.md): python은 `mise.toml`의 Python 3.14와 maturin(maturin은 그
-  Python의 venv의 Python에 맞춰 wheel을 빌드하고, wheel은 그 지역 디렉터리에서만 venv에 설치한다), node는 `mise.toml`의 npm과
+  Python의 venv의 Python에 맞춰 wheel을 빌드하고, `pip install --no-index` 한 번이 실행의 모든 wheel을 loopback의 URL로
+  그 venv에 설치한다. 실행은 wheel 디렉터리를 그 loopback에서 낸다, GN-3h), node는 `mise.toml`의 npm과
   Node addon의 패키지, wasm은 crate와 같은 릴리스인 `mise.toml`의 wasm-bindgen CLI와 `rust-toolchain.toml`의 Rust target
   `wasm32-unknown-unknown`, php는 `.php-version`의 PHP(기계의 PHP를 그대로 감싸므로 minor를 비교한다), `config/phpunit`의
   PHPUnit, component `llvm-tools`의 `llvm-nm`(GN-8a)과 `config/toolchain.json`이 major 릴리스로 고정한 LLVM의 libclang과

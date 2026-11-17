@@ -88,3 +88,32 @@ export function consumerManifest(packages: readonly ConsumerPackage[], base: str
 
 // The .npmrc of the consumer: npm takes a URL for a root dependency alone (its default allow-remote=none takes none).
 export const CONSUMER_NPMRC = 'allow-remote=root\n';
+
+// The packed manifest of a package of the run: its name and the dependencies that it requires.
+export interface PackedManifest {
+  name: string;
+  dependencies?: Record<string, string>;
+}
+
+// GN-3h: a packed manifest names another package of the run in the release form, the version X.Y.Z (GN-3e), and npm
+// satisfies it with the root dependency of that name only when the package at that URL has that version; otherwise it
+// asks the registry, which holds no polyspec package. So each such requirement needs the tarball of that version among
+// the packages that the root manifest names. The result names each requirement that has none, one line each; a
+// requirement of another form (`*`, a range) and one on a package that the run does not pack are not judged here.
+export function missingSiblingAssets(manifests: readonly PackedManifest[], packages: readonly ConsumerPackage[]): string[] {
+  const packed = packages.filter((p) => p.platform === undefined);
+  return manifests.flatMap((manifest) => Object.entries(manifest.dependencies ?? {}).flatMap(([name, required]) => {
+    const versions = packed.filter((p) => p.name === name).map((p) => p.version);
+    if (versions.length === 0 || !/^\d+\.\d+\.\d+$/.test(required) || versions.includes(required)) return [];
+    return [`${manifest.name} requires ${name} ${required}, and the run holds ${packFile(name, versions[0] ?? '')}, not ${packFile(name, required)} (GN-3h)`];
+  }));
+}
+
+// The requirements of the packed manifests on another package of the run in the release form, `<package> requires
+// <name> X.Y.Z`, which the install of the run then satisfies by the URL of that package.
+export function siblingReleaseForms(manifests: readonly PackedManifest[], packages: readonly ConsumerPackage[]): string[] {
+  const names = new Set(packages.filter((p) => p.platform === undefined).map((p) => p.name));
+  return manifests.flatMap((manifest) => Object.entries(manifest.dependencies ?? {})
+    .filter(([name, required]) => names.has(name) && /^\d+\.\d+\.\d+$/.test(required))
+    .map(([name, required]) => `${manifest.name} requires ${name} ${required}`));
+}

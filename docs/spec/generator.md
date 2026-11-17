@@ -145,8 +145,10 @@ the design ids are those of the binding design.
   packages (K-3). Neither the tracked manifest of the package nor the manifest that the release packs names a
   platform package: the release writes no `optionalDependencies`. The consumer names them. Its root `package.json`
   has `dependencies` with `<npm package>` at the asset URL of the package and `optionalDependencies` with each
-  `<npm package>-<platform>` at the asset URL of its platform package, all of one release, and the consumer tracks a
-  `.npmrc` with `allow-remote=root`. An asset URL is
+  `<npm package>-<platform>` at the asset URL of its platform package, all of one release, and the consumer gives npm
+  `allow-remote=root`; where it gives it, a `.npmrc` that it tracks or the tool that runs its installs, is a matter of
+  the consumer. The package of another library that the packed manifest requires is named in the same root manifest
+  (GN-3h). An asset URL is
   `https://github.com/<owner>/<repository>/releases/download/v<version>/<file>`, where `<file>` is the name that
   `npm pack` gave (GN-19e): `<scope>-<name>-<version>.tgz` for the package and `<scope>-<name>-<platform>-<version>.tgz`
   for a platform package, the scope without `@`. For `@polyspec/sample` 0.0.3 of `polyspec/sample`:
@@ -184,7 +186,7 @@ the design ids are those of the binding design.
   php-serialization lacked them, and a consumer that linked its checkout failed to load the addon (T2.43); the side
   that states the path gives the recipe that fills it, so the name of the file has one rule. The end-to-end check packs the platform package of its machine as a
   release does, serves the tarballs over HTTP on the loopback, and installs them through one root `package.json` of
-  the form above with that `.npmrc`. The `package.json` that `scaffold` writes for a library with the target
+  the form above with `allow-remote=root`, which it gives in a `.npmrc` beside that manifest. The `package.json` that `scaffold` writes for a library with the target
   `node` names the configuration that the napi CLI of a release reads: `napi.binaryName`, the npm name without scope,
   which is the `<name>` of the addon file that the entry loads, and `napi.targets`, the Rust triples of the platforms
   in the order above (`x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`, `aarch64-apple-darwin`). A release reads
@@ -275,6 +277,43 @@ the design ids are those of the binding design.
   compares the other packages, and `generate` does not read the tracked packages. Why: the version of a Go module is a
   question of one manifest of one target, so it does not stop the other targets, and what a release may not hold is a
   finding that names the line, which a thrown error did not.
+- **GN-3h** The install of a release form (GN-3e, B2.458). Until version 0.1 no registry holds a polyspec package
+  (AGENTS): each is an asset of the GitHub Release of its repository (GN-3c), so the requirement of a released
+  manifest on the package of another library names a version that no registry answers, and the consumer gives the
+  package manager that package itself. The Go module is fetched from its remote at its tag (GN-15l, GN-14f, GN-19f);
+  for the other three:
+  - npm: the consumer names, in its own root `package.json`, the npm package of every polyspec library of its graph
+    by the URL of its release asset (GN-3c), also a package that only another package requires, and each platform
+    package of each; it writes no `overrides`. The release that each URL names is the one whose version the packed
+    manifests require. Why: npm satisfies a requirement `X.Y.Z` of a packed manifest with the root dependency of that
+    name when the package at its URL has that version, and installs one copy of it; otherwise it asks the registry
+    for that version, which holds none. A URL in the packed manifest is refused under `allow-remote=root` (GN-3c),
+    and an `overrides` entry would state a second time the version that the manifest of the package already states.
+  - Python: the consumer gives the installer the wheel of every polyspec library of its graph, the one of its
+    platform, by the URL of its release asset, all in one install (a requirement `polyspec-<library> @ <URL>` of its
+    project, or the URL as an argument of `pip install`). The release that each URL names is the one whose version
+    the metadata of the wheels require. Why: pip and uv satisfy `polyspec-<library>==X.Y.Z` of the metadata of a wheel
+    with a wheel of that name and version that the same install was given by a URL, and pip fails when none was given
+    or its version differs; a release has no index page that an installer reads, so no `--find-links` names it; and
+    the file name of a wheel differs by platform (GN-19c), so the metadata of a wheel cannot name one URL.
+  - PHP: the consumer adds `packages.json` of the release of each library of its graph, the Composer repository that
+    the release utility writes beside the archives
+    (`https://github.com/<owner>/<repository>/releases/download/v<version>/packages.json`), as a `composer`
+    repository of PIE (`pie repository:add composer <URL>`), and installs the extensions in the order of their
+    dependencies, each with `pie install <package>:X.Y.Z`; its own project requires `ext-<extension name>` alone.
+    Why: Composer does not load a package of type `php-ext`, so only PIE resolves the requirement
+    `<vendor>/<package>: X.Y.Z` of the `composer.json` of an extension, and it resolves it from the repositories that
+    it was given; PIE installs the extension that was asked for and no other, and it refuses an extension whose
+    `ext-<extension name>` requirement the PHP of the machine does not load, so the extension of a dependency is
+    installed first. PIE finds the binary of a release through the API of GitHub, which no loopback stands for, so
+    the end-to-end check has no step of this install: its evidence is the PIE step of a real release, and a step that
+    expects PIE to fail where the loopback ends would be no evidence.
+  The end-to-end check installs the npm packages and the wheels of a run in these two forms (GN-3c, GN-14a). Before
+  npm starts it reads the manifest of each tarball: a requirement `X.Y.Z` on another package of the run whose tarball
+  of that version the run does not hold fails with the two names (`scripts/e2e-npm-install.mts`), because npm would
+  ask the registry for it and name neither. Every repository of `tests/e2e` names its dependency by a path, so the
+  requirements that the installs of a run satisfy are development forms (GN-3e); the install of the release form of
+  npm is a test of `packages/ts`, which packs two packages and runs that script on them.
 - **GN-3f** Every manifest that `scaffold` writes and that has a licence field carries the licence of the core crate:
   `package.license` of the manifest of the core, or `workspace.package.license` of the root manifest when the core
   names `license.workspace = true`. The Cargo manifest of each binding crate has it as `license`, `pyproject.toml` as
@@ -3392,8 +3431,9 @@ the design ids are those of the binding design.
   need a feature of `binding_core` that only the checkout has.
 - **GN-14a** The end-to-end check runs every target of the contract. Before any step it finds the tool of each target
   among the tools that the checkout pins and `make install` installs (AGENTS.md): Python 3.14 and maturin of `mise.toml`
-  for python (maturin builds the wheel for the Python of a venv of that Python, into which the wheel is installed from
-  its local directory alone), npm of `mise.toml` and the package of the Node addon for node, the wasm-bindgen CLI of `mise.toml` of the release
+  for python (maturin builds the wheel for the Python of a venv of that Python, into which one `pip install
+  --no-index` installs every wheel of the run, each by its URL on the loopback, where the run serves the directory of
+  the wheels, GN-3h), npm of `mise.toml` and the package of the Node addon for node, the wasm-bindgen CLI of `mise.toml` of the release
   of the crate and the Rust target `wasm32-unknown-unknown` of `rust-toolchain.toml` for wasm, the PHP of `.php-version`
   (its minor is compared, because the PHP of the machine is wrapped as it is) the PHPUnit of `config/phpunit` and `llvm-nm` of the component
   `llvm-tools` for php (GN-8a) with the libclang and the clang of the LLVM whose major release `config/toolchain.json`
