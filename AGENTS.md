@@ -150,6 +150,15 @@ rules of this repository.
   into sub-items or add tasks to it; do not create another checklist. Why: one list of tasks with their verification
   commands shows what is done and how it was checked.
   Enforced by: `make docs-check`
+- Own: A row is set to `[v]` on the CI run of the head of its branch, its jobs `check` and `e2e`; before each commit
+  the author runs only the tests that the change names, `make typecheck-ts` and `make docs-check`, and the branch
+  of the lane is judged by its own CI run after a merge. A failure that CI is the first to show is one that the named
+  tests missed, so its fix adds the test that shows it to the named tests. The same job of one branch is not
+  dispatched again to try a fix: after it failed twice, its make target runs on the checkout before the next push.
+  Why: the full suite of every branch on one machine, beside the builds of other repositories, took twenty minutes and
+  more a run and proved what the CI run proves again; a run that tries fixes one by one in CI spends the time it
+  saved.
+  Enforced by: review of the evidence of a row
 - Own: No tracked file names a Git commit, of this repository or of another, except where a tool requires the commit:
   a GitHub action is pinned by its commit on its `uses:` line, and a lock records what its package manager resolved. A
   copy of a consumer contract, a `.json` file under `packages/ts/tests/fixtures/consumers/`, is that contract's data as

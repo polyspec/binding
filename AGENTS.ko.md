@@ -131,6 +131,13 @@
   산출물, 검증 명령, 상태를 가진다. 작업은 하위 항목으로 나누거나 체크리스트에 더하고, 다른 체크리스트를 만들지 않는다.
   이유: 검증 명령을 가진 작업의 목록 하나가 무엇이 끝났고 어떻게 확인했는지를 보인다.
   Enforced by: `make docs-check`
+- Own: 행은 그 branch head의 CI run, 곧 job `check`와 `e2e`로 `[v]`가 된다. 작성자는 commit마다 그 변경이 이름 짓는
+  시험, `make typecheck-ts`, `make docs-check`만 돌리고, lane branch는 merge 뒤에 자기 CI run으로 판정한다. CI가 처음
+  보인 실패는 이름 지은 시험이 놓친 것이므로, 그것을 고칠 때 그 실패를 보이는 시험을 이름 지은 시험에 넣는다. 한
+  branch의 같은 job을 수정을 시험하려고 다시 dispatch하지 않는다: 두 번 실패하면 다음 push 전에 checkout에서 그 make
+  target을 돌린다. 이유: 한 기계에서 모든 branch의 전체 시험을 다른 레포의 빌드 옆에서 돌리면 run마다 이십 분이 넘게
+  걸렸고, CI run이 증명하는 것을 한 번 더 증명했다. CI에서 수정을 하나씩 시험하는 run은 아낀 시간을 다시 쓴다.
+  Enforced by: 행의 증거를 검토한다
 - Own: 추적 파일은 이 저장소의 것이든 다른 저장소의 것이든 Git commit을 이름하지 않는다. 도구가 commit을 요구하는 곳만
   예외다: GitHub action은 그 `uses:` 줄에서 commit으로 고정하고, lock은 그 package manager가 정한 것을 적는다. 소비자
   계약의 사본, 곧 `packages/ts/tests/fixtures/consumers/` 아래의 `.json` 파일은 그 계약의 데이터 그대로이고 commit을
