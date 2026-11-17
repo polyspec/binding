@@ -504,7 +504,7 @@ export class CaseTextRoots {
 
 // GN-13l: the file of the test that composed paths use the old file-owned root, and its bytes as hex.
 export const CASE_TEXT_WITNESS = 'owned-text-witness/file';
-export const CASE_TEXT_WITNESS_HEX = '726f6f74207769746e657373';
+export const CASE_TEXT_WITNESS_HEX = Buffer.from('root witness').toString('hex');
 
 // G-5: how the tests of a JavaScript target reach what the crate gives them for tests alone, and what else differs
 // between Node and WASM.
