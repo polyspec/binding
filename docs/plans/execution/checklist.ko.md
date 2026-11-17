@@ -1,5 +1,5 @@
 <!-- doc-id: checklist-execution -->
-<!-- source-sha256: 6ee8538f04fbf5c28903e934948c6c87fc42727fb0997269930a0fea7e2025d8 -->
+<!-- source-sha256: 55a0e7312b2e6753bb8ec6381428c7017f99e0ad236ac8203e690dfd64993ce0 -->
 <!-- source-sha256: 77f47e337666115f15684bec23061034d93bcbce8cdb8c9c5572493a58f9d7bd -->
 <!-- source-sha256: c076a09130fde7ffa177368658166474a443bcbac273d2836fdff989952f68d8 -->
 <!-- source-sha256: ed9ac82905e975838aa07d5201b37ea858ae7b147c6a9e6abbc5ad4014aa9e22 -->
@@ -320,3 +320,4 @@
 | B2.442 | 생성된 packages/release.mk의 target release-go-static은 cargo rustc --target <arch>-unknown-linux-musl을 C 컴파일러 없이 돌려서, C를 빌드하는 소비자의 의존(session-store: rustls, ring 0.17.14, 그 cc crate가 x86_64-linux-musl-gcc를 찾는다)이 Linux CI에서 실패한다. recipe가 소비자가 선언한 target C 컴파일러와 archiver(CC_<target>, AR_<target>)를 넘기고, 필요한데 선언되지 않았으면 그 이름을 대며 실패한다. Red: C를 빌드하는 의존을 가진 sample의 musl 빌드. | `packages/ts/src/release/`; `packages/ts/tests/`; `docs/spec/` | make test-ts | [ ] |
 | B2.443 | ajv strict 모드가 binding의 interface.schema.json을 거부해서(not 밑의 required "parameter"), 소비자가 schema로 interface.json을 검증하지 못하고 orm은 guard로 contract를 읽는다. schema는 같은 규칙을 말하면서 ajv strict 모드에서 compile된다. Red: ajv strict로 schema를 compile하는 시험. | `packages/ts/` (interface.schema.json); `packages/ts/tests/` | make test-ts | [ ] |
 | B2.444 | 0.0.19 release: `packages/ts/package.json`과 그 lock, `packages/core/rust/Cargo.toml`과 `packages/core/rust/Cargo.lock`의 version이 0.0.19이고, 0.0.18 이후의 변경은 두 changelog의 `## 0.0.19` 절이다: B2.432, B2.433, B2.434, B2.438, B2.439. 이 commit 전에 checkout은 여덟 레포 모두에서 make e2e-lint를 통과했다(B2.432). | `CHANGELOG.md`(.ko); `packages/ts/package.json`; `packages/ts/package-lock.json`; `packages/core/rust/Cargo.toml`; `packages/core/rust/Cargo.lock` | make docs-check; make lint-rust; make test-ts | [v] |
+| B2.445 | 생성된 Go U-2 시험이 두 json.Value 핸들을 포인터로 비교해서(`&json.Value{ref:(*binding.Ref)(0x…)} is not &json.Value{…}`), JSON 값인 기본값을 가진 record가 실패한다. crud-ui의 Go 시험 29개가 그렇게 실패한다(BuildList 8, BuildDetail 8, BindButtons 6, BindForm 5, FormAdd 1, FormCopy 1). JSON 값은 값으로 비교한다. 다른 target의 U-2 시험에 같은 핸들 비교가 없는지 같은 행에서 읽는다. Red: JSON 값인 기본값을 가진 record의 U-2 시험. B2.433과 B2.434는 이것을 덮지 않는다. crud-ui가 이것으로만 release되므로 0.0.20의 첫 행이다. | `packages/ts/src/generate/`; `packages/ts/tests/generate.test.ts`; `docs/spec/generator.md`(.ko) | make test-ts | [ ] |
