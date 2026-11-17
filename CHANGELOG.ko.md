@@ -1,10 +1,12 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 30f1c36d1c85af1c0c1850a03aae47f12f0faba2c0a4ca35fcc3a1d0b813f520 -->
+<!-- source-sha256: 49f51165c1692ac2aafe32b2402a8e79324b81a605d36246edf247be486d28df -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
+
+## 0.0.22
 
 - 생성된 `release-php-ext`는 생성된 `<extension-name>.stub.php`를 `<extension-name>.so` 옆에 PIE의 platform zip에 넣는다(GN-19d, B2.530). 전에는 zip에 `.so`만 있었고, PIE는 그 zip만 설치하고 Composer는 php-ext package를 풀지 않으므로 어떤 소비자도 stub을 얻지 못해, 소비자의 PHPStan 같은 정적 분석기가 extension의 클래스를 몰랐다. 레포가 할 일: 없다. 레포가 이 binding을 pin하면 `make release-recipes`가 stub을 zip에 넣는 recipe를 쓴다. `packages/ts`에서 `node --test --test-name-pattern "B2.530" tests/release-recipes.test.ts`(변경 전 실패)로 확인했다.
 - 오류를 내는 case는 함수 타입의 자리에, map의 항목으로도, 함수가 아닌 값을 `{"not_a_function": "<text>"}`로 주며, 생성 시험은 그것을 Python, PHP, Node, WASM에서는 그 text로, Go에서는 `nil`로 쓴다(G-5, GN-6z, CK-22, B2.525). 계약 검사는 결과를 내는 case의 그 형식을 그 case를 이름하며 거부하고, 이제 map 안의 함수 값도 읽는다. 전에는 생성기가 함수 자리의 `{"function": [...]}`가 아닌 모든 값을 `a case value gives no {"function": [...]} (G-5)`로 거부해서, 어떤 case도 binding이 함수가 아닌 값을 거부함을 보일 수 없었다. 레포가 할 일: 없다. 그런 case를 원하는 계약은 그 형식을 준다. `packages/ts`에서 `node --test --test-name-pattern "B2.525" tests/generate.test.ts tests/contract-check.test.ts`(변경 전 실패)로 확인했다.
