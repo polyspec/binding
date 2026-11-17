@@ -120,10 +120,15 @@ def _same(actual, expected):
 
 // GN-13e, B2.121: _same with a branch that compares two instances of a value class of another repository, or of a map
 // class of its owner, by what the members of its in row read (_read_foreign).
-const pythonSame = (foreign: string[]): string => (foreign.length === 0 ? PYTHON_SAME : PYTHON_SAME.replace(
+// GN-13e, B2.507: and a branch for each value class of the contract, an instance of which compares by its type, which
+// the helper has compared, and by the values of its properties, which _same compares again, so a list, a map or a
+// value class inside it compares as far as it goes. Such a class has no __eq__, so == compared two instances by identity.
+const pythonSame = (foreign: string[], own: { cls: string; properties: string[] }[]): string => PYTHON_SAME.replace(
   '    return actual == expected\n',
-  `    if isinstance(expected, (${foreign.map((c) => `${c},`).join(' ')})):\n        return _read_foreign(actual) == _read_foreign(expected)\n    return actual == expected\n`,
-));
+  `${own.map(({ cls, properties }) => `    if isinstance(expected, ${cls}):\n        return ${properties.length === 0 ? 'True' : properties.length === 1
+    ? `_same(actual.${properties[0]}, expected.${properties[0]})`
+    : `_same((${properties.map((p) => `actual.${p}`).join(', ')}), (${properties.map((p) => `expected.${p}`).join(', ')}))`}\n`).join('')}${foreign.length === 0 ? '' : `    if isinstance(expected, (${foreign.map((c) => `${c},`).join(' ')})):\n        return _read_foreign(actual) == _read_foreign(expected)\n`}    return actual == expected\n`,
+);
 
 // G-5: what a call gives: its result, or the class and the kind of its failure.
 // GN-13u: the cleanup call of an instance that a test made, at the end of the test; its result is not judged.
@@ -1255,6 +1260,13 @@ ${kase.raises.status === undefined ? '' : `        self.assertEqual(error.status
   const readers = usesSame ? foreignReaders(model, 'python') : [];
   const foreignClasses = foreignClassNames(readers, ctx.foreignClass as (library: string, unit: Unit) => string);
   const foreignRead = pythonForeignRead(readers, ctx.foreignClass as (library: string, unit: Unit) => string);
+  // GN-13e, B2.507: the value classes of the contract, each with the properties that _same compares.
+  const ownValueClasses = usesSame
+    ? [...model.objects.map((o) => o.unit), ...model.kept.map((k) => k.unit)].filter((unit) => unit.origin === 'value').map((unit) => ({
+      cls: `${ref(unit)}${langName('python', unit.name, 'class')}`,
+      properties: (unit.members ?? []).filter((m) => m.kind === 'property').map((m) => langName('python', m.name, 'callable')),
+    }))
+    : [];
   // GN-13e, GN-6ar: the classes that a result of an alias holds; a class of another repository is read through the
   // package of its owner, which the test imports.
   const forms = usesTokens ? tokenForms(model, 'python') : [];
@@ -1266,7 +1278,7 @@ ${usesAsyncio ? 'import asyncio\n' : ''}${usesFuture ? 'import concurrent.future
 ${usesThreads ? 'import unittest.mock\n' : ''}${usesWarnings ? 'import warnings\n' : ''}${roundFn === undefined ? '' : 'import weakref\n'}
 import ${module} as pkg
 ${[...internalModules].sort().map((m) => `import ${module}.${m}\n`).join('')}${[...foreignModules].map((library) => `import ${(model.foreign.get(library)?.packages['python'] as { module: string } | undefined)?.module ?? library} as foreign_${library.replaceAll('-', '_')}\n`).join('')}from ${module} import _native
-${usesFixture ? PYTHON_FIXTURE : ''}${usesOutcome ? PYTHON_OUTCOME : ''}${usesClosed ? PYTHON_CLOSED : ''}${usesKept ? PYTHON_KEPT : ''}${usesSame ? `${pythonSame(foreignClasses)}${foreignRead}` : ''}${roundFn === undefined ? '' : PYTHON_SUBJECT}${usesTokens ? pythonTokens(forms) : ''}${usesRaised ? PYTHON_RAISED : ''}${usesBound ? PYTHON_BOUND : ''}${usesService ? PYTHON_SERVICE : ''}${usesPeer ? PYTHON_PEER : ''}${usesListener ? PYTHON_CASE_LISTENER_SERVER : ''}${usesCaseTextPath ? PYTHON_CASE_TEXT_PATH : ''}${helpers.join('')}
+${usesFixture ? PYTHON_FIXTURE : ''}${usesOutcome ? PYTHON_OUTCOME : ''}${usesClosed ? PYTHON_CLOSED : ''}${usesKept ? PYTHON_KEPT : ''}${usesSame ? `${pythonSame(foreignClasses, ownValueClasses)}${foreignRead}` : ''}${roundFn === undefined ? '' : PYTHON_SUBJECT}${usesTokens ? pythonTokens(forms) : ''}${usesRaised ? PYTHON_RAISED : ''}${usesBound ? PYTHON_BOUND : ''}${usesService ? PYTHON_SERVICE : ''}${usesPeer ? PYTHON_PEER : ''}${usesListener ? PYTHON_CASE_LISTENER_SERVER : ''}${usesCaseTextPath ? PYTHON_CASE_TEXT_PATH : ''}${helpers.join('')}
 
 class GeneratedTest(unittest.TestCase):${usesFixture ? PYTHON_FIXTURE_RESET : ''}${usesCasePath ? PYTHON_CASE_PATH : ''}${usesCaseTextPath ? PYTHON_CASE_TEXT_GOLDENS : ''}${usesCaseFile ? PYTHON_CASE_FILE : ''}${usesByteFile ? PYTHON_CASE_BYTE_FILE : ''}${usesListener ? PYTHON_CASE_LISTENER : ''}${usesFuture ? PYTHON_FUTURE : ''}
     def test_b7_a_panic_is_kind_internal(self) -> None:

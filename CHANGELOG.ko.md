@@ -1,11 +1,13 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 84f857e9d652d602ceea76a099a9bee36f802263d05e4f44743c9ba8dd296fa2 -->
+<!-- source-sha256: 57eab2c3f5cd4024e460901c2013df9444d14e075e98ee246d020a944a16d689 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- 생성된 Python 시험의 `_same`은 contract의 value class instance를 그 타입과 property의 값으로 비교하며, list, map, 중첩 value class를 따라 내려간다(GN-13e, B2.507). 전에는 그런 instance가 `actual == expected`로 떨어졌고, `__eq__`가 없는 class는 identity로 비교되어, orm의 `list<map<orm_value>>` 결과 `[{"qty": {"kind": "int", "value": 1}}]`의 case가 Python에서 실패했다. 레포가 할 일: `make bindings`를 다시 돌린다. `packages/ts`에서 `node --test --test-name-pattern "B2.507" tests/generate.test.ts`(변경 전 실패)로 확인했다. 이 시험은 생성된 helper를 `__eq__` 없는 대역 class로 `python3 -I`에서 실행한다.
+- 생성된 Node와 WASM 시험의 `ordered`는 contract의 value class instance를 그 class 이름과 property의 값으로 읽으며, list, map, 중첩 value class를 따라 내려간다(GN-13e, B2.510). 전에는 getter가 prototype에 있고 own property가 없는 napi나 wasm-bindgen class가 그대로 `assert.deepStrictEqual`에 가서, 다른 값을 담은 두 instance가 같게 비교되었고 그런 class의 틀린 결과가 통과했다. 레포가 할 일: `make bindings`를 다시 돌린다. 적은 값이 결과와 다른 case는 이제 실패한다. `packages/ts`에서 `node --test --test-name-pattern "B2.510" tests/generate.test.ts`(변경 전 실패)로 확인했다. 이 시험은 두 target의 생성된 `ordered`를 prototype getter를 가진 대역 class로 실행한다.
 - 생성된 G-7 시험은 class나 생성된 interface의 인자 각각을 시험의 지역 변수로 한 번 만들고, 모든 호출에 그 지역 변수를 준다(PHP, Python, Node, WASM; G-7, GN-13t, B2.508). 전에는 호출마다 하나뿐인 case 폴더 위에서 인자를 다시 만들어서, 상태를 가진 인자의 둘째 생성이 실패했다(orm `StepRunner.new`: `table owner already exists`). Go에는 G-7 시험이 없다. 저장소가 할 일: `make bindings`를 다시 실행한다. `packages/ts`에서 `node --test --test-name-pattern "B2.508" tests/generate.test.ts`로 검증했고, 이 시험은 변경 전에 실패했다.
 - `var/tools/bin/php`가 `.php-version`의 minor가 아니면 `make install-tools`는 그것을 고치는 단계를 댄다(B2.499, K283): wrapper를 지우고, 그 minor의 php를 PATH 맨 앞에 두고 `make install-tools`를 다시 실행한다. 전에는 그 단계에 삭제가 빠져 있었고, kit의 install-php는 있는 wrapper를 그대로 두므로(K1271), 그 단계를 따라도 wrapper가 다른 minor에 남았다. 레포가 할 일: 없다. 그런 wrapper를 가진 checkout은 이제 메시지가 대는 단계를 따른다. `packages/ts`에서 `node --test tests/php-minor.test.ts`로 검증했고, 그 B2.499 시험은 자체 checkout에서 kit의 php install로 그 단계를 따르며 변경 전에 실패했다.
 - `release-platform-assets`에 rehearsal이 생겼다. `make release-platform-assets TAG=<tag> REHEARSAL=1 WORK=<directory>`는 label 검사와 크기 검사를 돌고, asset마다 크기를 붙인 upload 목록을 `WORK/platform-assets.txt`에 쓸 뿐 다른 것은 쓰지 않으며, `gh`도 `git`도 부르지 않고, 마지막 줄은 `no upload`다(GN-19g, B2.496). 전에는 gh upload가 label 검사 바로 뒤에 이어져 rehearsal이 그 단계에 닿지 못했고, template 0.0.28은 asset job에서 잃었다. recipe는 이제 두 꼴 모두에서, GitHub이 받지 않는 빈 asset과 2 GiB 이상인 asset을 그 이름을 대며 거부한다. 레포가 할 일: `make release-recipes`를 다시 실행하고, rehearsal target이 `REHEARSAL=1 WORK=<directory>`로 이 recipe를 부른다. `packages/ts`에서 `node --test --test-name-pattern "B2.496" tests/release-recipes.test.ts`로 검증했고, 이 시험은 변경 전에 실패했다.

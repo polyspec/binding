@@ -14380,3 +14380,96 @@ test('no generated Rust calls into_iter on a lent slice, which clippy names into
     assert.deepEqual(intoIterOnRef(out, lent), [], `consumer ${target}`);
   }
 });
+
+test('B2.507: the Python _same compares an instance of a value class of the contract by its type and the values of its properties, through lists, maps and nested value classes (GN-13e)', () => {
+  // orm 0.0.34: a result of list<map<orm_value>> such as [{"qty": {"kind": "int", "value": 1}}] fell to
+  // actual == expected, and IntegerValue, which has no __eq__, compared by identity and failed.
+  const contract = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['python'] });
+  const tests = text(out, STATEFUL_TESTS.python);
+  const start = tests.indexOf('\ndef _same(actual, expected):\n');
+  assert.ok(start >= 0, tests);
+  const same = tests.slice(start, tests.indexOf('\n\n\n', start + 1));
+  // The value classes of the sample: ratio and weight have a core_type, box and cell are kept (GN-6af).
+  assert.match(same, /\n {4}if isinstance\(expected, pkg\.Ratio\):\n {8}return _same\(actual\.value, expected\.value\)\n/, same);
+  assert.match(same, /\n {4}if isinstance\(expected, pkg\.Weight\):\n {8}return _same\(actual\.value, expected\.value\)\n/, same);
+  assert.match(same, /\n {4}if isinstance\(expected, pkg\.Cell\):\n {8}return _same\(actual\.value, expected\.value\)\n/, same);
+  assert.ok(same.indexOf('pkg.Ratio') < same.indexOf('return actual == expected'), same);
+  // The emitted helper, run on stand-in classes without __eq__.
+  const script = `import dataclasses
+import types
+
+
+class Ratio:
+    def __init__(self, value):
+        self._value = value
+
+    @property
+    def value(self):
+        return self._value
+
+
+class Weight(Ratio):
+    pass
+
+
+class Cell(Ratio):
+    pass
+
+
+class Box:
+    def __init__(self, entries):
+        self._entries = entries
+
+    @property
+    def entries(self):
+        return self._entries
+
+
+pkg = types.SimpleNamespace(Ratio=Ratio, Weight=Weight, Cell=Cell, Box=Box)
+${same}
+
+assert _same([{"qty": Ratio(1.0)}], [{"qty": Ratio(1.0)}])
+assert not _same([{"qty": Ratio(1.0)}], [{"qty": Ratio(2.0)}])
+assert not _same(Ratio(1.0), Weight(1.0))
+assert _same(Cell([Ratio(1.0)]), Cell([Ratio(1.0)]))
+assert not _same(Cell([Ratio(1.0)]), Cell([Ratio(3.0)]))
+assert _same(Ratio(float("nan")), Ratio(float("nan")))
+print("ok")
+`;
+  const run = spawnSync('python3', ['-I', '-c', script], { encoding: 'utf8' });
+  assert.equal(run.status, 0, `${run.stdout}${run.stderr}\n${same}`);
+  assert.equal(run.stdout.trim(), 'ok');
+});
+
+test('B2.510: ordered of Node and WASM reads an instance of a value class of the contract as its class and the values of its properties, so two instances that hold other values differ (GN-13e)', () => {
+  // A napi or wasm-bindgen class has its getters on the prototype and no own property, so assert.deepStrictEqual
+  // compared the prototypes alone and passed two instances whose values differ.
+  const contract = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['node', 'wasm'] });
+  for (const target of ['node', 'wasm'] as const) {
+    const tests = text(out, STATEFUL_TESTS[target]);
+    const start = tests.indexOf('\nfunction ordered(value) {\n');
+    assert.ok(start >= 0, `${target}: ${tests.slice(0, 2000)}`);
+    const ordered = tests.slice(start, tests.indexOf('\n}\n', start) + 3);
+    const script = `const assert = require('node:assert/strict');
+class Ratio { constructor(value) { this.#value = value; } #value; get value() { return this.#value; } }
+class Weight { constructor(value) { this.#value = value; } #value; get value() { return this.#value; } }
+class Cell { constructor(value) { this.#value = value; } #value; get value() { return this.#value; } }
+class Box { constructor(entries) { this.#entries = entries; } #entries; get entries() { return this.#entries; } }
+const pkg = { Ratio, Weight, Cell, Box };
+${ordered}
+const same = (a, b) => { try { assert.deepStrictEqual(ordered(a), ordered(b)); return true; } catch { return false; } };
+const found = {
+  equal: same([new Map([['qty', new Ratio(1)]])], [new Map([['qty', new Ratio(1)]])]),
+  other: same([new Map([['qty', new Ratio(1)]])], [new Map([['qty', new Ratio(2)]])]),
+  class: same(new Ratio(1), new Weight(1)),
+  nested: same(new Cell([new Ratio(1)]), new Cell([new Ratio(3)])),
+};
+console.log(JSON.stringify(found));
+`;
+    const run = spawnSync(process.execPath, ['-e', script], { encoding: 'utf8' });
+    assert.equal(run.status, 0, `${target}: ${run.stderr}\n${ordered}`);
+    assert.deepEqual(JSON.parse(run.stdout), { equal: true, other: false, class: false, nested: false }, `${target}: ${run.stdout}\n${ordered}`);
+  }
+});

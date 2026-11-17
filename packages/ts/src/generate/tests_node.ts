@@ -90,10 +90,21 @@ function ordered(value) {
 
 // GN-13e, B2.121: ordered with a branch that reads an instance of a value class of another repository, or of a map
 // class of its owner, through the members of its in row (readForeign), so that two instances compare by what they hold.
-export const nodeOrdered = (foreign: string[], read: string): string => (foreign.length === 0 ? NODE_ORDERED : `${read}${NODE_ORDERED.replace(
+// GN-13e, B2.510: and a branch for each value class of the contract, an instance of which is its class and the values
+// of its properties, each ordered again, so a list, a map or a value class inside it compares as far as it goes. A napi
+// or wasm-bindgen class has its getters on the prototype and no own property, so assert.deepStrictEqual compared the
+// prototypes alone and passed two instances whose values differ.
+export const nodeOrdered = (foreign: string[], read: string, own: { cls: string; name: string; properties: string[] }[] = []): string => `${read}${NODE_ORDERED.replace(
   'function ordered(value) {\n',
-  `function ordered(value) {\n  if (${foreign.map((c) => `value instanceof ${c}`).join(' || ')}) return { foreign: readForeign(value) };\n`,
-)}`);
+  `function ordered(value) {\n${own.map(({ cls, name, properties }) => `  if (value instanceof ${cls}) return { class: ${jsString(name)}, values: [${properties.map((p) => `ordered(value.${p})`).join(', ')}] };\n`).join('')}${foreign.length === 0 ? '' : `  if (${foreign.map((c) => `value instanceof ${c}`).join(' || ')}) return { foreign: readForeign(value) };\n`}`,
+)}`;
+
+// GN-13e, B2.510: the value classes of the contract in Node or WASM, each with the properties that ordered reads.
+export const nodeValueClasses = (model: Model, lang: 'node' | 'wasm'): { cls: string; name: string; properties: string[] }[] =>
+  [...model.objects.map((o) => o.unit), ...model.kept.map((k) => k.unit)].filter((unit) => unit.origin === 'value').map((unit) => {
+    const name = langName(lang, unit.name, 'class');
+    return { cls: `pkg.${name}`, name, properties: (unit.members ?? []).filter((m) => m.kind === 'property').map((m) => langName(lang, m.name, 'callable')) };
+  });
 
 // G-5: what a call gives: its result, or the class and the kind of its failure.
 const NODE_OUTCOME = `
@@ -1020,7 +1031,7 @@ test('U-7: ${kase.alias.unit.id} in ${kase.id}', () => {
   // GN-13e, B2.121: ordered reads an instance of a value class of another repository through its in row.
   const readers = usesOrdered ? foreignReaders(model, 'node') : [];
   const foreignClass = ctx.foreignClass as (library: string, unit: Unit) => string;
-  const ordered = nodeOrdered(foreignClassNames(readers, foreignClass), nodeForeignRead(readers, 'node', foreignClass));
+  const ordered = nodeOrdered(foreignClassNames(readers, foreignClass), nodeForeignRead(readers, 'node', foreignClass), usesOrdered ? nodeValueClasses(model, 'node') : []);
   // GN-13e, GN-6ar: the classes that a result of an alias holds; a class of another repository is read through the
   // package of its owner, which the test imports.
   const forms = usesTokens ? tokenForms(model, 'node') : [];
