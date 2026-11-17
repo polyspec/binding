@@ -4057,7 +4057,10 @@ the design ids are those of the binding design.
   GN-14i, runs `cargo update -p polyspec-binding-core --offline` and `binding scaffold` of the run (GN-14d), and then
   only goals of the consumer's own Makefile, each with `BINDING` (the executable `dist/cli.js`), `BINDING_RUN` (node
   with it) and `NODE` of the run: its install (`install`, or the goals that `install` of its entry names when its
-  Makefile has no goal `install`), with the network; `bindings`, which generates; `test-bindings`, the generated tests
+  Makefile has no goal `install`), with the network, and with the directories of the clone that `path` of its entry
+  names first on the `PATH` of every goal, as its own CI puts them there (`var/tools/bay` of session-store, whose
+  goals `install-bay` and `setup-bay` install bay and its machine setup on the runner for the Redis servers of its
+  generated tests); `bindings`, which generates; `test-bindings`, the generated tests
   of the targets of its contract on their runners, offline (`CARGO_NET_OFFLINE`, `GOPROXY=off`, `GOFLAGS=-mod=readonly`,
   `npm_config_offline`, `UV_OFFLINE`, `PIP_NO_INDEX`); and the release rehearsal, `release-recipes`, the release
   builds of the host (`release-go-static`, `release-wheel`, `release-php-ext`, by the targets of the contract) and

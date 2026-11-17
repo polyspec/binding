@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: d7782d873ec2afd4e7a5071ebfc7db272178e4c55fa60f73461997b7ba7bd3d8 -->
+<!-- source-sha256: 8a774f33971cd443488b9c9f7c64e64e1de9569ac9c6daf0d319db68582c814c -->
 # 생성기
 
 [English](generator.md)
@@ -3326,7 +3326,9 @@
   path patch를 GN-14i처럼 쓰고, `cargo update -p polyspec-binding-core --offline`과 실행의 `binding scaffold`를
   실행한다(GN-14d). 그 뒤로는 소비자 자신의 Makefile goal만, 각각 실행의 `BINDING`(실행 가능한 `dist/cli.js`),
   `BINDING_RUN`(그것을 실행하는 node), `NODE`와 함께 실행한다: 네트워크와 함께 그 install(`install`, 또는 Makefile에
-  goal `install`이 없을 때 항목의 `install`이 이름하는 goal들); 생성하는 `bindings`; 계약의 target마다 생성된 시험을
+  goal `install`이 없을 때 항목의 `install`이 이름하는 goal들). 이때 항목의 `path`가 이름하는 clone의 디렉터리를
+  소비자 자신의 CI처럼 모든 goal의 `PATH` 앞에 둔다(session-store의 `var/tools/bay`. 그 goal `install-bay`와
+  `setup-bay`가 생성된 시험의 Redis 서버를 위해 runner에 bay와 그 기계 설정을 설치한다); 생성하는 `bindings`; 계약의 target마다 생성된 시험을
   그 runner로 offline 실행하는 `test-bindings`(`CARGO_NET_OFFLINE`, `GOPROXY=off`, `GOFLAGS=-mod=readonly`,
   `npm_config_offline`, `UV_OFFLINE`, `PIP_NO_INDEX`); 그리고 cache 없는 release 리허설, 곧 `release-recipes`, 호스트의
   release build(계약의 target에 따라 `release-go-static`, `release-wheel`, `release-php-ext`), `rehearse-go-module

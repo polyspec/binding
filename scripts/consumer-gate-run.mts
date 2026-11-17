@@ -39,7 +39,7 @@ const provenance = `binding ${head} (${clean ? 'clean' : 'with uncommitted chang
 const makeFound = spawnSync('sh', ['-c', 'command -v gmake || command -v make'], { encoding: 'utf8' }).stdout.trim().split('\n')[0] ?? 'make';
 const work = args.get('--work') ?? realpathSync(mkdtempSync(join(tmpdir(), 'binding-consumer-gate-')));
 mkdirSync(work, { recursive: true });
-const gate: Gate = { work, node: process.execPath, cli, core: join(here, 'packages/core/rust'), make: makeFound };
+const gate: Gate = { work, node: process.execPath, cli, core: join(here, 'packages/core/rust'), make: makeFound, path: process.env['PATH'] ?? '' };
 const report = join(here, 'var/report/consumer-gate', job);
 rmSync(report, { recursive: true, force: true });
 mkdirSync(report, { recursive: true });

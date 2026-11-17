@@ -10,7 +10,7 @@ import { OFFLINE, bindingVariables, cloneStep, consumersOf, gateStatus, gateStep
 
 const top = new URL('../../../', import.meta.url).pathname;
 const tracked = readFileSync(`${top}config/consumers.json`, 'utf8');
-const gate: Gate = { work: '/work', node: '/tools/node', cli: '/binding/packages/ts/dist/cli.js', core: '/binding/packages/core/rust', make: '/usr/bin/make' };
+const gate: Gate = { work: '/work', node: '/tools/node', cli: '/binding/packages/ts/dist/cli.js', core: '/binding/packages/core/rust', make: '/usr/bin/make', path: '/usr/bin:/bin' };
 const json: GateConsumer = { repo: 'polyspec/json', tag: 'v0.0.36', job: 'small', install: ['install'] };
 const list = (consumers: unknown[], pending: unknown[] = []): string => JSON.stringify({ consumers, pending });
 
@@ -33,7 +33,7 @@ test('B2.494: the list refuses a tag that is no release tag, a repository named 
   assert.throws(() => parseConsumers(list([{ ...json, tag: 'v1/rust-core' }])), /is not a release tag/);
   assert.throws(() => parseConsumers(list([json, { ...json, tag: 'v0.0.35' }])), /polyspec\/json is named twice/);
   assert.throws(() => parseConsumers(list([json], [{ repo: 'polyspec/json', job: 'small', reason: 'x' }])), /polyspec\/json is named twice/);
-  assert.throws(() => parseConsumers(list([{ ...json, branch: 'main' }])), /the key branch is not one of repo, tag, job, install/);
+  assert.throws(() => parseConsumers(list([{ ...json, branch: 'main' }])), /the key branch is not one of repo, tag, job, install, path/);
   assert.throws(() => parseConsumers(list([json], [{ repo: 'polyspec/orm', job: 'orm', reason: ' ' }])), /polyspec\/orm has no reason/);
   assert.throws(() => parseConsumers(list([{ ...json, repo: 'json' }])), /repo "json" is not <owner>\/<name>/);
   assert.throws(() => parseConsumers(list([{ ...json, install: [] }])), /install of polyspec\/json is not a list of goals/);
@@ -113,6 +113,11 @@ test('B2.494: a consumer clones its tag, fetches its lock, takes the patch, then
   assert.ok(own.some((s) => s.step.what === 'make install-rust install-tools of the consumer'));
   assert.ok(!own.some((s) => s.step.what.includes('rehearse-go-module')));
   assert.deepEqual(rehearsalGoals(['node', 'wasm']), []);
+  // The directories of path come first on the PATH of every goal of the consumer, as its own CI puts them there.
+  const withPath = gateSteps(gate, { ...json, path: ['var/tools/bay'] }, [], ['php'], () => {});
+  for (const s of withPath.filter((s) => 'command' in s.step && s.step.command === gate.make)) assert.equal('env' in s.step ? s.step.env?.['PATH'] : undefined, '/work/json/var/tools/bay:/usr/bin:/bin', `${s.step.what} does not have the path of the consumer`);
+  assert.throws(() => parseConsumers(list([{ ...json, path: ['../out'] }])), /path of polyspec\/json is not a list of directories inside its clone/);
+  assert.throws(() => parseConsumers(list([{ ...json, path: ['/usr/bin'] }])), /is not a list of directories inside its clone/);
   assert.ok(stops('prepare') && stops('generate') && !stops('test') && !stops('rehearsal'));
 });
 
