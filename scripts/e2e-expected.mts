@@ -4,7 +4,7 @@
 // text: a named test that passes or does not run, a failure without its text, and a failure of another test fail the
 // step, so the fixture checks that a defect of the generator fails a test, and never that a test is left out.
 
-import { readdirSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import type { GoTestEvents } from './go-test-events.mts';
 
@@ -27,6 +27,15 @@ export function strayExpectedFailures(root: string): string[] {
   };
   walk(root);
   return found.sort();
+}
+
+// The expected failures of a run of the repository repo, by target, or undefined when it has none; binding is the
+// tree of binding that the run checks.
+export function expectedFailuresOf(repo: string, binding: string): Partial<Record<string, ExpectedFailure[]>> | undefined {
+  void binding;
+  const path = join(repo, 'expected-failures.json');
+  if (!existsSync(path)) return undefined;
+  return (JSON.parse(readFileSync(path, 'utf8')) as { failures: Partial<Record<string, ExpectedFailure[]>> }).failures;
 }
 
 export interface ExpectedFailure {

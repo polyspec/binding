@@ -46,7 +46,7 @@ import { runIn, workOf } from './e2e-work.mts';
 import { GO_TAG_GUARD, goPackageFailure, goTagGuardFailure, goTestScope, readGoTestEvents } from './go-test-events.mts';
 import { phpMinorProblem } from './php-minor.mts';
 import { refusalProblem } from './e2e-refusal.mts';
-import { expectedFailureProblem, goFailures, junitFailures, RUN_FAILED, unittestFailures, type ExpectedFailure, type FailedTest } from './e2e-expected.mts';
+import { expectedFailureProblem, expectedFailuresOf, goFailures, junitFailures, RUN_FAILED, unittestFailures, type ExpectedFailure, type FailedTest } from './e2e-expected.mts';
 
 const args = new Map<string, string>();
 const deps: string[] = [];
@@ -572,8 +572,7 @@ for (const t of targets) for (const p of copiesOf(t)) generateOf(t, p);
 // GN-14n (B2.509): a repository with expected-failures.json names, for each target, the generated tests that must
 // fail, each with a text of its failure. Each run of tests of the target then passes only when exactly those tests
 // fail with their texts, and they count as its passed tests; a repository without the file counts as before.
-const expectedPath = mains[0] === undefined ? '' : join(mains[0].copy, 'expected-failures.json');
-const expectedFailures = expectedPath !== '' && existsSync(expectedPath) ? (JSON.parse(readFileSync(expectedPath, 'utf8')) as { failures: Partial<Record<Lang, ExpectedFailure[]>> }).failures : undefined;
+const expectedFailures = expectedFailuresOf(resolve(repo), binding) as Partial<Record<Lang, ExpectedFailure[]>> | undefined;
 const judgedCount = (t: Lang, what: string, passed: number, failedTests: FailedTest[], failures: number, skipped: number, skippedNames: string[] = []): void => {
   if (expectedFailures === undefined) {
     counted(t, what, passed, failures, skipped, skippedNames);
