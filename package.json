@@ -12,6 +12,6 @@
     }
   },
   "devDependencies": {
-    "@polyspec/kit": "https://github.com/polyspec/kit/releases/download/v0.0.118/polyspec-kit-0.0.118.tgz"
+    "@polyspec/kit": "https://github.com/polyspec/kit/releases/download/v0.0.119/polyspec-kit-0.0.119.tgz"
   }
 }
