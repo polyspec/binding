@@ -9,6 +9,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, wri
 import { join } from 'node:path';
 import { GO_PLATFORMS, GO_TAG_GUARD_FILE, goLinkFile, goTestTagsOf } from '../generate/go.ts';
 import { isGoGenerated } from '../generate/index.ts';
+import { goCommand } from '../go-command.ts';
 
 export type GoPlatform = (typeof GO_PLATFORMS)[number];
 
@@ -295,6 +296,8 @@ export interface GoModuleRelease {
   work: string;
   // The Git remote of the repository.
   remote: string;
+  // The words of the go command, the value of --go; the go of PATH of `env` when it is not given.
+  go?: readonly string[] | undefined;
   // The environment of the commands of the run, PATH included.
   env: Record<string, string | undefined>;
   // Takes each command of the run and what it found, for the reader of the run.
@@ -317,6 +320,11 @@ export function releaseGoModule(release: GoModuleRelease): GoModuleReleased {
   if (at.directory !== directory) throw new Refused([`${module}: the Go module is at ${directory} of its repository, not at ${at.directory}, the directory of its module path (GN-15)`]);
   const moduleTag = at.tag;
   const reference = `refs/tags/${moduleTag}`;
+  // B2.456: the consumer of the proof is built by Go, so a run without the go command is refused before it reads the
+  // repository, with the sentence that names the tool and how to give it.
+  const resolved = goCommand(release.go, release.env, 'binding release-go-module proves the commit of the Go module with a consumer that Go builds (`go mod tidy`, `go test`, GN-19f)');
+  if ('refusal' in resolved) throw new Refused([resolved.refusal]);
+  const [goProgram, ...goPrefix] = resolved.command;
 
   interface Ran { status: number | null; stdout: string }
   // Every command reads the environment of the run alone; its error output goes to the reader of the run.
@@ -458,9 +466,11 @@ export function releaseGoModule(release: GoModuleRelease): GoModuleReleased {
     GIT_CONFIG_GLOBAL: gitConfig, GIT_CONFIG_NOSYSTEM: '1', GOENV: 'off', GOTOOLCHAIN: 'local', GOWORK: 'off', GOPROXY: 'direct', GOSUMDB: 'off',
     GOMODCACHE: join(work, 'modcache'), GOCACHE: join(work, 'gocache'), GOFLAGS: '', CGO_ENABLED: '1', CGO_LDFLAGS: '',
   };
+  // Every call of Go of the run: the go command with the settings above.
+  const go = (argv: string[], cwd?: string): string => run(goProgram, [...goPrefix, ...argv], goEnv, cwd);
   // Go keeps the directories of a module cache read-only, so Go removes it.
   const cleanCache = (): void => {
-    if (existsSync(goEnv.GOMODCACHE)) run('go', ['clean', '-modcache'], goEnv);
+    if (existsSync(goEnv.GOMODCACHE)) go(['clean', '-modcache']);
   };
   cleanCache();
   rmSync(bare, { recursive: true, force: true });
@@ -475,8 +485,8 @@ export function releaseGoModule(release: GoModuleRelease): GoModuleReleased {
   for (const [name, text] of consumerFiles(goVersion, [{ module, version: tag, packages: publicPackages([...tracked, ...generated]) }])) writeFileSync(join(consumer, name), text);
   mkdirSync(goEnv.GOMODCACHE, { recursive: true });
   try {
-    release.log(run('go', ['mod', 'tidy'], goEnv, consumer).trimEnd());
-    release.log(run('go', ['test', '-count=1', '.'], goEnv, consumer).trimEnd());
+    release.log(go(['mod', 'tidy'], consumer).trimEnd());
+    release.log(go(['test', '-count=1', '.'], consumer).trimEnd());
     if (/^replace\b/m.test(readFileSync(join(consumer, 'go.mod'), 'utf8'))) throw new Error('the go.mod of the consumer holds a replace, so it does not fetch the module at its tag (GN-15g)');
   } finally {
     cleanCache();

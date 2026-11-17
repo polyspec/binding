@@ -5,7 +5,7 @@
 
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { test } from 'node:test';
@@ -381,6 +381,24 @@ test('a tag, a module path and a library of another form are refused before any 
   assert.deepEqual(s.lines(), []);
   const absent = scene(t, [{ tool: 'git', match: 'rev-parse --verify --quiet refs/tags/v0\\.0\\.1\\^\\{commit\\}$', status: 1 }]);
   assert.deepEqual(refusal(() => releaseGoModule(absent.release)), ['the repository has no tag v0.0.1']);
+});
+
+test('B2.456: a run without go is refused with why Go is needed, the tool, --go and $(GO), before any command reads the repository (GN-19f)', (t) => {
+  const s = scene(t);
+  rmSync(join(s.dir, 'bin/go'));
+  assert.deepEqual(refusal(() => releaseGoModule(s.release)), [
+    'binding release-go-module proves the commit of the Go module with a consumer that Go builds (`go mod tidy`, `go test`, GN-19f), and the go command `go` is not found on PATH: install Go, or name the go command with --go <command>, the value of $(GO) of the release recipes (GN-19h)',
+  ]);
+  assert.deepEqual(s.lines(), []);
+});
+
+test('B2.456: the commands of the consumer run the command of --go, with its words before the arguments of Go (GN-19f)', (t) => {
+  const s = scene(t);
+  mkdirSync(join(s.dir, 'elsewhere'));
+  renameSync(join(s.dir, 'bin/go'), join(s.dir, 'elsewhere/go-1.27'));
+  const go = join(s.dir, 'elsewhere/go-1.27');
+  releaseGoModule({ ...s.release, go: [go, 'via'] });
+  assert.deepEqual(s.lines().filter((line) => line.startsWith('go')), ['go-1.27 via mod tidy', 'go-1.27 via test -count=1 .', 'go-1.27 via clean -modcache']);
 });
 
 test('a tag of the repository that names the commit of the run is left as it is, and one that names another commit fails the command (GN-19f)', (t) => {

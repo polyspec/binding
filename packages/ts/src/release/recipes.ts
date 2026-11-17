@@ -62,6 +62,10 @@ RELEASE_TARGET ?= var/release/target
 NAPI ?= $(CURDIR)/node_modules/.bin/napi
 WASM_BINDGEN ?= $(CURDIR)/var/tools/mise/shims/wasm-bindgen
 MISE ?= $(CURDIR)/var/tools/bin/mise
+# The go command, which binding starts for the go.sum of a go.mod that requires the release of another polyspec Go
+# module (binding check, GN-15l) and for the consumer that proves the Go module of a release (binding release-go-module,
+# GN-19f): the go of PATH unless it is given. binding names it and this variable when it needs Go and does not find it.
+GO ?= go
 # Cargo names a cdylib lib<name>.dylib on macOS and lib<name>.so on Linux.
 BINDING_CDYLIB := $(if $(filter Darwin,$(shell uname -s)),dylib,so)
 # The bindgen of ext-php-rs loads a libclang through clang-sys, which takes the libclang of the highest LLVM that it finds,
@@ -324,8 +328,8 @@ ${generate('go')}
 	set -e; \\
 	if [ -d "$$work" ]; then chmod -R u+w "$$work"; rm -rf "$$work"; fi; \\
 	mkdir -p "$$work"; \\
-	echo "$(BINDING_RUN) release-go-module --contract ${contractPath} --tag $$TAG --libraries $(abspath $(RELEASE_ASSETS))/go --work $$work"; \\
-	ref=$$($(BINDING_RUN) release-go-module --contract ${contractPath} --tag "$$TAG" --libraries $(abspath $(RELEASE_ASSETS))/go --work "$$work"); \\
+	echo "$(BINDING_RUN) release-go-module --contract ${contractPath} --tag $$TAG --libraries $(abspath $(RELEASE_ASSETS))/go --work $$work --go $(GO)"; \\
+	ref=$$($(BINDING_RUN) release-go-module --contract ${contractPath} --tag "$$TAG" --libraries $(abspath $(RELEASE_ASSETS))/go --work "$$work" --go "$(GO)"); \\
 	case "$$ref" in \\
 	'') echo "${step}: the remote holds the tag of the Go module of $$TAG already" ;; \\
 	refs/tags/*/"$$TAG") set -x; git push origin "$$ref" ;; \\
@@ -335,10 +339,11 @@ ${generate('go')}
   }
 
   add('release-binding-check', `${head('release-binding-check', `release-binding-check runs the release check of binding on the contract (GN-19g, CK-70), which a release runs before it
-builds an asset of a tag.`)}
+builds an asset of a tag. The check starts the go command of GO when the go.mod of the contract requires the release of
+another polyspec Go module (GN-15l), and only then, so the job that runs it has Go.`)}
 ${require('BINDING_RUN', 'the command that starts binding')}
 ${require('CARGO', 'the cargo command of the repository')}
-	$(BINDING_RUN) check ${contractPath} --release --cargo "$(CARGO)"
+	$(BINDING_RUN) check ${contractPath} --release --cargo "$(CARGO)" --go "$(GO)"
 `);
 
   // GN-19g: the assets of each platform with their labels, and the labels that the targets of the contract require, one
@@ -461,7 +466,8 @@ ${generate('node')}
 # The release recipes of the binding (binding GN-19h): the Makefile of the repository includes this file after it defines
 # BINDING_RUN, the command that starts binding, CARGO, the cargo command of the repository, and CARGOFLAGS, the arguments
 # of its builds (binding GN-1d), NODE, NPM and UV, the tools of the checkout, and BINDING_DEP, the target that installs
-# binding, if it has one; it runs binding release-recipes to write the file again.
+# binding, if it has one; it runs binding release-recipes to write the file again. It may define GO, the go command that
+# binding starts (binding GN-15l, GN-19f), which is the go of PATH when it does not.
 `;
   const shared = `${SHARED}${has('wasm') ? `\n${INSTALL_WASM_BINDGEN}` : ''}`;
   return { path, targets: defined, text: `${header}\n${shared}\n${sections.join('\n')}` };

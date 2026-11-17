@@ -578,7 +578,12 @@ test('B2.401: every recipe runs $(CARGO) with $(CARGOFLAGS) right after the subc
     }
     const bindings = calls.filter((call) => call.tool === 'binding' && (call.args[0] === 'generate' || call.args[0] === 'check'));
     assert.notEqual(bindings.length, 0, target);
-    for (const call of bindings) assert.deepEqual(call.args.slice(-2), ['--cargo', cargo], `${target}: binding ${call.args.join(' ')}`);
+    // B2.456: binding check also takes --go "$(GO)" after it, the go of PATH by default.
+    for (const call of bindings) {
+      const at = call.args.indexOf('--cargo');
+      assert.deepEqual(call.args.slice(at, at + 2), ['--cargo', cargo], `${target}: binding ${call.args.join(' ')}`);
+      assert.deepEqual(call.args.slice(at + 2), call.args[0] === 'check' ? ['--go', 'go'] : [], `${target}: binding ${call.args.join(' ')}`);
+    }
   }
   // A recipe that runs cargo stops when the Makefile gives no CARGO, and names it.
   const none = box.make('release-go-static', 'CARGO=');

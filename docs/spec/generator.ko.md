@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 5f9779e3f4caa142bd40d090f87e35fe449c3053914eadd7cdf21f789dc63972 -->
+<!-- source-sha256: d6a8e4a9a8f7a79b3e4ead7ea315067d587ed6529d1030fe2574d2e5fcd4834d -->
 # 생성기
 
 [English](generator.md)
@@ -46,7 +46,9 @@
   `build`) 바로 뒤에 `$(CARGOFLAGS)`를 두며, 자기가 실행하는 binding 명령 중 Cargo를 실행하는 것마다 `--cargo "$(CARGO)"`를
   넘긴다. `binding check`는 Cargo를 다른 방식으로 실행하는 recipe 파일을 보고한다(CK-94). `binding go-link`를 실행하는 저장소의
   recipe는 `--cargo "$(CARGO)" --cargo-flags "$(CARGOFLAGS)"`를 넘긴다. `uv build`가 실행하는 maturin과 `napi build`는 Cargo를
-  스스로 시작하며 binding의 호출이 아니다. 이유: php-serialization과 session-store가 `binding go-link`와 release recipe가 `PATH`의
+  스스로 시작하며 binding의 호출이 아니다. go 명령도 같은 방식으로 주지만 명령의 요구는 아니다. `binding check`, `binding
+  scaffold`, `binding release-go-module`은 `$(GO)`의 값인 `--go <command>`를 받아 `--cargo`처럼 단어로 나누고, 그것이 없으면
+  `PATH`의 `go`를 실행한다(GN-15l, GN-19f). 이유: php-serialization과 session-store가 `binding go-link`와 release recipe가 `PATH`의
   `cargo`를 실행해서 저장소의 `$(CARGO)`와 `CARGOFLAGS`를, 그리고 그것과 함께 kit의 Rust 연결을 거치지 않는다는 것을 찾았고,
   개발 연결에서 core가 lock의 tag로 빌드되었다. hyper는 provider 계약을 읽는 데서 같은 것을 찾았다. 그 `cargo metadata`가 lock의
   tag의 crate를 주어서 생성기가 연결된 checkout의 계약이 아니라 그 release의 계약을 읽었다. 개발 연결에서 `$(CARGO)`는 `node
@@ -1969,6 +1971,22 @@
   빌드되고, 생성된 모듈은 레포의 `go.work` 밖에서 검사되고 release된다(GN-14i). template과 crud-ui는 생성된 `go.mod` 옆에
   `go.sum`을 손으로 commit해야 했고, `go.mod`가 php-serialization을 require하는 session-store에는 없어서 그 모듈이 홀로
   빌드되지 않았다.
+  go 명령: `binding check`와 `binding scaffold`는 `--go <command>`를 받는다. 그 값은 release recipe의 `$(GO)`의 값이고(GN-19h),
+  주지 않으면 명령은 `PATH`의 `go`다. 값은 `--cargo`의 값처럼(GN-1d) 공백에서 단어로 나뉘고, 명령은
+  `<command> mod download -json all`을 실행한다. 따옴표나 backslash가 든 값과 단어가 없는 `--go`는 명령줄의 오류다.
+  `binding generate`와 `binding go-link`는 Go를 시작하지 않으며 `--go`를 받지 않는다. 필요는 실행할 때마다 scaffold가 쓰는
+  `go.mod`가 정한다. release를 require하는 `go.mod`만 Go를 시작하므로, `go.mod`가 release를 require하지 않거나 target `go`가
+  없는 contract는 Go가 없는 기계에서 실행되고, 그때 binding은 `--go`가 없는 명령을 가리켜도 그 명령을 찾지 않는다.
+  `go.mod`가 release를 require하면 binding은 명령을 시작하기 전에 찾는다. 디렉터리가 없는 이름은 `PATH`의 디렉터리에서,
+  경로는 그 파일로 찾고, 둘 다 실행할 수 있는 파일이어야 한다. 찾지 못하면 명령은 파일을 쓰거나 비교하기 전에 status 1로
+  끝나고, Go가 왜 필요한지 말하며 도구와 주는 방법을 이름하는 한 문장을 낸다: ``<path of the go.mod> requires the release
+  <module> vX.Y.Z of another polyspec Go module, so its go.sum is written from `go mod download` (GN-15l), and the go
+  command `go` is not found on PATH: install Go, or name the go command with --go <command>, the value of $(GO) of the
+  release recipes (GN-19h)``. Why: Go가 필요한 첫 실행이 release run이었다. 라이브러리가 다른 Go 모듈을 개발 형태로만
+  require하는 동안에는 어떤 검사도 Go를 시작하지 않았다. 그것이 require하는 모듈들이 release되자 그 `go.mod`가 release를
+  require하는 것으로 바뀌었고, Go가 없는 job에서 돈 release workflow의 `release-binding-check`가 ``go mod download did not
+  start: spawnSync go ENOENT``로 실패했다. 이 문장은 도구를 필요로 이름하지도, 그것을 주는 변수나 옵션을 이름하지도 않는다.
+  template, http-negotiation, session-store가 그것으로 release tag를 하나씩 잃었다.
 - **GN-15h** 생성된 Go 패키지는 계약이 쓰는 도우미만 담는다. 패키지 `binding`은 `Writer`나 `Reader`의 method(`Bool`,
   `Tag`, `Uint`, `Int`, `Float`, `Len`, `Text`, `Bytes`, `Key`)를 생성된 Go 코드가 그 타입의 값으로 부를 때만 쓰고,
   타입 `Key`와 `IntKey`, `BytesKey`, `TextKey`, 그 method, 그리고 타입 `KeyedMap`과 그 method를 그 코드가 그것을 적을
@@ -3021,11 +3039,16 @@
   [{"path": …}]}}`)로 쓰고, recipe는 그 형식만 읽으며 패키지를 이름으로 담지 않은 목록은 거부한다. npm의 release는
   레포가 정하므로, 두 번째 형식은 어떤 실행도 지나지 않는 경로가 되기 때문이다.
 - **GN-19f** `binding release-go-module (--root <repository> | --contract <interface.json>) --tag vX.Y.Z --libraries
-  <directory> --work <directory> [--remote <name>]`은 contract의 레포에 GN-15g의 commit과 tag를 만든다. 입력: checkout은
+  <directory> --work <directory> [--remote <name>] [--go <command>]`은 contract의 레포에 GN-15g의 commit과 tag를 만든다. 입력: checkout은
   tag `vX.Y.Z`의 commit에 있다. `binding generate --target go`가 Go 모듈의 파일 `zz_generated_*.go`를 work tree에 썼다.
   `--libraries`는 플랫폼마다 `<Go 디렉터리>/libpolyspec_<repository>_go.a`를 갖는다(GN-19b). `--work`는 실행의 디렉터리이고
   명령은 거기에 자기 index, 증명의 저장소와 소비자, Go의 cache를 둔다. `--remote`는 레포의 Git remote이고 주지 않으면
-  `origin`이다. 명령은 아래 검사를 모두 끝까지 실행한 뒤 실패한 것을 각각 적는다. 실패한 검사가 있으면 commit도 tag도
+  `origin`이다. `--go`는 go 명령으로 release recipe의 `$(GO)`의 값이고(GN-19h), `binding check`의 `--go`처럼 읽으며(GN-15l),
+  주지 않으면 `PATH`의 `go`다. 명령은 아래의 소비자를 위해 언제나 Go를 시작하므로, 레포를 읽기 전에 go 명령을 찾는다.
+  찾지 못하면 commit도 tag도 만들지 않고 status 1과 다음 문장으로 끝난다: ``binding release-go-module proves the commit of
+  the Go module with a consumer that Go builds (`go mod tidy`, `go test`, GN-19f), and the go command `go` is not found
+  on PATH: install Go, or name the go command with --go <command>, the value of $(GO) of the release recipes
+  (GN-19h)``. 명령은 아래 검사를 모두 끝까지 실행한 뒤 실패한 것을 각각 적는다. 실패한 검사가 있으면 commit도 tag도
   만들지 않는다.
   - tag는 `vX.Y.Z`이고 `HEAD`는 그 tag가 가리키는 commit이다. commit의 부모가 release가 검사한 commit이 된다.
   - `packages.go`의 module path는 `github.com/<owner>/<repository>/<Go 모듈 디렉터리>`다(GN-14f). 그래서 tag
@@ -3100,7 +3123,11 @@
   명령(`$(NODE) $(BINDING)`이나 설치된 패키지의 bin link 같은 것)이고, `CARGO`는 저장소의 cargo 명령, `CARGOFLAGS`는 그 build의
   인자로 비어 있을 수 있으며(GN-1d), `NODE`, `NPM`, `UV`는 절대 경로로 적은 checkout의
   도구이며, `BINDING_DEP`는 binding을 설치하는 target이 있으면 그 target이다. 빈 변수를 읽는 recipe는 실패하고 그 변수를
-  적는다. `NAPI`, `WASM_BINDGEN`, `MISE`, `RELEASE_ASSETS`, `RELEASE_TARGET`, `LLVM_ROOT`는 기본값이 있고, Makefile이나
+  적는다. `GO`는 binding이 시작하는 go 명령이고 기본값은 `PATH`의 go인 `go`다. recipe는 Go를 시작할 수 있는 binding의 각
+  명령, 곧 `release-binding-check`의 `binding check --release`(GN-15l)와 `release-go-module`의 `binding
+  release-go-module`(GN-19f)에 `--go "$(GO)"`를 넘기고 스스로는 Go를 시작하지 않는다. 그래서 Makefile은 자기 go가 `PATH`의
+  `go`가 아닐 때만 `GO`를 정의하고, 두 recipe 중 하나를 실행하는 job에는 Go가 있다. Go가 필요한데 찾지 못한 명령은 도구와
+  `--go`와 `GO`를 이름한다(GN-15l). `NAPI`, `WASM_BINDGEN`, `MISE`, `RELEASE_ASSETS`, `RELEASE_TARGET`, `LLVM_ROOT`는 기본값이 있고, Makefile이나
   명령줄이 그것을 바꿀 수 있다. 레포는 `@napi-rs/cli`를 devDependency로, LLVM의 major release를 `config/toolchain.json`의
   `llvm.version`에, 확장의 PHP minor를 그 파일의 `phpExtension.minors`에(GN-19a), 자기 arch의 musl target을 `rust-toolchain.toml`에 고정하고, recipe 파일과 npm 패키지의 폴더 `npm/`을
   ignore한다. recipe는 손으로 만든 복사본이 깨뜨린 네 규칙을 지킨다.
