@@ -1,10 +1,12 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 2ff94a3b7178e73bfc90cffab0b7868b5593d0158a10faf6259ac26d0d79635b -->
+<!-- source-sha256: 6ec76fac74b834cb560c3e78bea776dfc1e62023c4ab6f3b9ef3fed1ab8197e3 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
+
+## 0.0.21
 
 - `binding check`가 한 member의 두 group이 가진 같은 case id를 거부한다(CK-108, K-1, G-5). case id는 그 member의 모든 group에 걸쳐 유일하며, finding은 id, member, 두 group을 각각의 파일과 함께 이름한다. orm은 `rows.keys`의 group `rows.keys.page`와 `rows.keys.lookahead_page`에 `the_rows_of_a_page_of_an_order`를 두었다. 그래서 생성된 Go 시험 `TestGN13eRowsKeysTheRowsOfAPageOfAnOrder`가 두 번 정의되어 컴파일되지 않았다. 검사는 이를 받아들였고, member의 group들을 합치는 생성기도 같은 id를 통과시켰다. 생성기는 바뀌지 않는다. 이 트리의 소비자 사본과 `tests/e2e` fixture에는 그런 id가 없다. 저장소가 할 일: 두 id 중 하나의 이름을 바꿔, 각 id가 그 member의 case 하나를 가리키게 한다. `packages/ts`에서 `node --test --test-name-pattern=CK-108 tests/contract-check.test.ts`(변경 전 실패)로 확인했다.
 - machine이 있는 메서드의 코어 호출은 인스턴스 값의 복제본을 빌려준다(`&Clone::clone(receiver)`). CK-69와 GN-6ae가 수신자를 `&self`로 정하기 때문이다(GN-6ae, CK-69). 호출은 복제본을 값으로 넘겼고 GN-6h의 단언은 `&Type`을 명시하므로, `&self`인 코어는 단언을 통과하고 호출에서 거부되었다. orm의 `SchemaUtils::install_machine`이 Go, Python, Node 크레이트에서 컴파일되지 않았다. PHP와 WASM 크레이트도 같은 호출을 쓰므로 함께 바뀐다. `tests/e2e/sample`의 machine 메서드(`Store.transaction`, `tagged`, `audited`, `attempt`, `Scope.nested`)는 계약대로 코어에서 `&self`를 받으므로 그 e2e lint가 이 호출을 다룬다. 이전에는 코어가 `self`를 받아 값 호출과 맞았고, 이들에 대한 단언도 쓰이지 않아 clippy가 거부할 것이 없었다. 이제 생성 테스트가 샘플과 소비자 사본의 모든 대상에서, 각 machine 메서드의 코어 호출 수신자가 계약과 단언이 차용을 명시할 때에만 차용인지 확인한다. 저장소가 할 일: 바인딩을 다시 생성하고, machine 메서드가 `self`를 받는 코어는 CK-69대로 `&self`를 받는다. `packages/ts`에서 `node --test --test-name-pattern="GN-6ae: the receiver" tests/generate.test.ts`(변경 전 실패)와 `make e2e-lint REPOS=tests/e2e/sample`로 확인했다.
