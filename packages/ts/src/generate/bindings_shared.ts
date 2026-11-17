@@ -4,7 +4,7 @@
 import type { Lang, Type, Unit } from '../contract.ts';
 import { functionGiven, givenRust, placeSubject } from './callback_arguments.ts';
 import { type Cycle, type CycleHost, cycles, holdsCycle } from './cycles.ts';
-import { conversionsOf, type CaseField, caseFields, caseRead, caseStruct, caseType, UNIT_CASE_ALLOW, type Variant, absentInits, type Arg, argType, type CallbackUnit, callStruct, type ErrorUnit, keepsAny, lentCallbacks, usesNative, machineFunction, ownerRecognizedUnits, borrowedItem, boxed, caseLeftOut, type Fn, keptModel, leftOut, rustField, keptFunctionType, langName, type Model, narrowed, narrows, recordFn, recordInit, recordLocal, rustType, traitParam, tupleIn, tupleOut, Unsupported } from './model.ts';
+import { conversionsOf, convertedClassBase, type ObjectClass, ownerErrorClasses, type CaseField, caseFields, caseRead, caseStruct, caseType, UNIT_CASE_ALLOW, type Variant, absentInits, type Arg, argType, type CallbackUnit, callStruct, type ErrorUnit, keepsAny, lentCallbacks, usesNative, machineFunction, ownerRecognizedUnits, borrowedItem, boxed, caseLeftOut, type Fn, keptModel, leftOut, rustField, keptFunctionType, langName, type Model, narrowed, narrows, recordFn, recordInit, recordLocal, rustType, traitParam, tupleIn, tupleOut, Unsupported } from './model.ts';
 import { closure, optionRef, rustString } from './text.ts';
 
 // T-1: the input conversion of a scalar, by the helper of its name in the crate; overrides gives the helpers of a
@@ -257,6 +257,19 @@ export function convertedArms(model: Model, c: ReturnType<typeof conversionsOf>[
     return row.kinds.map((kind) => `            ${rustString(kind)} => Some((${target}, ${rustString(kind)}, &[${properties.join(', ')}])),`);
   });
 }
+
+// B2.489 (GN-7c): the lookup of each conversion of a member in node and wasm: lookup takes the range of the classes of
+// the owner of the conversion and the arms of its kinds.
+export const conversionLookups = (model: Model, fn: Fn, lang: 'node' | 'wasm', lookup: (range: string, arms: string[]) => string): string[] =>
+  conversionsOf(model, fn).map((c) => {
+    const base = convertedClassBase(model, c.library, lang);
+    return lookup(`${base}..${base + ownerErrorClasses(c.owner, lang).length}`, convertedArms(model, c, lang));
+  });
+
+// GN-5, GN-6h: the arms of the poison entry point of the B-5c test, one for each class whose lock is written, with its
+// class name in the language.
+export const poisonArms = (model: Model, lang: Lang, arm: (object: ObjectClass, cls: string) => string): string[] =>
+  model.objects.filter((o) => o.lock?.writes === true).map((o) => arm(o, langName(lang, o.unit.name, 'class')));
 
 // U-3: the names of a callback unit in the crate: its Rust name, its struct and its class in the language. GN-6s: a
 // callback unit of another repository is the trait of its core, whose methods return the failure of the core error of

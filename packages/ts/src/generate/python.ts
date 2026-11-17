@@ -4,7 +4,7 @@
 import type { Type, Unit } from '../contract.ts';
 import { variantPattern } from '../contract.ts';
 import { raisesAssertions } from './raises.ts';
-import { type FunctionType, convertingFns, recognizing, functionClosureHead, containerIn, containerOut, fieldInit, iterateItems, keptFunctionIn, resultCycles, scalarIn, scalarOut } from './bindings_shared.ts';
+import { type FunctionType, convertingFns, poisonArms, recognizing, functionClosureHead, containerIn, containerOut, fieldInit, iterateItems, keptFunctionIn, resultCycles, scalarIn, scalarOut } from './bindings_shared.ts';
 import { conversionsOf, convertedFn, ownerErrorClasses } from './model.ts';
 import { TAKES_PYTHON, functionGiven, givenRust, memberGiven, placeSubject } from './callback_arguments.ts';
 import { type Files, header, pyHeader, pyString, rustString, closure, optionRef, withUsedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
@@ -1372,15 +1372,13 @@ fn failure_error(py_: Python<'_>, failure: binding_core::Failure<${model.coreErr
 
 // GN-5, GN-6h: the poison entry point of the B-5c test: a panic while the write guard of the instance is held.
 function poisonRust(model: Model): string {
-  const written = model.objects.filter((o) => o.lock?.writes === true);
-  if (written.length === 0) return '';
-  const arms = written.map((o) => {
-    const pyClass = langName('python', o.unit.name, 'class');
+  const arms = poisonArms(model, 'python', (_o, pyClass) => {
     return `        if let Ok(object) = object.cast::<Py${pyClass}>() {
             let _held = object.get().inner.write(${rustString(pyClass)}).map_err(|error| binding_error(py_, error))?;
             panic!("panic-test");
         }`;
   }).join('\n');
+  if (arms === '') return '';
   return `/// B-5c: the entry point of the generated poison test, which panics while it holds the write guard of the instance.
 #[allow(clippy::panic, reason = "B-7: the entry point of the panic test panics on purpose, which its guard turns into kind internal")]
 #[cfg(feature = "panic-test")]

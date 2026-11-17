@@ -12,7 +12,7 @@ import { phpCaseTests } from './samples.ts';
 import { phpTests } from './tests_php.ts';
 import { type Cycle, type CycleHost, cycleLeaf, cycleOf, cycles, cycleUnitRust, holdsCycle } from './cycles.ts';
 import { raisesAssertions } from './raises.ts';
-import { type FunctionType, callbackNames, convertingFns, callbackImpl, holdsNative, recognizing, keptMethods, passes, functionClosureHead, containerIn, containerOut, fieldInit, iterateItems, keptFunctionIn, plainCycleHost, resultCycles, scalarIn, scalarOut } from './bindings_shared.ts';
+import { type FunctionType, callbackNames, convertingFns, poisonArms, callbackImpl, holdsNative, recognizing, keptMethods, passes, functionClosureHead, containerIn, containerOut, fieldInit, iterateItems, keptFunctionIn, plainCycleHost, resultCycles, scalarIn, scalarOut } from './bindings_shared.ts';
 import { type Files, header, phpText, rustString, closure, optionRef, withUsedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
 
 const ROOT = 'packages/php-ext/generated';
@@ -1613,15 +1613,13 @@ impl Drop for ${struct} {
 
 // GN-5, GN-6h: the poison entry point of the B-5c test: a panic while the write guard of the instance is held.
 function poisonRust(model: Model, layout: PhpLayout): string {
-  const written = model.objects.filter((o) => o.lock?.writes === true);
-  if (written.length === 0) return '';
-  const arms = written.map((o) => {
-    const label = langName('php', o.unit.name, 'class');
+  const arms = poisonArms(model, 'php', (_o, label) => {
     return `        if let Some(instance) = <&Php${label} as ext_php_rs::convert::FromZval>::from_zval(object) {
             let _held = instance.inner.write(${rustString(label)}).map_err(binding_error)?;
             panic!("panic-test");
         }`;
   }).join('\n');
+  if (arms === '') return '';
   return `/// B-5c: the entry point of the generated poison test, which panics while it holds the write guard of the instance.
 #[allow(clippy::panic, reason = "B-7: the entry point of the panic test panics on purpose, which its guard turns into kind internal")]
 #[cfg(feature = "panic-test")]
