@@ -83,7 +83,8 @@ the design ids are those of the binding design.
 - **GN-2** The result depends only on the contract, the case files that `cases` names, the version and library name of
   the core crate (read from its manifest as TOML) and binding itself; it holds no time, path or host, and lists are in
   contract order (I-5). `--out` writes the same files under another directory; the tests of `packages/ts` generate twice
-  in two directories and compare the bytes.
+  in two directories and compare the bytes. The consumers of `config/consumers.json` are a test of a release of
+  binding, never an input of the generator: no file of the list or of a consumer enters a result (GN-14m).
 
 ## Layout (L-1, L-2)
 
@@ -4042,6 +4043,46 @@ the design ids are those of the binding design.
   tool as `node_modules/.bin/binding`, the bin link of npm (php-serialization `bindings-php`, session-store); tsc
   writes `dist/cli.js` with the mode 0644 and a link takes the file as it is, so the bin failed with "Permission
   denied" (127). The mode belongs to the output of the build, not to each consumer.
+
+- **GN-14m** The consumer gate of a release (B2.494). `config/consumers.json` lists the consumers of binding, each a
+  repository `{repo, tag}` at a release tag `vX.Y.Z` and the job that runs it, and in `pending` each consumer that has
+  no release tag on a layout of binding yet, with its reason. The job `consumers` of `.github/workflows/ci.yml` has one
+  entry for each job of the consumers with a tag: the eight small consumers (fsm, http-cookie, http-form,
+  http-media-type, http-negotiation, json, php-serialization, session-store) share the job `small`, and template,
+  crud-ui (its validator and its generator), hyper and orm each have a job of their own. Each entry runs `make
+  ci-consumers JOB=<job>`, which builds `dist` (GN-14j) and runs `make consumer-gate` (`scripts/consumer-gate-run.mts`,
+  its list, steps and table in `scripts/consumer-gate.mts`). For each consumer of the job, one after the other, the
+  run clones the tag alone (`git clone --depth 1 --branch <tag>`), runs `cargo fetch --locked` of the lock of the tag,
+  writes the path patch of `polyspec-binding-core` to `packages/core/rust` of the run in the root `Cargo.toml`, as in
+  GN-14i, runs `cargo update -p polyspec-binding-core --offline` and `binding scaffold` of the run (GN-14d), and then
+  only goals of the consumer's own Makefile, each with `BINDING` (the executable `dist/cli.js`), `BINDING_RUN` (node
+  with it) and `NODE` of the run: its install (`install`, or the goals that `install` of its entry names when its
+  Makefile has no goal `install`), with the network; `bindings`, which generates; `test-bindings`, the generated tests
+  of the targets of its contract on their runners, offline (`CARGO_NET_OFFLINE`, `GOPROXY=off`, `GOFLAGS=-mod=readonly`,
+  `npm_config_offline`, `UV_OFFLINE`, `PIP_NO_INDEX`); and the release rehearsal, `release-recipes`, the release
+  builds of the host (`release-go-static`, `release-wheel`, `release-php-ext`, by the targets of the contract) and
+  `rehearse-go-module TAG=<tag>` (GN-19f), with no cache: a new Go build cache, `GOFLAGS=-mod=readonly`, `GOWORK=off`,
+  `CARGO_INCREMENTAL=0`, no compiler wrapper, the release target of a fresh clone, and no job of the workflow restores
+  a cache, so each Go module builds alone at its tag. A failed step of the clone, the patch, the install or `bindings`
+  stops that consumer, since every later step reads what they write; `test-bindings` and the rehearsal each run to
+  their end, and every consumer runs. The run prints the table of each consumer with its tag and its phases
+  (`prepare`, `generate`, `test`, `rehearsal`), each failure with its first error lines and its log, writes the logs,
+  `table.txt` and `report.json` into `var/report/consumer-gate/<job>/`, which the job uploads, and fails when a phase
+  of a consumer did not pass. A failed entry fails `ci-passed`, so `release.yml`, which starts only from a successful
+  run of ci, does not release that commit: any failure blocks the release. A test of `packages/ts` fails when the
+  matrix of the job is not the jobs of the list.
+  No copy of a consumer is kept in binding: a tag is a fixed input that the consumer released, and a copy grows stale.
+  A consumer's release raises its tag in the list, in a commit of binding, and a pending consumer moves to `consumers`
+  with the tag of its first release on a layout of binding; a branch or a commit is never an entry. What the gate is
+  evidence of is GN-14i's reading: the release tag of each consumer with the generator and the `binding_core` of this
+  commit, not the consumer with a release of binding; the CI of each consumer after it takes the release is the final
+  evidence.
+  How this agrees with GN-2: the consumers are a test of the release, never an input of the generator. The generator
+  reads no file of the list and no consumer, the list changes no generated byte of any repository, and the gate runs
+  the CLI of the commit that it tests, unchanged; a raised tag changes only which code the test runs. Why: a change of
+  the generator or of `binding_core` reaches every consumer, and four defects of the lane of 0.0.21 (B2.486, B2.488,
+  B2.491, B2.492) were shown by consumers or by their releases, not by a check of binding; a gate that runs the
+  released consumers shows such a defect before the tag.
 
 ## The release of a repository that holds a binding
 

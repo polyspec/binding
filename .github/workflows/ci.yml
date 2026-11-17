@@ -149,12 +149,46 @@ jobs:
           name: e2e-amd64-sample-${{ github.run_id }}-${{ github.run_attempt }}
           path: var/report/e2e/
           if-no-files-found: error
+  # GN-14m: the consumer gate of a release. One entry for each job of config/consumers.json, whose consumers it clones
+  # at their release tags and runs with the CLI and the binding_core of this commit: their install, generate, the
+  # generated tests of their targets offline and the release rehearsal with no cache. The matrix is the jobs of the
+  # list (packages/ts/tests/consumer-gate.test.ts); a failed entry fails ci-passed, so release.yml does not start. No
+  # step restores a cache.
+  consumers:
+    name: consumers (${{ matrix.job }})
+    runs-on: ubuntu-26.04-arm
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - job: small
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        id: checkout
+      - uses: ./.github/actions/bootstrap
+        id: bootstrap
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
+        id: php
+        with:
+          php-version-file: .php-version
+          extensions: dom, filter, json, libxml, mbstring, phar, tokenizer, xmlwriter
+          tools: none
+          coverage: none
+      - id: consumers
+        run: make ci-consumers JOB=${{ matrix.job }}
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        id: report
+        if: ${{ !cancelled() }}
+        with:
+          name: consumers-${{ matrix.job }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: var/report/consumer-gate/
+          if-no-files-found: error
   # The job that fails the run when any other job did not pass, so a release, which takes a successful run by its id,
   # holds every job. It runs after every other job, also after a failed, skipped or cancelled one (if: always()), and
   # make ci-passed fails unless every job of needs has the result success.
   ci-passed:
     if: ${{ always() }}
-    needs: [check, e2e, e2e-amd64]
+    needs: [check, e2e, e2e-amd64, consumers]
     runs-on: ubuntu-26.04-arm
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

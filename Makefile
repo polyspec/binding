@@ -113,6 +113,16 @@ consumers-check: ## Compile the generated bindings of consumers with this tree a
 	@test -n "$(DIRS)" || { echo 'consumers-check: DIRS is required, for example make consumers-check DIRS="../json ../hyper"' >&2; exit 2; }
 	$(ONLINE) $(NODE) scripts/consumers-check.mts$(foreach dir,$(DIRS), --dir $(dir))$(if $(EXPECT), --expect $(EXPECT))$(if $(DIST), --dist $(DIST))
 
+# GN-14m: the consumer gate of a release. JOB names a job of config/consumers.json; each consumer of the job is cloned
+# at its release tag into WORK (or a new directory under the temporary directory), takes polyspec-binding-core of this
+# tree by the path patch of Cargo and the CLI dist/cli.js, which make dist builds, and runs its own goals: its install,
+# bindings, test-bindings offline, then release-recipes, the release builds of the host and rehearse-go-module with no
+# cache. Records in var/report/consumer-gate/<JOB>; ONLINE.
+.PHONY: consumer-gate
+consumer-gate: ## Run the consumers of a job of config/consumers.json at their release tags with this tree: JOB=<job> [WORK=<directory>]
+	@test -n "$(JOB)" || { echo 'consumer-gate: JOB is required, for example make consumer-gate JOB=small' >&2; exit 2; }
+	$(ONLINE) $(NODE) scripts/consumer-gate-run.mts --job $(JOB)$(if $(WORK), --work $(WORK))
+
 # The checks of this checkout. A target of several checks runs each to its end and then fails, naming each failed
 # check (HR-86): run_all starts each goal of $(1) as a make of its own and prints the goals that failed.
 define run_all
@@ -211,7 +221,7 @@ ci-passed: ## Fail unless every job of RESULTS, the JSON of toJSON(needs), has t
 #
 # ci-check installs the tools of TOOLS and runs TARGETS with ci-targets into the report var/ci/<NAME>, then writes
 # summary.md with ci-summary in every case, naming the install as the setup step tools with its outcome (CI_STEPS).
-.PHONY: ci-check ci-e2e ci-e2e-amd64
+.PHONY: ci-check ci-e2e ci-e2e-amd64 ci-consumers
 ci-check: ## Run the check job of ci.yml: NAME=<entry> TARGETS="<target>..." [TOOLS="<tool>..."]
 	@test -n "$(NAME)" && test -n "$(TARGETS)" || { echo 'ci-check: NAME and TARGETS are required, for example make ci-check NAME=ts TOOLS=rust TARGETS="typecheck-ts unit-ts"' >&2; exit 2; }
 	@tools=success; status=1; \
@@ -241,6 +251,18 @@ ci-e2e: ## Run the e2e job of ci.yml: REPO=<repository of tests/e2e> [DEPS="<rep
 # GN-14g, GN-15g: the job e2e-amd64 runs the job e2e of the sample on linux/amd64.
 ci-e2e-amd64: ## Run the e2e-amd64 job of ci.yml: the e2e job of tests/e2e/sample
 	$(MAKE) --no-print-directory ci-e2e REPO=tests/e2e/sample DEPS=
+
+# GN-14m: the job consumers runs make ci-consumers for each job of config/consumers.json: it builds dist, the CLI that
+# each consumer runs, stops when the build fails, and runs make consumer-gate of JOB in a work directory of its own
+# under the temporary directory, which it removes at its end, at its failure and on SIGINT and SIGTERM (HR-87). The
+# consumers install their own tools from their own checkouts. The record of the run is in var/report/consumer-gate.
+ci-consumers: ## Run the consumers job of ci.yml: JOB=<job of config/consumers.json>
+	@test -n "$(JOB)" || { echo 'ci-consumers: JOB is required, for example make ci-consumers JOB=small' >&2; exit 2; }
+	$(MAKE) --no-print-directory dist
+	@work="$$(cd "$$(mktemp -d "$${TMPDIR:-/tmp}/binding-ci-consumers.XXXXXX")" && pwd -P)" || exit 1; \
+	trap 'rm -rf "$$work"' EXIT; trap 'exit 130' INT; trap 'exit 143' TERM; \
+	echo "ci-consumers: work directory $$work"; \
+	$(MAKE) --no-print-directory consumer-gate JOB=$(JOB) WORK="$$work"
 
 # ---- Release (config/release.json, .github/workflows/release.yml) -----------------------------------------------------
 # The steps of release.yml, in this order: release-tag tags the commit of the successful CI run RUN of ci.yml on main with

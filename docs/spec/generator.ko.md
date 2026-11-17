@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 6ac291c51419c4eb16ad945bcd9740d6328af35acb20b403f53b3d37cd5adf37 -->
+<!-- source-sha256: d7782d873ec2afd4e7a5071ebfc7db272178e4c55fa60f73461997b7ba7bd3d8 -->
 # 생성기
 
 [English](generator.md)
@@ -59,7 +59,8 @@
   시작된 binding은 아무 표시 없이 그 프로그램을 읽게 되고, make는 export하라고 하지 않은 변수를 export하지 않는다.
 - **GN-2** 결과는 계약, `cases`가 가리키는 case 파일, 코어 crate의 버전과 라이브러리 이름(manifest를 TOML로 읽는다),
   binding 자신에만 기댄다. 시각, 경로, 호스트를 담지 않고 목록은 계약 순서다(I-5). `--out`은 같은 파일을 다른 디렉터리에
-  쓴다. `packages/ts`의 시험은 두 디렉터리에 두 번 생성해 바이트를 비교한다.
+  쓴다. `packages/ts`의 시험은 두 디렉터리에 두 번 생성해 바이트를 비교한다. `config/consumers.json`의 소비자는
+  binding release의 시험이며 생성기의 입력이 아니다: 목록이나 소비자의 어떤 파일도 결과에 들어가지 않는다(GN-14m).
 
 ## 배치(L-1, L-2)
 
@@ -3312,6 +3313,42 @@
   `node_modules/.bin/binding`으로 부른다(php-serialization `bindings-php`, session-store). tsc는 `dist/cli.js`를
   mode 0644로 쓰고 연결은 파일을 그대로 가리키므로, 그 bin이 "Permission denied"(127)로 실패했다. mode는 각
   소비자가 아니라 build의 출력에 속한다.
+
+- **GN-14m** release의 소비자 관문(B2.494). `config/consumers.json`은 binding의 소비자를 적는다. 각 소비자는 release
+  tag `vX.Y.Z`의 레포 `{repo, tag}`와 그것을 실행하는 job이며, `pending`에는 binding 배치의 release tag가 아직 없는
+  소비자를 그 이유와 함께 적는다. `.github/workflows/ci.yml`의 job `consumers`는 tag가 있는 소비자의 job마다 항목
+  하나를 가진다: 작은 소비자 여덟(fsm, http-cookie, http-form, http-media-type, http-negotiation, json,
+  php-serialization, session-store)은 job `small`을 함께 쓰고, template, crud-ui(그 validator와 generator), hyper,
+  orm은 각자 job을 가진다. 각 항목은 `make ci-consumers JOB=<job>`을 실행하며, 이것은 `dist`를 빌드하고(GN-14j)
+  `make consumer-gate`를 실행한다(`scripts/consumer-gate-run.mts`, 그 목록·단계·표는 `scripts/consumer-gate.mts`).
+  job의 소비자마다 하나씩 차례로, 실행은 tag만 clone하고(`git clone --depth 1 --branch <tag>`), tag의 lock으로
+  `cargo fetch --locked`를 실행하고, 루트 `Cargo.toml`에 `polyspec-binding-core`를 실행의 `packages/core/rust`로 두는
+  path patch를 GN-14i처럼 쓰고, `cargo update -p polyspec-binding-core --offline`과 실행의 `binding scaffold`를
+  실행한다(GN-14d). 그 뒤로는 소비자 자신의 Makefile goal만, 각각 실행의 `BINDING`(실행 가능한 `dist/cli.js`),
+  `BINDING_RUN`(그것을 실행하는 node), `NODE`와 함께 실행한다: 네트워크와 함께 그 install(`install`, 또는 Makefile에
+  goal `install`이 없을 때 항목의 `install`이 이름하는 goal들); 생성하는 `bindings`; 계약의 target마다 생성된 시험을
+  그 runner로 offline 실행하는 `test-bindings`(`CARGO_NET_OFFLINE`, `GOPROXY=off`, `GOFLAGS=-mod=readonly`,
+  `npm_config_offline`, `UV_OFFLINE`, `PIP_NO_INDEX`); 그리고 cache 없는 release 리허설, 곧 `release-recipes`, 호스트의
+  release build(계약의 target에 따라 `release-go-static`, `release-wheel`, `release-php-ext`), `rehearse-go-module
+  TAG=<tag>`(GN-19f). cache 없음은 새 Go build cache, `GOFLAGS=-mod=readonly`, `GOWORK=off`, `CARGO_INCREMENTAL=0`,
+  compiler wrapper 없음, 새 clone의 release target이며, workflow의 어느 job도 cache를 복원하지 않으므로 각 Go module은
+  자기 tag에서 홀로 빌드된다. clone, patch, install, `bindings`의 단계가 실패하면 그 소비자는 멈춘다. 뒤의 모든 단계가
+  그것들이 쓴 것을 읽기 때문이다. `test-bindings`와 리허설은 각각 끝까지 실행하고, 모든 소비자가 실행된다. 실행은
+  소비자마다 그 tag와 phase(`prepare`, `generate`, `test`, `rehearsal`)의 표, 각 실패와 그 첫 오류 줄과 log를 찍고,
+  log와 `table.txt`, `report.json`을 job이 올리는 `var/report/consumer-gate/<job>/`에 쓰며, 소비자의 phase가 통과하지
+  않으면 실패한다. 실패한 항목은 `ci-passed`를 실패시키므로, ci의 성공한 실행에서만 시작하는 `release.yml`은 그
+  commit을 release하지 않는다: 어떤 실패든 release를 막는다. job의 matrix가 목록의 job과 다르면 `packages/ts`의
+  시험이 실패한다.
+  binding은 소비자의 사본을 두지 않는다: tag는 소비자가 release한 고정된 입력이고 사본은 낡는다. 소비자의 release는
+  binding의 commit으로 목록의 tag를 올리고, pending 소비자는 binding 배치의 첫 release tag와 함께 `consumers`로
+  옮긴다. branch나 commit은 항목이 되지 않는다. 관문이 증거하는 것은 GN-14i의 읽기와 같다: 각 소비자의 release
+  tag와 이 commit의 생성기·`binding_core`이며, binding의 release를 받은 소비자가 아니다. 소비자가 release를 받은 뒤의
+  그 CI가 마지막 증거다.
+  GN-2와 맞는 방식: 소비자는 release의 시험이며 생성기의 입력이 아니다. 생성기는 목록의 파일도 소비자도 읽지 않고,
+  목록은 어느 레포의 생성된 바이트도 바꾸지 않으며, 관문은 자기가 시험하는 commit의 CLI를 바꾸지 않고 실행한다.
+  올린 tag는 시험이 실행하는 코드만 바꾼다. 이유: 생성기나 `binding_core`의 변경은 모든 소비자에게 닿고, 0.0.21
+  lane의 결함 넷(B2.486, B2.488, B2.491, B2.492)은 binding의 검사가 아니라 소비자나 그 release가 보였다. release된
+  소비자를 실행하는 관문은 그런 결함을 tag 전에 보인다.
 
 ## 바인딩을 가진 레포의 release
 
