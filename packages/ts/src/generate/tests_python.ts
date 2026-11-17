@@ -10,7 +10,7 @@ import { type CallbackHow, type Context, type MadeForm, type Receiver, raisedLin
 import type { Arg, Fn } from './model.ts';
 import { bracketDepth, pyHeader, pyString } from './text.ts';
 import { type Declares, placeTests, refusedPython } from './callback_arguments.ts';
-import { CASE_JSON_STRING_GOLDENS, madeCategoryClass } from './samples.ts';
+import { CASE_JSON_STRING_GOLDENS, convertedCause, madeCategoryClass, type MadeRaise } from './samples.ts';
 
 // GN-13l: native JSON string quoting preserves valid Unicode and rejects surrogate replacement.
 const PYTHON_CASE_TEXT_PATH = `
@@ -353,6 +353,15 @@ const PYTHON_FUTURE = `
             future.cancel()
         return future
 `;
+
+// B2.489 (GN-7a): the converted error keeps the error of the other library as its __cause__, of the class of its row,
+// with its kind, message, status and errno.
+function pythonCause(made: MadeRaise | undefined): string {
+  if (made === undefined) return '';
+  const named = `foreign_${made.library.replaceAll('-', '_')}.${made.unit === undefined ? madeCategoryClass(made, 'python').split('.').pop() ?? '' : langName('python', made.unit.name, 'class')}`;
+  const integer = (n: number | null): string => (n === null ? 'None' : String(n));
+  return `\n        cause = error.__cause__\n        self.assertIs(type(cause), ${named})\n        self.assertEqual(cause.kind, ${pyString(made.kind)})\n        self.assertEqual(str(cause), ${pyString(made.message)})\n        self.assertEqual(cause.status, ${integer(made.status)})\n        self.assertEqual(cause.errno, ${integer(made.errno)})`;
+}
 
 export function pythonTests(model: Model, module: string): string {
   checkCaseNames(model, caseSnake, false);
@@ -866,7 +875,7 @@ export function pythonTests(model: Model, module: string): string {
         self.assertIs(type(error), pkg.${exactClass(kase.raises)})
         self.assertIsInstance(error, ${pythonBaseOf(kase.raises.category)})
         self.assertEqual(error.kind, ${pyString(kase.raises.kind)})
-${kase.raises.status === undefined ? '' : `        self.assertEqual(error.status, ${kase.raises.status === null ? 'None' : String(kase.raises.status)})\n`}        ${errno === null ? 'self.assertIsNone(error.errno)' : `self.assertEqual(error.errno, ${'symbol' in errno ? `errno.${errno.symbol}` : String(errno.value)})`}${after}${afterChecks(kase.after, 'receiver')}${answered(since)}${serviceEnd(kase.service)}${kept(fn)}`);
+${kase.raises.status === undefined ? '' : `        self.assertEqual(error.status, ${kase.raises.status === null ? 'None' : String(kase.raises.status)})\n`}        ${errno === null ? 'self.assertIsNone(error.errno)' : `self.assertEqual(error.errno, ${'symbol' in errno ? `errno.${errno.symbol}` : String(errno.value)})`}${pythonCause(convertedCause(model, kase.args))}${after}${afterChecks(kase.after, 'receiver')}${answered(since)}${serviceEnd(kase.service)}${kept(fn)}`);
     }
     // GN-6ae: a case whose function fixture raises an exception of the language gets the same object.
     for (const kase of callbackCases(model, fn)) {

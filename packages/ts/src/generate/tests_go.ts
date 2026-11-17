@@ -32,7 +32,7 @@ import {
   machineFunction,
 } from './model.ts';
 import {
-  type Fixture, type RaisingCase, boundName, type Receiver, sampleInstance, aliasCases, mapEntries, caseKey, casePascal, casePathOf, checkCaseNames, comparableResult, expectedErrno, fixtureOf, fixturesOf, implementerInstance, instanceOf, interfaceInstance, isInstanceValue, pairsReceiver, valueClassReceiver, raisingCases, resultCases, sampleReceiver, stringCases, type After, FIXTURE_RAISED, argsOf, callbackCases, callbackReachingArgs, classCaseArgs, floatToken, memberById, raisesException, keptOf, type ForeignStep, foreignSteps, aliasOutForm, caseValueBytes, keyedField, outKeyForm, callbackInstance, cancelState, ownerModel, caseFilesOf, ServiceValue, serviceValueOf, serviceChangeOf, servicePeerOf, serviceSteps, type CaseService,
+  type Fixture, type MadeRaise, type RaisingCase, convertedCause, boundName, type Receiver, sampleInstance, aliasCases, mapEntries, caseKey, casePascal, casePathOf, checkCaseNames, comparableResult, expectedErrno, fixtureOf, fixturesOf, implementerInstance, instanceOf, interfaceInstance, isInstanceValue, pairsReceiver, valueClassReceiver, raisingCases, resultCases, sampleReceiver, stringCases, type After, FIXTURE_RAISED, argsOf, callbackCases, callbackReachingArgs, classCaseArgs, floatToken, memberById, raisesException, keptOf, type ForeignStep, foreignSteps, aliasOutForm, caseValueBytes, keyedField, outKeyForm, callbackInstance, cancelState, ownerModel, caseFilesOf, ServiceValue, serviceValueOf, serviceChangeOf, servicePeerOf, serviceSteps, type CaseService,
   caseTextParts, BYTE_NAME_LINUX, caseListenerOf, CASE_JSON_STRING_GOLDENS,
   fixtureType, ROW_EXCEPTION,
 } from './samples.ts';
@@ -1769,6 +1769,27 @@ function raisedLines(v: Values, kase: RaisingCase): string[] {
     ...(kase.raises.status === undefined ? [] : [kase.raises.status === null ? 'if _, ok := failure.Status(); ok {' : `if status, ok := failure.Status(); !ok || status != ${kase.raises.status} {`, '\tt.Fatalf("B-4: the status of %#v", err)', '}']),
     errno === null ? 'if _, ok := failure.Errno(); ok {' : `if errno, ok := failure.Errno(); !ok || errno != ${'symbol' in errno ? `int(syscall.${errno.symbol})` : String(errno.value)} {`,
     '\tt.Fatalf("B-4: the errno of %#v", err)',
+    '}',
+    ...goCause(v, convertedCause(v.model, kase.args)),
+  ];
+}
+
+// B2.489 (GN-15d): the converted error keeps the error of the other library as its Cause(), of the type of its row,
+// with its kind, message, status and errno.
+function goCause(v: Values, made: MadeRaise | undefined): string[] {
+  if (made === undefined) return [];
+  const type = made.unit === undefined ? goErrorTypes(made.owner).find(([category]) => category === made.category)?.[1] ?? '' : goName(made.unit.name);
+  const integer = (name: string, n: number | null): string => (n === null ? `if _, ok := cause.${name}(); ok {` : `if value, ok := cause.${name}(); !ok || value != ${n} {`);
+  return [
+    `cause, ok := failure.Cause().(*${ownerErrors(v.scope, made.library)}.${type})`,
+    `if !ok || cause.Kind() != ${goString(made.kind)} || cause.Error() != ${goString(made.message)} {`,
+    '\tt.Fatalf("B2.489: the cause of %#v", err)',
+    '}',
+    integer('Status', made.status),
+    '\tt.Fatalf("B2.489: the status of the cause of %#v", err)',
+    '}',
+    integer('Errno', made.errno),
+    '\tt.Fatalf("B2.489: the errno of the cause of %#v", err)',
     '}',
   ];
 }

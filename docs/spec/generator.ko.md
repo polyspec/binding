@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: e78703de9428cacfa18cc94dbabf790e4ae139af0a39d2262f9bfa6a80bdf93a -->
+<!-- source-sha256: 2ed3b1581e21a30e7acc9134a23ed3115e7d4b6b075fe95a762c75bd05df2a07 -->
 # 생성기
 
 [English](generator.md)
@@ -1446,7 +1446,9 @@
   계약의 타입을 돌려준다. 행은 클래스와 kind만 준다. 이유: hyper의 코어는 session-store 객체의 예외를 `Failure::Raised`로
   넘기고 `failure_error`가 그것을 다시 던져서, 계약이 hyper의 `RecordError`를 약속한 곳에서 사용자가 session-store의
   `RecordError`를 잡았다(H35.38). `Io`의 errno는 OS가 L의 코어에 준 것이고 어떤 행도 줄 수 없다. 한계: member가 적지 않은
-  recognition된 L의 kind는 여기서도 클래스 검사를 받지 않는다.
+  recognition된 L의 kind는 여기서도 클래스 검사를 받지 않는다. fixture가 L의 값 있는 raise 행(GN-7a) 하나를 가진 실패
+  case의 생성 시험은 member가 낸 오류의 cause를 그 행의 인스턴스와 비교한다: 그 클래스, kind, message, status, errno를
+  `previous`, `__cause__`, `cause`, `Cause()`로 비교한다. 그런 행이 없거나 여럿인 case는 cause를 비교하지 않는다.
 - **GN-8a** 실패 주입(G-5, X-1): `faults`를 가진 계약에서 각 바인딩 crate는 `faults[].core`의 상수마다
   `const _: &str = <core>;`를 두어, 코어에 없는 점이면 컴파일되지 않게 한다(I-2). member의 모든 진입점은(hook과 iterate
   포함) 코어 호출을 `with_faults("<member id>", …)` 안에서, 작업 전체를 `shielded(…)` 안에서 실행한다. feature

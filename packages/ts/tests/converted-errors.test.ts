@@ -133,7 +133,9 @@ test('B2.489: a contract with a callback unit has an internal maker of each erro
   assert.match(php, /FunctionBuilder::new\("polyspec_make", make_method\)/);
   assert.match(php, /MethodFlags::Public \| MethodFlags::Static,/);
   assert.match(php, /const MADE_PROPERTIES: &\[\(usize, &\[\(&str, usize\)\]\)\] = &\[\n    \(6, &\[\("offset", 6\)\]\),\n\];/);
-  assert.match(php, /error_arguments\(class, message\.zval\(\), kind\.zval\(\), status\.zval\(\), errno\.zval\(\)\)\?/);
+  // Arg::zval of ext-php-rs 0.16.4 gives Option<&mut &mut Zval>, which the maker clones into the Zval that
+  // error_arguments takes (B2.489).
+  assert.match(php, /error_arguments\(class, message\.as_ref\(\), kind\.as_ref\(\), status\.as_ref\(\), errno\.as_ref\(\)\)\?/);
   for (const target of ['node', 'wasm'] as const) {
     const out = sessionStore(target);
     const js = fileWith(out, target === 'node' ? 'index.cjs' : '.mjs', "Symbol.for('polyspec.binding.make')");
@@ -243,4 +245,30 @@ test('B2.489: the WASM module converts an exception of session-store into the cl
   const entry = fileWith(out, '.mjs', 'glue.__register([');
   assert.match(entry, /import \* as foreign_session_store from '@polyspec\/session-store\/wasm';/);
   assert.ok(entry.includes(`RecordError, ${SESSION_STORE_CLASSES.map((c) => `foreign_session_store.${c}`).join(', ')}]`), 'the classes of session-store follow those of hyper');
+});
+
+// B2.489: the generated test of the case of tests/e2e/consumer whose source raises an unreadable error of sample with
+// values compares the cause of the converted error with that error in each target: its class, kind, message, status
+// and errno (previous in PHP, __cause__ in Python, cause in Node and WASM, Cause() in Go).
+test('B2.489: the generated test of a converted error compares its cause with the error of the library that it converts, in each target', () => {
+  const e2e = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/${path}`, import.meta.url), 'utf8'));
+  const contract = e2e('consumer/packages/rust/interface.json');
+  const files = [...new Set((contract.cases as { file: string }[]).map((row) => row.file))];
+  const inputs: Inputs = { contract, caseFiles: new Map(files.map((file) => [file, e2e(`consumer/${file}`)])), foreign: new Map([['sample', e2e('sample/packages/rust/interface.json')]]), version: '0.0.0', coreLib: 'polyspec_consumer' };
+  const testOf = (target: Lang, path: string, start: string): string => {
+    const text = String(generateOnStack({ ...inputs, targets: [target] }).get(path) ?? '');
+    const at = text.indexOf(start);
+    assert.ok(at >= 0, `${target}: ${start}`);
+    return text.slice(at, text.indexOf('\n\n', at + start.length) < 0 ? undefined : text.indexOf('\n\n', at + start.length));
+  };
+  const php = testOf('php', 'packages/php-ext/generated/tests/GeneratedTest.php', 'function testB4readAnUnreadableErrorOfTheSampleLibrary');
+  assert.match(php, /\$cause = \$error->getPrevious\(\);\n {12}self::assertInstanceOf\(\\Polyspec\\Sample\\SampleIoError::class, \$cause\);\n {12}self::assertSame\(\\Polyspec\\Sample\\SampleIoError::class, \$cause::class\);\n {12}self::assertSame\("unreadable", \$cause->kind\(\)\);\n {12}self::assertSame\("the source could not read a", \$cause->getMessage\(\)\);\n {12}self::assertSame\(7, \$cause->status\(\)\);\n {12}self::assertSame\(5, \$cause->errno\(\)\);/);
+  const python = testOf('python', 'packages/python/generated/tests/test_generated.py', 'def test_b4_read_an_unreadable_error_of_the_sample_library');
+  assert.match(python, /cause = error\.__cause__\n {8}self\.assertIs\(type\(cause\), foreign_sample\.SampleIoError\)\n {8}self\.assertEqual\(cause\.kind, "unreadable"\)\n {8}self\.assertEqual\(str\(cause\), "the source could not read a"\)\n {8}self\.assertEqual\(cause\.status, 7\)\n {8}self\.assertEqual\(cause\.errno, 5\)/);
+  for (const [target, path] of [['node', 'packages/ts/generated/tests/generated.test.mjs'], ['wasm', 'packages/ts/wasm/generated/tests/generated.test.mjs']] as const) {
+    const js = testOf(target, path, "test('B-4: read an_unreadable_error_of_the_sample_library");
+    assert.match(js, /error\.errno === 5 &&\n {4}error\.cause\?\.constructor === foreign_sample\.SampleIoError &&\n {4}error\.cause\.kind === "unreadable" &&\n {4}error\.cause\.message === "the source could not read a" &&\n {4}error\.cause\.status === 7 &&\n {4}error\.cause\.errno === 5\);/, target);
+  }
+  const go = testOf('go', 'packages/go/zz_generated_test.go', 'func TestB4ReadAnUnreadableErrorOfTheSampleLibrary');
+  assert.match(go, /\tcause, ok := failure\.Cause\(\)\.\(\*sampleerrors\.SampleIoError\)\n\tif !ok \|\| cause\.Kind\(\) != "unreadable" \|\| cause\.Error\(\) != "the source could not read a" \{\n\t\tt\.Fatalf\("B2\.489: the cause of %#v", err\)\n\t\}\n\tif value, ok := cause\.Status\(\); !ok \|\| value != 7 \{\n[^\n]*\n\t\}\n\tif value, ok := cause\.Errno\(\); !ok \|\| value != 5 \{/);
 });

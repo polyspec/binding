@@ -2674,6 +2674,45 @@ export const jsMade = (made: MadeRaise, properties: string[], lang: 'node' | 'wa
   return `${pkgName}.${cls}[Symbol.for('polyspec.binding.make')](${JSON.stringify(made.kind)}, ${JSON.stringify(made.message)}, ${integer(made.status)}, ${integer(made.errno)}, { ${made.properties.map((p, i) => `${JSON.stringify(langName(lang, p.name, 'variable'))}: ${properties[i] ?? 'null'}`).join(', ')} })`;
 };
 
+// B2.489 (GN-7a): the class of the instance of a raise row with values, by its name in a language.
+export const madeClassName = (made: MadeRaise, lang: Lang): string => (made.unit === undefined ? madeCategoryClass(made, lang).split(/[.\\]/).pop() ?? '' : langName(lang, made.unit.name, 'class'));
+
+// B2.489 (GN-7a, GN-7c): the error of another library that the one raise row with values of the fixtures of a raising
+// case makes, which the error that the member raises keeps as its cause, so the generated test of each target compares
+// the cause with it. A case with no such row, or with several, has none.
+export function convertedCause(model: Model, args: ReadonlyMap<unknown, unknown>): MadeRaise | undefined {
+  const rows: Record<string, unknown>[] = [];
+  const walk = (value: unknown): void => {
+    if (Array.isArray(value)) {
+      value.forEach(walk);
+      return;
+    }
+    if (typeof value !== 'object' || value === null) return;
+    const callback = (value as { callback?: unknown }).callback;
+    if (typeof callback === 'object' && callback !== null && !Array.isArray(callback)) {
+      for (const list of Object.values(callback)) {
+        for (const row of Array.isArray(list) ? list : []) {
+          const raise = (row as { raise?: unknown } | null)?.raise;
+          if (typeof raise === 'object' && raise !== null && 'library' in raise) rows.push(raise as Record<string, unknown>);
+        }
+      }
+      return;
+    }
+    Object.values(value).forEach(walk);
+  };
+  [...args.values()].forEach(walk);
+  const [only] = rows;
+  return rows.length === 1 && only !== undefined ? madeRaise(model, only, 'the cause of a converted error') : undefined;
+}
+
+// B2.489 (GN-7a): the conditions of the assertion of Node and WASM that the converted error keeps the error of the
+// other library as its cause, of the class of its row, with its kind, message, status and errno.
+export const jsCause = (made: MadeRaise | undefined, lang: 'node' | 'wasm'): string => {
+  if (made === undefined) return '';
+  const integer = (n: number | null): string => (n === null ? 'null' : String(n));
+  return ` &&\n    error.cause?.constructor === foreign_${made.library.replaceAll('-', '_')}.${madeClassName(made, lang)} &&\n    error.cause.kind === ${JSON.stringify(made.kind)} &&\n    error.cause.message === ${JSON.stringify(made.message)} &&\n    error.cause.status === ${integer(made.status)} &&\n    error.cause.errno === ${integer(made.errno)}`;
+};
+
 function madeRaise(model: Model, given: Record<string, unknown>, where: string): MadeRaise {
   const library = String(given['library']);
   const kind = String(given['kind']);

@@ -7,7 +7,7 @@ import { addonBase } from './node.ts';
 import { isHost, NODE_PLATFORM_JS } from './packages.ts';
 import { foreignReaders, foreignClassNames, holdsForeign, nodeForeignRead } from './value_class.ts';
 import type { Unit } from '../contract.ts';
-import { type CallbackHow, type Context, type MadeForm, type Receiver, raisedLines, callArgs, caseRefusal, BYTE_NAME_LINUX, caseListenerOf, isPath, isPlain, madeLines, callbackArg, callbackReachingArgs, classCaseArgs, otherValue, callables, bytesKind, caseValue, expectedText, isNumber, numberRefusesNull, nodeTokens, tokenForms, placeholder, fixtureValues, fixturesOf, onceRows, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, samePairs, sampleReceiver, primitiveCases, refusesNull, stringCases, textKind, wrapText, functionFixturesOf, type After, FIXTURE_RAISED, callbackCases, stepExpected, caseFilesOf, serviceSteps, CASE_JSON_STRING_GOLDENS, jsMade, type CaseService } from './samples.ts';
+import { type CallbackHow, type Context, type MadeForm, type Receiver, raisedLines, callArgs, caseRefusal, BYTE_NAME_LINUX, caseListenerOf, isPath, isPlain, madeLines, callbackArg, callbackReachingArgs, classCaseArgs, otherValue, callables, bytesKind, caseValue, expectedText, isNumber, numberRefusesNull, nodeTokens, tokenForms, placeholder, fixtureValues, fixturesOf, onceRows, aliasCases, aliasRepresentative, expectedErrno, fromJson, judgesCallbackResult, raisingCases, refusedKeyMap, unsafeKeyMap, resultCases, samePairs, sampleReceiver, primitiveCases, refusesNull, stringCases, textKind, wrapText, functionFixturesOf, type After, FIXTURE_RAISED, callbackCases, stepExpected, caseFilesOf, serviceSteps, CASE_JSON_STRING_GOLDENS, jsMade, jsCause, convertedCause, type CaseService } from './samples.ts';
 import type { Fn } from './model.ts';
 import { header, jsString } from './text.ts';
 import { jsArguments, jsDeclaredMember, placeTests, refusedJs } from './callback_arguments.ts';
@@ -752,7 +752,7 @@ test('B-4: ${name} ${kase.id}', () => {${nodeCaseFileLines(kase.files, kase.list
     error instanceof pkg.${cls(kase.raises.category)} &&
     error instanceof ${nodeBase(kase.raises.category)} &&
     error.kind === ${jsString(kase.raises.kind)} &&
-${kase.raises.status === undefined ? '' : `    error.status === ${kase.raises.status === null ? 'null' : String(kase.raises.status)} &&\n`}    error.errno === ${errno === null ? 'null' : 'symbol' in errno ? `errnoOf.${errno.symbol}` : String(errno.value)});${kase.faults === undefined ? '' : '\n  assert.deepEqual(addon().__faultLeft(armed), []);'}${after}${afterChecks(kase.after, 'receiver')}${answered(since)}${nodeServiceEnd(kase.service)}${kept(fn)}
+${kase.raises.status === undefined ? '' : `    error.status === ${kase.raises.status === null ? 'null' : String(kase.raises.status)} &&\n`}    error.errno === ${errno === null ? 'null' : 'symbol' in errno ? `errnoOf.${errno.symbol}` : String(errno.value)}${jsCause(convertedCause(model, kase.args), 'node')});${kase.faults === undefined ? '' : '\n  assert.deepEqual(addon().__faultLeft(armed), []);'}${after}${afterChecks(kase.after, 'receiver')}${answered(since)}${nodeServiceEnd(kase.service)}${kept(fn)}
 });`);
     }
     // GN-6ae: a case whose function fixture raises an exception of the language gets the same object.

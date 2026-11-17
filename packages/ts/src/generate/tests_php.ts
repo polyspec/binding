@@ -10,7 +10,7 @@ import { type After, type MadeRaise, type CallbackHow, type Context, type MadeFo
 import type { Fn } from './model.ts';
 import { header, phpText } from './text.ts';
 import { type Declares, placeTests, refusedPhp } from './callback_arguments.ts';
-import { CASE_JSON_STRING_GOLDENS, madeCategoryClass } from './samples.ts';
+import { CASE_JSON_STRING_GOLDENS, convertedCause, madeCategoryClass } from './samples.ts';
 
 const BAD_NUMBERS: Record<string, string[]> = {
   uint: ['NAN', 'INF', '-INF', '1.5', '-1', '2 ** 53'],
@@ -433,8 +433,15 @@ export function phpTests(model: Model, layout: PhpLayout): string {
   const errorNew = (unit: Unit, kind: string, message: string, library?: string): string =>
     `new ${library === undefined ? `\\${phpNamespace(layout, unit.module)}\\${langName('php', unit.name, 'class')}` : foreignClass(library, unit)}(${phpText(message)}, ${phpText(kind)})`;
   // B2.489 (GN-7a): an instance of a class of another library with values, by the static polyspec_make of its class.
+  const madeClass = (made: MadeRaise): string => (made.unit === undefined ? `\\${madeCategoryClass(made, 'php')}` : foreignClass(made.library, made.unit));
+  // B2.489 (GN-7a): the converted error keeps the error of the other library as its previous exception.
+  const causeLines = (made: MadeRaise | undefined): string => {
+    if (made === undefined) return '';
+    const integer = (n: number | null): string => (n === null ? 'null' : String(n));
+    return `\n            $cause = $error->getPrevious();\n            self::assertInstanceOf(${madeClass(made)}::class, $cause);\n            self::assertSame(${madeClass(made)}::class, $cause::class);\n            self::assertSame(${phpText(made.kind)}, $cause->kind());\n            self::assertSame(${phpText(made.message)}, $cause->getMessage());\n            self::assertSame(${integer(made.status)}, $cause->status());\n            self::assertSame(${integer(made.errno)}, $cause->errno());`;
+  };
   const madeNew = (made: MadeRaise, properties: string[]): string => {
-    const cls = made.unit === undefined ? `\\${madeCategoryClass(made, 'php')}` : foreignClass(made.library, made.unit);
+    const cls = madeClass(made);
     const integer = (n: number | null): string => (n === null ? 'null' : String(n));
     return `${cls}::polyspec_make(${phpText(made.kind)}, ${phpText(made.message)}, ${integer(made.status)}, ${integer(made.errno)}, [${made.properties.map((p, i) => `${phpText(langName('php', p.name, 'variable'))} => ${properties[i] ?? 'null'}`).join(', ')}])`;
   };
@@ -888,7 +895,7 @@ ${kase.raises.status === undefined ? '' : `            self::assertSame(${kase.r
             self::assertSame(${exactClass(kase.raises)}::class, $error::class);
             self::assertInstanceOf(\\${phpBase(kase.raises.category)}::class, $error);
             self::assertSame(${phpText(kase.raises.kind)}, $error->kind());
-${kase.raises.status === undefined ? '' : `            self::assertSame(${kase.raises.status === null ? 'null' : String(kase.raises.status)}, $error->status());\n`}            ${errno === null ? 'self::assertNull($error->errno());' : `self::assertSame(${errnoValue}, $error->errno());`}
+${kase.raises.status === undefined ? '' : `            self::assertSame(${kase.raises.status === null ? 'null' : String(kase.raises.status)}, $error->status());\n`}            ${errno === null ? 'self::assertNull($error->errno());' : `self::assertSame(${errnoValue}, $error->errno());`}${causeLines(convertedCause(model, kase.args))}
         }${kase.faults === undefined ? '' : `\n        self::assertSame([], \\${layout.namespace}\\Internal\\faultLeft($armed));`}${after}${afterChecks(kase.after, '$receiver')}${answered(since)}${serviceEnd(kase.service)}${kept(fn)}
     }`);
     }

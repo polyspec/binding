@@ -2,7 +2,7 @@
 // against the subpath ./wasm of the installed package after init (P-5). The JavaScript values are those of Node.
 
 import { type Fn, type Model, awaits, categoryClass,cleanupWarning, memberName, errorUnitOfKind, hookCall, langName, unitOf, takesNull, type Arg, nativeRoundTrip, machineFunction, callsCode } from './model.ts';
-import { type CallbackHow, type Context, type MadeForm, type Receiver, raisedLines, aliasCases, aliasRepresentative, bytesKind, callbackArg, callbackReachingArgs, classCaseArgs, otherValue, expectedErrno, numberRefusesNull, fixtureValues, fixturesOf, onceRows, fromJson, isPlain, judgesCallbackResult, madeLines, callArgs, caseRefusal, callables, caseValue, expectedText, nodeTokens, tokenForms, isNumber, resultCases, placeholder, raisingCases, refusedKeyMap, unsafeKeyMap, samePairs, sampleReceiver, primitiveCases, refusesNull, stringCases, textKind, wrapText, functionFixturesOf, type After, FIXTURE_RAISED, callbackCases, stepExpected, jsMade } from './samples.ts';
+import { type CallbackHow, type Context, type MadeForm, type Receiver, raisedLines, aliasCases, aliasRepresentative, bytesKind, callbackArg, callbackReachingArgs, classCaseArgs, otherValue, expectedErrno, numberRefusesNull, fixtureValues, fixturesOf, onceRows, fromJson, isPlain, judgesCallbackResult, madeLines, callArgs, caseRefusal, callables, caseValue, expectedText, nodeTokens, tokenForms, isNumber, resultCases, placeholder, raisingCases, refusedKeyMap, unsafeKeyMap, samePairs, sampleReceiver, primitiveCases, refusesNull, stringCases, textKind, wrapText, functionFixturesOf, type After, FIXTURE_RAISED, callbackCases, stepExpected, jsMade, jsCause, convertedCause } from './samples.ts';
 import { header, jsString } from './text.ts';
 import { jsArguments, jsDeclaredMember, placeTests, refusedJs } from './callback_arguments.ts';
 import { wasmGlue } from './wasm.ts';
@@ -369,7 +369,7 @@ test('B-4: ${name} ${kase.id}', ${kase.faults === undefined ? '' : 'async '}() =
     error instanceof pkg.${cls(kase.raises.category)} &&
     error instanceof ${jsBase(kase.raises.category)} &&
     error.kind === ${jsString(kase.raises.kind)} &&
-${kase.raises.status === undefined ? '' : `    error.status === ${kase.raises.status === null ? 'null' : String(kase.raises.status)} &&\n`}    error.errno === ${errno === null || 'symbol' in errno ? 'null' : String(errno.value)});${kase.faults === undefined ? '' : '\n  assert.deepEqual(glue.__faultLeft(armed), []);'}${after}${afterChecks(kase.after, 'receiver')}${answered(since)}${kept(fn)}
+${kase.raises.status === undefined ? '' : `    error.status === ${kase.raises.status === null ? 'null' : String(kase.raises.status)} &&\n`}    error.errno === ${errno === null || 'symbol' in errno ? 'null' : String(errno.value)}${jsCause(convertedCause(model, kase.args), 'wasm')});${kase.faults === undefined ? '' : '\n  assert.deepEqual(glue.__faultLeft(armed), []);'}${after}${afterChecks(kase.after, 'receiver')}${answered(since)}${kept(fn)}
 });`);
     }
     // GN-6ae: a case whose function fixture raises an exception of the language gets the same object.

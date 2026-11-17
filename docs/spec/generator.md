@@ -1755,7 +1755,10 @@ the design ids are those of the binding design.
   row gives only the class and the kind. Why: hyper's core passes an exception of a session-store object on as
   `Failure::Raised`, and `failure_error` threw it again, so a user caught session-store's `RecordError` where the
   contract promises hyper's (H35.38); the errno of `Io` is the one that the OS gave L's core, which no row can give.
-  Limit: a recognized kind of L that the member does not name gets no class check here either.
+  Limit: a recognized kind of L that the member does not name gets no class check here either. The generated test of
+  a raising case whose fixtures hold one raise row with values of L (GN-7a) compares the cause of the error that the
+  member raised with the instance of that row: its class, kind, message, status and errno, through `previous`,
+  `__cause__`, `cause` or `Cause()`; a case with no such row, or with several, compares no cause.
 - **GN-8a** Fault injection (G-5, X-1): for a contract with `faults`, each binding crate names every constant of
   `faults[].core` as `const _: &str = <core>;`, so a point that the core does not have does not compile (I-2), and
   every entry point of a member, a hook and an iterate too, runs its core call in `with_faults("<member id>", …)`
