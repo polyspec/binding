@@ -7,7 +7,7 @@
 import type { Name, Type, Unit } from '../contract.ts';
 import { variantPattern } from '../contract.ts';
 import { defaultAsserts } from './defaults.ts';
-import { goErrorTypes, goName, goSubject } from './go.ts';
+import { callbackOf, goErrorTypes, goName, goSubject } from './go.ts';
 import {
   type Arg, type CallbackUnit, type Fn, type Model, type ObjectClass, type ValueAlias, Unsupported, aliasFailureFn, aliasFn, aliasKindsRust, aliasOf, aliasesWithKinds, argType, boxed, armedCall, borrowedItem, coreCallArgs, errorProperties, propertyValue, faultRust, foreignAliasLibraries, heldNew, heldParam, heldType, langName, libraryOf, lockLines, narrowed, narrows, nativeRoundTrip, objectUnit, pointed, poisoned, recordFn, resultLet, rustField, rustType, rustVariant, takesObject, unitOf, cleanupAsserts, cleanupMade, DRIVEN, drivenCall, waitsAsync, machineFunction, unitFn, libraryBlocks, type KeptClass, type KeptField, countsThrown,
   type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, caseWritten, UNIT_CASE_ALLOW,
@@ -71,13 +71,6 @@ export const releaseSymbol = (model: Model, unit: Unit): string => `${prefix(mod
 // T-5: the Go name of a class in the message of kind busy, of a poisoned object and of a refused handle.
 export const classLabel = (object: ObjectClass): string => goName(object.unit.name);
 
-const callbackOf = (model: Model, type: Type): CallbackUnit | undefined => {
-  const library = libraryOf(type);
-  // GN-6s: a callback unit of another repository, which a parameter takes.
-  if (library !== undefined) return model.foreignCallbacks.find((c) => c.library === library && c.unit.id === (type as { unit: string }).unit);
-  const unit = unitOf(model, type);
-  return unit === undefined ? undefined : model.callbacks.find((c) => c.unit === unit);
-};
 
 // U-3, GN-6s: the callback units that the crate wraps, of this repository and of others.
 // GN-6d: the callback units that a member of the contract takes without keeps; a unit that only a class implements
