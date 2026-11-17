@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 5f9779e3f4caa142bd40d090f87e35fe449c3053914eadd7cdf21f789dc63972 -->
+<!-- source-sha256: bd5e600d802f82508358495bab6aea7c582aa3f60a04c9df1e1bb396c5b24b42 -->
 # 생성기
 
 [English](generator.md)
@@ -2405,7 +2405,7 @@
   case 하나로 두 결과를 말할 수 없다. Node와 WASM이 구별할 수 있는 음의 0은 PHP와 Python처럼 거기서도 거부되므로
   (GN-12a) `targets`가 필요 없다. 짝 case는 그 입력에서 모든 target이 시험되게 한다.
 - **GN-13bd** case의 `raises`는 `category`를 생략할 수 있다: 생성 시험은 그 kind의 category를 계약의 `errors.kinds`에서
-  가져온다. 계약은 모든 kind에 category를 준다(E-1). category를 쓴 case는 자기 것을 유지한다. 이유: 계약 검사는
+  가져온다. 계약은 모든 kind에 category를 준다(E-1). category를 쓴 case는 그 kind의 category를 쓴다(GN-13bh). 이유: 계약 검사는
   `{"kind": <kind>}`만을 받는데 시험은 case의 category의 class를 이름했다. 그래서 kind만 주는 hyper `csrf.mask`의 case들 때문에
   Node가 `error.constructor === pkg. &&`를 180번 썼고, 그 파일은 parse되지 않았다. Python, PHP, WASM, Go도 같은 빈 category를
   읽었다. 바인딩이 스스로 내는 kind(E-1a: `invalid_number`, `invalid_argument_type`과 `binding_core::BindingError`의
@@ -2439,6 +2439,19 @@
   instance를 property 없이 비교했다. 그래서 그 U-2 시험은 어떤 두 JSON 값에도 통과했고 결과를 아무것도 검사하지 않았다. Go
   시험은 `after`의 호출 결과와 fixture의 인자도 handle로 비교했다. 또 기대하는 호출의 instance를 만드는 문장을, 시험의 줄을
   이미 쓴 뒤에 그 줄에 더했다. 그래서 시험이 선언하지 않은 지역 변수를 불렀다(B2.445).
+- **GN-13bh** case의 `raises`가 쓰는 `category`는 E-1의 여섯 category(`value`, `type`, `io`, `store`, `busy`,
+  `internal`) 가운데 하나이고, kind가 category를 가지면 그 category다: `errors.kinds`가 그 kind에 주는 category(자기 row와
+  `library`가 있는 row), 또는 E-1a kind의 고정 category다. `binding check`는 다른 `category`를 거부하고(CK-22), 생성기는
+  case, kind, category를 이름하는 문장으로 거부한다. case의 형태는 이 규칙을 바꾸지 않는다: `raises`가 있는 case는
+  `receiver`, `with`, `after`도 둘 수 있다. 모든 생성 파일은 category의 class를 그 언어의 class 표를 읽는 함수
+  하나(`categoryClass`)와 Go 오류 타입을 주는 함수 하나(`categoryType`)를 거쳐 이름한다. 두 함수는 category가 아닌 text와
+  class가 없는 category를 이름으로 거부한다. 그래서 어느 emitter도 자기만의 fallback을 갖지 않고 빈 class 이름을 쓰지
+  않는다. 이유: orm `query.update`의 case 둘이 `"category": "state"`를 썼는데, 그것은 category가 아니다. 검사는 `raises`의
+  `kind`와 `errno`만 읽어 통과시켰고, 각 시험 생성기는 class 표에서 category를 찾다가 표에 없는 category에 빈 text를
+  받았다. 그래서 Go 시험은 `failure, ok := err.(*liberrors.)`를, PHP 시험은 `catch (\Polyspec\Orm\ $error)`를 썼다. 두
+  파일은 compile도 parse도 되지 않아 그 두 target의 생성 시험이 하나도 돌지 않았고, Python, Node, WASM은 같은 자리에
+  `pkg.`를 썼다. 여섯 가운데 하나이지만 그 kind의 것이 아닌 category는 다른 category의 class를 이름한다. 그러면 그 case의
+  시험은 계약이 이미 보여 주는 이유로 실행 때 실패한다(B2.448).
 - **GN-13g** Go: 수 타입의 parameter는 그 Go 타입의 값만 담으므로, GN-13의 B-2 값 가운데 다른 Go 타입의 값(`int`,
   `uint`, `int64`에서 true, "7", 1.5, NaN과 무한대, `uint`에서 -1, `float`에서 true, "7"과 정수)은 호출의 인자가 될 수 없다.
   계약의 parameter가 가진 수 타입마다, feature `codec-test`와 build tag `polyspec_<library>_codec_test`는 진입점

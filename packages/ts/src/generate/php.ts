@@ -3,7 +3,7 @@
 import { type Name, type Type, type Unit, variantPattern } from '../contract.ts';
 import { convert } from '../names.ts';
 import { defaultAsserts, declaredValue } from './defaults.ts';
-import { absentInits, classKinds, DRIVEN, cancelsAny, cleanupAsserts, cleanupMade, cleanupWarning, drivenCall, waitsAsync, type Arg, type CallbackUnit, type Fn, type ErrorProperty, type ErrorUnit, errorProperties, type Model, isInternal, interfaceOf, implementorsOf, Unsupported, argType, leftOut, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, recordLocal, recordInit, rustIdent, rustType, rustVariant, unitOf, usesNative, takesFunction, keepsAny, keptCallbacks, keptModel, nativeRoundTrip, traitParam, keepsThrown, boxed, type Variant, type VariantCase, caseFields, caseRead, caseStruct, caseType, caseUnits, caseValue, caseWritten, implementsClause, UNIT_CASE_ALLOW, tupleIn, narrows, narrowed, tupleOut, propertyValue, errorMatched, recognizedFn, recognizedMatch, unitFn, libraryBlocks, machineFunction, countsThrown, takenCallbacks, lentCallbacks, convertsKept, callStruct , anchorCalls, lentRust} from './model.ts';
+import { absentInits, categoryClass,classKinds, DRIVEN, cancelsAny, cleanupAsserts, cleanupMade, cleanupWarning, drivenCall, waitsAsync, type Arg, type CallbackUnit, type Fn, type ErrorProperty, type ErrorUnit, errorProperties, type Model, isInternal, interfaceOf, implementorsOf, Unsupported, argType, leftOut, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, recordLocal, recordInit, rustIdent, rustType, rustVariant, unitOf, usesNative, takesFunction, keepsAny, keptCallbacks, keptModel, nativeRoundTrip, traitParam, keepsThrown, boxed, type Variant, type VariantCase, caseFields, caseRead, caseStruct, caseType, caseUnits, caseValue, caseWritten, implementsClause, UNIT_CASE_ALLOW, tupleIn, narrows, narrowed, tupleOut, propertyValue, errorMatched, recognizedFn, recognizedMatch, unitFn, libraryBlocks, machineFunction, countsThrown, takenCallbacks, lentCallbacks, convertsKept, callStruct , anchorCalls, lentRust} from './model.ts';
 import { PHP_NATIVE, aliasPhp, foreignFailurePhp, phpCaseTestEntries, phpHost, phpMaking } from './alias_php.ts';
 import { THREAD_THROWN, elsewhereRust } from './alias_shared.ts';
 import { phpCaseTests } from './samples.ts';
@@ -1543,7 +1543,7 @@ function libRust(model: Model, layout: PhpLayout): string {
   const unitPhpName = (unit: ErrorUnit): string => `${phpNamespace(layout, unit.unit.module)}\\${langName('php', unit.unit.name, 'class')}`;
   const parentIndex = (unit: ErrorUnit): number => (unit.parent === undefined ? model.classes.findIndex((c) => c.category === unit.category) : unitIndex(unit.parent));
   const parentPhpName = (unit: ErrorUnit): string =>
-    unit.parent === undefined ? `${layout.namespace}\\${model.classes.find((c) => c.category === unit.category)?.name ?? ''}` : unitPhpName(unit.parent);
+    unit.parent === undefined ? `${layout.namespace}\\${categoryClass(model, unit.category)}` : unitPhpName(unit.parent);
   // B2.362: the name under which the binding stores a property of an error unit, which no property of Exception has
   // (trace, message, code, file, line and previous are its own, and private trace refuses a write of the subclass).
   const stored = (property: ErrorProperty): string => `polyspec_${langName('php', property.member.name, 'variable')}`;
@@ -2218,7 +2218,7 @@ ${model.classes.map((c) => `    /** The errors of category ${c.category} (E-2). 
   // E-2, I-3: an error unit extends the class of its parent or of its category; a property is a method.
   for (const u of model.errorUnits) {
     const parent = u.parent === undefined
-      ? `\\${layout.namespace}\\${model.classes.find((c) => c.category === u.category)?.name ?? ''}`
+      ? `\\${layout.namespace}\\${categoryClass(model, u.category)}`
       : `\\${phpNamespace(layout, u.parent.unit.module)}\\${langName('php', u.parent.unit.name, 'class')}`;
     blocks.push(`namespace ${phpNamespace(layout, u.unit.module)} {
     /** The errors of the unit ${u.unit.id} (E-2). */

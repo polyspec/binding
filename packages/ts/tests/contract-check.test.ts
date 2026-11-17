@@ -2181,6 +2181,64 @@ test('B2.433: CK-22 refuses the raises of a case without a category whose kind i
   assert.deepEqual(messages({ kind: 'no_such_kind' }), ['the case a_key_without_a_value_is_missing of sample.resolve raises the kind no_such_kind without a category, which is no kind of errors.kinds nor of E-1a, so its test names no class (CK-22, GN-13bd)']);
 });
 
+// The sample with the case of slip.read in the form of orm's cases: receiver, with, raises and after.
+function raisingSample(change: (kase: any, contract: any, cases: any) => void): string[] {
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/sample/${path}`, import.meta.url), 'utf8'));
+  const contract = read('packages/rust/interface.json');
+  const cases = read('contracts/cases.json');
+  const kase = cases.slip_read.find((c: any) => c.id === 'a_slip_of_a_cleared_shelf_is_missing');
+  kase.with = { other: { new: 'shelf.new', args: { count: 3 } } };
+  kase.after = [{ on: 'other', call: 'shelf.clear', args: {}, result: null }];
+  change(kase, contract, cases);
+  return checkContract(contract, { caseFiles: new Map([['contracts/cases.json', cases]]) }).map((f) => `${f.check} ${f.message}`);
+}
+
+test('B2.448: CK-22 refuses a category of the raises of a case that is no category or not that of its kind (GN-13bh)', () => {
+  // orm query.update: "category": "state" passed the check, and the Go and PHP tests named an empty class.
+  const where = 'the case a_slip_of_a_cleared_shelf_is_missing of slip.read';
+  // The form of the case, raises with with and after, is allowed.
+  assert.deepEqual(raisingSample(() => {}), []);
+  assert.deepEqual(raisingSample((kase) => { delete kase.raises.category; }), []);
+  assert.deepEqual(raisingSample((kase) => { kase.raises.category = 'state'; }), [`CK-22 ${where} raises the kind missing with the category "state", which is no category: a category is one of value, type, io, store, busy, internal (CK-22, GN-13bh)`]);
+  assert.deepEqual(raisingSample((kase) => { kase.raises.category = 7; }), [`CK-22 ${where} raises the kind missing with the category 7, which is no category: a category is one of value, type, io, store, busy, internal (CK-22, GN-13bh)`]);
+  assert.deepEqual(raisingSample((kase) => { kase.raises.category = 'io'; }), [`CK-22 ${where} raises the kind missing with the category io, but the kind missing is of the category value (CK-22, GN-13bh)`]);
+  // A kind of E-1a has its fixed category.
+  assert.deepEqual(raisingSample((kase) => { kase.raises = { kind: 'consumed', category: 'type' }; }), []);
+  assert.deepEqual(raisingSample((kase) => { kase.raises = { kind: 'consumed', category: 'value' }; }), [`CK-22 ${where} raises the kind consumed with the category value, but the kind consumed is of the category type (CK-22, GN-13bh)`]);
+});
+
+test('B2.449: CK-22 compares the kind of the raises of a case with the kinds that the call of the case can give', () => {
+  const refusal = (id: string, member: string, kind: string, unit: string): string =>
+    `CK-22 the case ${id} of ${member} raises the kind ${kind}, which the call of the case does not give: it is no kind of the raises of ${member}, of E-1a, of in_raises of a value alias that a parameter holds, nor, for a case that makes its receiver from its keys, of the raises of a factory of ${unit} (CK-22, B2.449)`;
+  const ID = 'a_slip_of_a_cleared_shelf_is_missing';
+  // A kind of the raises of the member, and a kind of E-1a, which no member declares.
+  assert.deepEqual(raisingSample(() => {}), []);
+  assert.deepEqual(raisingSample((kase) => { kase.raises = { kind: 'invalid_number' }; }), []);
+  assert.deepEqual(raisingSample((kase) => { kase.raises = { kind: 'busy' }; }), []);
+  // A kind of errors.kinds that slip.read does not declare, with its category and without, and a kind of no row.
+  assert.deepEqual(raisingSample((kase) => { kase.raises = { kind: 'unsupported', category: 'value' }; }), [refusal(ID, 'slip.read', 'unsupported', 'slip')]);
+  assert.deepEqual(raisingSample((kase) => { kase.raises = { kind: 'unsupported' }; }), [refusal(ID, 'slip.read', 'unsupported', 'slip')]);
+  assert.deepEqual(raisingSample((kase) => { kase.raises = { kind: 'no_such_kind', category: 'value' }; }), [refusal(ID, 'slip.read', 'no_such_kind', 'slip')]);
+  // GN-13f: a case that makes its receiver from its own keys may expect a kind of a factory of the class, and one with
+  // after may not, since its failure is then that of the call alone.
+  const settle = (change: (kase: any) => void) => raisingSample((_kase, contract, cases) => {
+    const members = contract.units.flatMap((u: any) => u.members ?? []);
+    members.find((m: any) => m.id === 'counter.new').raises = ['polyspec_sample::Error::Unsupported'];
+    const kase = { id: 'a_counter_that_is_not_made', start: 2, amount: 1, raises: { kind: 'unsupported', category: 'value' } };
+    change(kase);
+    cases.counter_add.push(kase);
+  }).filter((m) => /B2\.449/.test(m));
+  assert.deepEqual(settle(() => {}), []);
+  assert.deepEqual(settle((kase) => { kase.after = []; }), [refusal('a_counter_that_is_not_made', 'counter.add', 'unsupported', 'counter')]);
+  assert.deepEqual(settle((kase) => { kase.raises = { kind: 'missing', category: 'value' }; }), [refusal('a_counter_that_is_not_made', 'counter.add', 'missing', 'counter')]);
+  // U-7: sample.echo declares no kind and takes the alias data, whose in function gives unsupported.
+  const echo = (kind: string) => raisingSample((_kase, _contract, cases) => {
+    cases.echo.push({ id: 'a_value_that_the_in_function_refuses', value: { host: 'object' }, raises: { kind, category: 'value' } });
+  }).filter((m) => /B2\.449/.test(m));
+  assert.deepEqual(echo('unsupported'), []);
+  assert.deepEqual(echo('missing'), [refusal('a_value_that_the_in_function_refuses', 'sample.echo', 'missing', 'sample')]);
+});
+
 test('B2.376: CK-22 takes a case of any member with the same conversion and form of call as the case of a kind', () => {
   // orm: query.get_count and the other members of a Tx raise kinds whose conversion db.transaction already shows.
   const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/sample/${path}`, import.meta.url), 'utf8'));

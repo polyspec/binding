@@ -1,7 +1,7 @@
 // The generated node:test module of the Node binding (G-5): B-2, B-3, B-4, B-7 and G-7 for every function, run against
 // the installed package.
 
-import { type Model, callsCode, POISON_ENTRY, Unsupported, cleanupWarning, errorUnitOfKind, hookCall, langName, memberName, unitOf, awaits, takesNull, type Arg, nativeRoundTrip, takesFunction, machineFunction } from './model.ts';
+import { type Model, callsCode, categoryClass,POISON_ENTRY, Unsupported, cleanupWarning, errorUnitOfKind, hookCall, langName, memberName, unitOf, awaits, takesNull, type Arg, nativeRoundTrip, takesFunction, machineFunction } from './model.ts';
 import { heldTests } from './tests_held.ts';
 import { addonBase } from './node.ts';
 import { isHost, NODE_PLATFORM_JS } from './packages.ts';
@@ -401,7 +401,7 @@ export function nodeTests(model: Model): string {
     // GN-6v: a case is an object of its tag and its fields.
     variantNew: (variant, kase, fields) => `{ ${[`${langName('node', variant.unit.tag ?? [], 'variable')}: ${jsString(kase.value)}`, ...(kase.unit.fields ?? []).map((f, i) => `${langName('node', f.name, 'variable')}: ${fields[i] ?? ''}`)].join(', ')} }`,
   };
-  const cls = (category: string): string => model.classes.find((c) => c.category === category)?.name ?? '';
+  const cls = (category: string): string => categoryClass(model, category);
   // E-2: the exact class of a kind is the class of the error unit that its row names, or the class of its category.
   // E-2, B-4: the exact class of a failure of a case: the class of the error unit of its kind, or of its category.
   const exactClass = (raises: { kind: string; category: string }): string => {

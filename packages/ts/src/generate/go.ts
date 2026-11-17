@@ -12,7 +12,7 @@
 import { libraryParts } from '../check.ts';
 import { CATEGORIES, type Contract, type Default, type Member, type Name, type Type, type Unit } from '../contract.ts';
 import { convert, libraryName } from '../names.ts';
-import { type CallbackMember, type CallbackUnit, classKinds, type Constant, type ErrorUnit, type Fn, type Model, isInternal, interfaceOf, implementorsOf, cleanupWarning, type ObjectClass, type Refusals, type Variant, Unsupported, aliasOf, aliasesWithKinds, langName, libraryOf, nativeRoundTrip, objectUnit, pointed, poisoned, unitOf, variantOf, waitsIo, waitsAsync, machineFunction, type KeptClass, type KeptField, keptModel, keptRecognizes, cancelsAny, takesCancel , anchorCalls, lentRust} from './model.ts';
+import { type CallbackMember, type CallbackUnit, classKinds, type Constant, type ErrorUnit, type Fn, type Model, isInternal, interfaceOf, implementorsOf, cleanupWarning, type ObjectClass, type Refusals, type Variant, Unsupported, aliasOf, aliasesWithKinds, langName, libraryOf, nativeRoundTrip, objectUnit, pointed, poisoned, unitOf, variantOf, waitsIo, waitsAsync, machineFunction, type KeptClass, type KeptField, keptModel, keptRecognizes, cancelsAny, takesCancel , anchorCalls, lentRust, knownCategory} from './model.ts';
 import { type Echoes, GO_VALUE_KINDS, NUMBER_TYPES, aliasInstances, numberTypes, bindingFn, callsBack, cSymbol, echoes, libRust, plainName, prefix, releaseSymbol, valueClasses, passes, runsGo, keptReads, readsValues, countsThrownGo, keeps, rowReads } from './go_rust.ts';
 import { type ForeignMake, foreignMakeOf, foreignRowClasses } from './alias_shared.ts';
 import { classIn, classMakes } from './value_class.ts';
@@ -1177,7 +1177,14 @@ package ${goPackage(model.contract, module)}
 ${imports}${alias}${keyed}${tuples}${body}${instance}`;
 }
 
-export const categoryType = (model: Model, category: string): string => goErrorTypes(model.contract).find(([c]) => c === category)?.[1] ?? '';
+// B2.448 (GN-13bh): the Go error type of a category. A text that is no category is refused by name (knownCategory), and
+// goErrorTypes names a type for each of the six, so the name is never empty.
+export const categoryType = (model: Model, category: string): string => {
+  const known = knownCategory(category);
+  const name = goErrorTypes(model.contract).find(([c]) => c === known)?.[1];
+  if (name === undefined) throw new Unsupported(`the category ${known} names no Go error type (GN-13bh,E-7)`);
+  return name;
+};
 const internalType = (model: Model): string => categoryType(model, 'internal');
 
 // ---- package binding: cgo, the encoding and the error types of E-7 ----

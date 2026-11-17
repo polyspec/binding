@@ -4,7 +4,7 @@
 // (U-7 (d)). What a Python type is as a HostValue is binding's rule, the same for every alias; which kinds an alias
 // takes is its core's.
 
-import { type KeptClass, type KeptField, type Model, type ValueAlias, langName, rustField, rustIdent, aliasFn, aliasFailureFn, foreignAliasLibraries, Unsupported, errorMatched } from './model.ts';
+import { type KeptClass, type KeptField, type Model, type ValueAlias, categoryClass,langName, rustField, rustIdent, aliasFn, aliasFailureFn, foreignAliasLibraries, Unsupported, errorMatched } from './model.ts';
 import { type Fill, type ForeignMake, type Walk, type WalkShape, NEXT_ENTRY, PUT_ENTRY, container, foreignReads, outArms, readAsVariants, readValue, valueReads, walkRust } from './alias_shared.ts';
 import { classIn, classMakes, type ReadCase } from './value_class.ts';
 import { variantPattern } from '../contract.ts';
@@ -532,7 +532,7 @@ export function foreignFailurePython(model: Model): string {
   return foreignAliasLibraries(model).map((alias) => {
     const library = (alias.library ?? '').replaceAll('-', '_');
     const error = alias.error ?? { path: '', kinds: [] };
-    const arms = error.kinds.map((k) => `        ${variantPattern(k.variant)} => ${rustString(model.classes.find((c) => c.category === k.category)?.name ?? '')},`).join('\n');
+    const arms = error.kinds.map((k) => `        ${variantPattern(k.variant)} => ${rustString(categoryClass(model, k.category))},`).join('\n');
     return `
 /// U-7 (a'): a kind of ${alias.library ?? ''} in the class of its category here.
 #[allow(clippy::unneeded_struct_pattern, reason = "I-2")]

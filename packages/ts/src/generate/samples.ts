@@ -8,7 +8,7 @@ import type { Category, Contract, Member, Service, Unit } from '../contract.ts';
 import { classMakes } from './value_class.ts';
 import { defaultCaseValue } from './defaults.ts';
 import { BINDING_KINDS, type Arg, buildModel, caseName, type Fn, type KeptClass, type Model, type ObjectClass, type ValueAlias, type Variant, type VariantCase, Unsupported, aliasOf, interfaceOf, resolveNamedType, implementorsOf, caseFields, kindText, langName, libraryOf, objectUnit, unitOf, variantOf, caseLeftOut, machineFunction, makerOf } from './model.ts';
-import { kindsOf } from '../contract.ts';
+import { CATEGORIES, kindsOf } from '../contract.ts';
 import { jsString, phpLatin1, phpText, pyString } from './text.ts';
 
 export type Lang3 = 'python' | 'node' | 'php';
@@ -2251,11 +2251,23 @@ export function mapEntries(value: unknown): [string, unknown][] {
 // B2.372 (K-1, E-1): the raises of a case with the category of its kind, which the case may leave out, since the
 // contract gives every kind its category (errors.kinds); a case that writes it keeps its own. B2.433 (GN-13bd): a kind
 // that the binding raises itself takes its fixed category of E-1a, and a kind of neither names no class.
-export function withCategory<T extends { kind: string; category?: string }>(model: Model, raises: T, at: string): T & { category: string } {
-  if (typeof raises.category === 'string') return raises as T & { category: string };
+// B2.448 (GN-13bh): a category that the case writes is one of the six of E-1 and is the category of its kind, where
+// the kind has one; another is refused by the case, the kind and the category, so no test names an empty class or the
+// class of another category.
+export function withCategory<T extends { kind: string; category?: unknown }>(model: Model, raises: T, at: string): T & { category: string } {
   // A row of this library whose class was refused, which the model leaves out, still gives its category.
   const own = model.contract.errors.kinds.find((row) => row.library === undefined && kindsOf(row).includes(raises.kind))?.category;
   const category = model.kinds.find((k) => kindText(k.variant) === raises.kind)?.category ?? own ?? (Object.keys(BINDING_KINDS) as Category[]).find((c) => BINDING_KINDS[c].includes(raises.kind));
+  const written = raises.category;
+  if (written !== undefined) {
+    if (typeof written !== 'string' || !(CATEGORIES as readonly string[]).includes(written)) {
+      throw new Unsupported(`${at} raises the kind ${raises.kind} with the category ${JSON.stringify(written)}, which is no category: a category is one of ${CATEGORIES.join(', ')} (GN-13bh, E-1)`);
+    }
+    if (category !== undefined && category !== written) {
+      throw new Unsupported(`${at} raises the kind ${raises.kind} with the category ${written}, but the kind ${raises.kind} is of the category ${category} (GN-13bh, E-1)`);
+    }
+    return raises as T & { category: string };
+  }
   if (category === undefined) throw new Unsupported(`${at} raises the kind ${raises.kind} without a category, which is no kind of errors.kinds nor of E-1a (GN-13bd)`);
   return { ...raises, category };
 }

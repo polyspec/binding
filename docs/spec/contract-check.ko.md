@@ -1,5 +1,5 @@
 <!-- doc-id: contract-check -->
-<!-- source-sha256: 966f95b763cbe66321e99dd58cac482257ccae8893d8bfdb15250880188fb16d -->
+<!-- source-sha256: aa7cbde707f8a5e7bc7a7a3fb5625f0a687a38ab46232c75ccd7d2b685598860 -->
 # 계약 검사
 
 [English](contract-check.md)
@@ -297,7 +297,18 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
   가진 case는 그 점들의 `fills`에 있는 kind만 채우며, 다른 kind를 기대하는 그런 case는 거부한다. 입력 규칙의 case가
   입력으로 남게 하기 위해서다. case `raises`의 `errno`가 텍스트이면 그런 기호다. `category`를 생략한 case의 `raises`는
   `errors.kinds`(자기 row와 `library`가 있는 row)나 E-1a의 kind를 주고, 생성 시험은 그 category를 가져온다(generator
-  GN-13bd). 다른 kind는 이름으로 거부한다. 그 시험이 어떤 class도 이름하지 못하기 때문이다(B2.433). category `internal`의 kind는 member마다
+  GN-13bd). 다른 kind는 이름으로 거부한다. 그 시험이 어떤 class도 이름하지 못하기 때문이다(B2.433). case의 `raises`가 쓰는
+  `category`는 E-1의 여섯 category 가운데 하나이고, `errors.kinds`나 E-1a가 그 kind에 category를 주면 그 category다. 다른
+  것은 case, kind, category를 이름해 거부한다(generator GN-13bh, B2.448). case `raises`의 kind는 그 case의 호출이 낼 수 있는
+  kind다: 그 member의 `raises`의 kind(`library`가 있는 row는 그 라이브러리 row의 kind를 준다, GN-7c), 바인딩이 코어 앞이나
+  둘레에서 스스로 내고 어느 member도 선언하지 않는 E-1a의 kind, parameter의 타입이 담는 value alias의 `in_raises`의
+  kind(인자의 in 함수가 낸다, U-7), receiver가 있는 member의 case가 `receiver`, `faults`, `after`를 주지 않을 때 그 class의
+  factory(생성자 또는 receiver 없는 member)의 `raises`의 kind나 그 parameter의 alias의 `in_raises`의 kind(그런 case의
+  실패는 receiver를 만드는 실패이거나 호출의 실패다, generator GN-13f), 그리고 fault injection point를 거는 case에서는
+  category `internal`의 kind(X-1)다. 다른 kind를 내는 case는 case, kind, member를 이름해 거부한다. 이유: 검사는 step,
+  `after`의 호출, `then`의 호출의 kind를 그 호출의 member의 `raises`와 비교했지만, case 자신의 kind는 kind의 case로 세는
+  데에만 읽었다. 그래서 member가 선언하지 않은 kind를 기대하는 case가 통과했고, 그 시험은 모든 target에서 실패할 수밖에
+  없었다(B2.449). category `internal`의 kind는 member마다
   case를 요구하지 않는다(X-1). 코어 오류를 옮기는 match가 모든 member에 하나이기 때문이다. 그런 kind를 가진 오류
   enum마다, 곧 이 계약 자신의 것과 kind를 그대로 전달하는(E-1b (a)) 라이브러리마다, 어느 member의 case 하나가
   `<library>.internal`을 `broken`으로 장전하고 category `internal`의 kind를 낸다. 값 alias `in_raises`의 kind는 그 alias를

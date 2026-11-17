@@ -6,7 +6,7 @@ import { variantPattern } from '../contract.ts';
 import { NODE_NATIVE, aliasNode, foreignFailureNode, foreignRegistration, keptCheckNode, nodeHost } from './alias_node.ts';
 import { THREAD_THROWN, elsewhereRust } from './alias_shared.ts';
 import { defaultAsserts, declaredValue } from './defaults.ts';
-import { absentInits, type Arg, type CallbackUnit, type Fn, type KeptClass, type Model, isInternal, interfaceOf, implementorsOf, Unsupported, argType, leftOut, errorProperties, byValue, type ObjectClass, coreCallArgs, guardBorrows, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, awaits, cleanupAsserts, cleanupMade, cleanupWarning, futureOf, waitsAsync, waitsIo, waitsProcess, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustType, rustVariant, unitOf, usesNative, takesFunction, keepsThrown, nativeRoundTrip, traitParam, boxed, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, caseWritten, implementsClause, UNIT_CASE_ALLOW, tupleIn, caseLeftOut, narrows, narrowed, tupleOut, propertyValue, errorMatched, recognizedFn, classKinds, recognizedMatch, ownerRecognizedUnits, type ErrorUnit, awaitsNone, unitFn, libraryBlocks, holdsFunction, machineFunction, countsThrown, keepsAny, keptCallbacks, keptModel, takenCallbacks, lentCallbacks, convertsKept, callStruct, recordLocal, recordInit } from './model.ts';
+import { absentInits, categoryClass,type Arg, type CallbackUnit, type Fn, type KeptClass, type Model, isInternal, interfaceOf, implementorsOf, Unsupported, argType, leftOut, errorProperties, byValue, type ObjectClass, coreCallArgs, guardBorrows, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, awaits, cleanupAsserts, cleanupMade, cleanupWarning, futureOf, waitsAsync, waitsIo, waitsProcess, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustType, rustVariant, unitOf, usesNative, takesFunction, keepsThrown, nativeRoundTrip, traitParam, boxed, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, caseWritten, implementsClause, UNIT_CASE_ALLOW, tupleIn, caseLeftOut, narrows, narrowed, tupleOut, propertyValue, errorMatched, recognizedFn, classKinds, recognizedMatch, ownerRecognizedUnits, type ErrorUnit, awaitsNone, unitFn, libraryBlocks, holdsFunction, machineFunction, countsThrown, keepsAny, keptCallbacks, keptModel, takenCallbacks, lentCallbacks, convertsKept, callStruct, recordLocal, recordInit } from './model.ts';
 import { addonName, NODE_PLATFORM_JS } from './packages.ts';
 import { nodeTests } from './tests_node.ts';
 import { type Cycle, type CycleHost, cycleLeaf, cycleOf, cycles, cycleUnitRust, holdsCycle } from './cycles.ts';
@@ -2047,8 +2047,8 @@ function tsType(model: Model, type: Type, input: boolean): string {
 // the kinds of the class that is made, the nearest generated class of new.target (GN-10); an error that the binding
 // raises has a kind of its class.
 export function jsErrorClasses(model: Model, lang: 'node' | 'wasm', exported: string, base: (category: string) => string): { classes: string; units: string } {
-  const typeClass = model.classes.find((c) => c.category === 'type')?.name ?? '';
-  const valueClass = model.classes.find((c) => c.category === 'value')?.name ?? '';
+  const typeClass = categoryClass(model, 'type');
+  const valueClass = categoryClass(model, 'value');
   const unitName = (u: ErrorUnit): string => langName(lang, u.unit.name, 'class');
   const kinds = [
     ...model.classes.map((c) => `KINDS.set(${c.name}, new Set([${classKinds(model, c.category).map(jsString).join(', ')}]));`),
@@ -2090,7 +2090,7 @@ ${exported}class ${c.name} extends globalThis.${base(c.category)} {
   // properties (I-3).
   const units = `${model.errorUnits.map((u) => {
     const name = unitName(u);
-    const parent = u.parent === undefined ? model.classes.find((c) => c.category === u.category)?.name ?? '' : unitName(u.parent);
+    const parent = u.parent === undefined ? categoryClass(model, u.category) : unitName(u.parent);
     return `
 ${exported}class ${name} extends ${parent} {
   constructor(message, kind, status, errno) {
@@ -2346,7 +2346,7 @@ export declare class ${c.name} extends ${nodeBase(c.category)} {
 }`).join('\n');
   const errorUnits = model.errorUnits.map((u) => `
 /** The errors of the unit ${u.unit.id} (E-2). */
-export declare class ${langName('node', u.unit.name, 'class')} extends ${u.parent === undefined ? model.classes.find((c) => c.category === u.category)?.name ?? '' : langName('node', u.parent.unit.name, 'class')} {${u.properties.map((p) => `\n  readonly ${langName('node', p.member.name, 'variable')}: ${tsType(model, p.returns, false)};`).join('')}
+export declare class ${langName('node', u.unit.name, 'class')} extends ${u.parent === undefined ? categoryClass(model, u.category) : langName('node', u.parent.unit.name, 'class')} {${u.properties.map((p) => `\n  readonly ${langName('node', p.member.name, 'variable')}: ${tsType(model, p.returns, false)};`).join('')}
 }`).join('\n');
   const enums = model.enums.map((u) => `
 /** T-6.${tag(u)} */

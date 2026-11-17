@@ -357,8 +357,27 @@ export const errorMatched = (model: Pick<Model, 'codeOf'>, error: string, borrow
 export const errorUnitOfKind = (model: Model, kind: string): ErrorUnit | undefined =>
   model.kinds.find((k) => k.unit !== undefined && kindText(k.variant) === kind)?.unit;
 
+// B2.448 (GN-13bh, E-1): the category that a text names, one of the six of E-1. Every place that names the class of a
+// category takes the name through categoryClass, or through categoryType for Go, and both pass here, so a text that is
+// no category is refused by name and no emitter writes an empty class name.
+export function knownCategory(category: string): Category {
+  if (!(CATEGORIES as readonly string[]).includes(category)) {
+    throw new Unsupported(`${JSON.stringify(category)} is no category, so it names no error class: a category is one of ${CATEGORIES.join(', ')} (GN-13bh, E-1)`);
+  }
+  return category as Category;
+}
+
+// B2.448 (GN-13bh, E-2): the class of a category in the language of the emitter, as errors.classes names it. A
+// category without a class is refused by name; the name is never empty.
+export function categoryClass(model: Pick<Model, 'classes'>, category: string): string {
+  const known = knownCategory(category);
+  const name = model.classes.find((c) => c.category === known)?.name;
+  if (name === undefined || name === '') throw new Unsupported(`the category ${known} names no error class in errors.classes (GN-13bh, E-2)`);
+  return name;
+}
+
 export interface Model {
-  contract: Contract;
+contract: Contract;
   version: string;
   coreCrate: string;
   coreLib: string;
