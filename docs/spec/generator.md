@@ -66,7 +66,7 @@ the design ids are those of the binding design.
   <subcommand>`, with `$(CARGOFLAGS)` right after the subcommand of a build (`rustc`, `build`), and pass `--cargo
   "$(CARGO)"` to each command of binding that they run that runs Cargo; `binding check` reports a file of recipes that
   runs Cargo in another way (CK-94). A recipe of the repository that runs `binding go-link` passes `--cargo "$(CARGO)"
-  --cargo-flags "$(CARGOFLAGS)"`. maturin, which `uv build` runs, and `napi build` start Cargo themselves and are no
+  --cargo-flags "$(CARGOFLAGS)"`. `maturin build` and `napi build` start Cargo themselves and are no
   call of binding. The go command is given in the same way, and is no requirement of a command: `binding check`,
   `binding scaffold` and `binding release-go-module` take `--go <command>`, the value of `$(GO)`, split into words as
   `--cargo` is, and without it they run the `go` of `PATH` (GN-15l, GN-19f). Why: php-serialization and session-store found that `binding go-link` and the release recipes ran
@@ -4046,7 +4046,7 @@ the design ids are those of the binding design.
 ## The release of a repository that holds a binding
 
 - **GN-19** A repository that holds a binding releases it by recipes of make, and the work is divided by one rule. A
-  step that a standard tool of an ecosystem performs (Cargo, maturin through `uv build`, the napi CLI, npm, `zip`,
+  step that a standard tool of an ecosystem performs (Cargo, maturin, the napi CLI, npm, `zip`,
   `llvm-strip`) is a line of a recipe that starts that tool with the arguments of GN-19b to GN-19e; binding gives no
   command that wraps such a call. Those recipes are the same in every repository but for the names that its contract
   gives, so binding writes them for the contract as a file of make that the Makefile of the repository includes
@@ -4119,12 +4119,21 @@ the design ids are those of the binding design.
   variable of make as well. Why the recipe asks and not `binding check --release`: the variables are of the Makefile,
   which a command does not read (docs/spec/contract-check.md CK-102), and `release-go-static` runs in CI, as a build
   of the job `platform` (GN-19i), so the missing declaration fails before a tag in either place.
-- **GN-19c** The Python wheel, on each platform: `MATURIN_PEP517_ARGS='--locked --compatibility manylinux_2_34'
-  SOURCE_DATE_EPOCH=<commit time of the tag> uv build --wheel --python python3 --out-dir <assets> <package
-  directory>`. maturin names the wheel with the platform tag (`manylinux_2_34_x86_64`, `manylinux_2_34_aarch64`,
-  `macosx_11_0_arm64`), and the wheel is abi3 (GN-1), so one wheel of a platform serves every supported Python. Why
-  the compatibility is named: the PEP 517 backend of maturin passes `--compatibility off` unless it is given one, and
-  then tags a Linux wheel `linux_<arch>`, which PyPI refuses and pip installs on no other system. Why
+- **GN-19c** The Python wheel, on each platform: `$(MISE) install --locked github:PyO3/maturin`, then
+  `SOURCE_DATE_EPOCH=<commit time of the tag> $(MATURIN) build --release --locked --compatibility manylinux_2_34
+  --interpreter python3 --manifest-path <package directory>/Cargo.toml --out <assets>`. `MATURIN` is the maturin of
+  `mise.toml` of the repository, the shim of the mise of the checkout unless the Makefile gives another path to the same
+  tool, such as `link.mjs maturin` of kit; the recipe requires that `$(MATURIN) --version` prints the release of maturin
+  that binding pins (`MATURIN` of `packages/ts/src/generate/packages.ts`, the release of `mise.toml` of binding) and
+  ends with status 2 before a build otherwise. Why not `uv build`: a PEP 517 frontend builds with the backend that it
+  resolves from `requires` of the `[build-system]` table of `pyproject.toml`, at the time of the build and with no hash,
+  so the maturin of a release wheel was the one that the registry gave that day, not the one whose digest `mise.lock`
+  pins and with which the tests of the bindings build (B2.491). `requires` of the generated `pyproject.toml` names the
+  same release exactly, `maturin==<release>`, for a frontend that builds the package from source. maturin names the
+  wheel with the platform tag (`manylinux_2_34_x86_64`, `manylinux_2_34_aarch64`, `macosx_11_0_arm64`), and the wheel
+  is abi3 (GN-1), so one wheel of a platform serves every supported Python. Why the compatibility is named: without it
+  a Linux wheel can be tagged `linux_<arch>`, as the PEP 517 backend of maturin does with `--compatibility off`, which
+  PyPI refuses and pip installs on no other system. Why
   `manylinux_2_34`: Rust std links `pthread_key_create`, `pthread_key_delete` and `pthread_setspecific` at
   `GLIBC_2.34` against the glibc of the `ubuntu-26.04` runners (GN-19a), so a library built there needs at least that
   policy, and maturin checks the library against the policy and refuses one that needs a later symbol or a library
@@ -4325,8 +4334,8 @@ the design ids are those of the binding design.
   The Makefile of the repository defines, before its line `include <path of the file>`, the variables that the
   recipes read: `BINDING_RUN`, the command that starts binding (such as `$(NODE) $(BINDING)` or the bin link of the
   installed package), `CARGO`, the cargo command of the repository, and `CARGOFLAGS`, the arguments of its builds, which
-  may be empty (GN-1d), `NODE`, `NPM` and `UV`, the tools of the checkout by their absolute paths, and `BINDING_DEP`, the
-  target that installs binding, when it has one; a recipe that reads one that is empty fails and names it, and
+  may be empty (GN-1d), `NODE` and `NPM`, the tools of the checkout by their absolute paths, and `BINDING_DEP`, the
+  target that installs binding, when it has one (`MATURIN` has a default, GN-19c); a recipe that reads one that is empty fails and names it, and
   `release-binding-check` requires each one that a release recipe of the contract reads, so a variable that only a
   recipe after the tag reads is missed before the tag (docs/spec/contract-check.md CK-102, B2.471). `GO`, the
   go command that binding starts, has the default `go`, the go of `PATH`: the recipes pass `--go "$(GO)"` to each
