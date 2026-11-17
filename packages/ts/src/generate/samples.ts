@@ -2692,12 +2692,18 @@ export function callbackReachingArgs(model: Model, fn: Fn): ReadonlyMap<Arg, unk
   return raising;
 }
 
+// GN-13t: whether an argument takes the case value of a case of its member: an argument of a class or of a generated
+// interface (GN-6ap).
+const takesCaseInstance = (model: Model, arg: Arg): boolean => objectUnit(model, arg.type) !== undefined || interfaceOf(model, arg.type) !== undefined;
+
 // GN-13t: the arguments of the first case of a member that gives every argument, arms no faults, writes no files and
 // runs against no service, one that does not raise before one that raises, or undefined. A test that gives one argument
 // a value of its own gives an argument of a class this case value, because the core of a class may refuse the
-// placeholder arguments of its first constructor (crud-ui: FormTemplate.from_json of a JSON null).
+// placeholder arguments of its first constructor (crud-ui: FormTemplate.from_json of a JSON null). An argument of a
+// generated interface (GN-6ap) is such an argument too, because its placeholder is made by the first factory of a class
+// that implements it (orm: Db::connect with a cache size 0, B2.493).
 export function classCaseArgs(model: Model, fn: Fn): ReadonlyMap<Arg, unknown> | undefined {
-  if (!fn.args.some((a) => objectUnit(model, a.type) !== undefined)) return undefined;
+  if (!fn.args.some((a) => takesCaseInstance(model, a))) return undefined;
   let raising: ReadonlyMap<Arg, unknown> | undefined;
   for (const kase of model.cases.get(fn.member.id) ?? []) {
     const record = kase as Record<string, unknown>;
@@ -2711,9 +2717,9 @@ export function classCaseArgs(model: Model, fn: Fn): ReadonlyMap<Arg, unknown> |
 }
 
 // GN-13t: the value of another argument of a test that gives one argument a value of its own: the case value of an
-// argument of a class in the case of classCaseArgs, and the placeholder of GN-13 otherwise.
+// argument of a class or of a generated interface in the case of classCaseArgs, and the placeholder of GN-13 otherwise.
 export function otherValue(model: Model, ctx: Context, arg: Arg, given: ReadonlyMap<Arg, unknown> | undefined, rich = false): string {
-  if (given !== undefined && given.has(arg) && objectUnit(model, arg.type) !== undefined) {
+  if (given !== undefined && given.has(arg) && takesCaseInstance(model, arg)) {
     // G-4: a case value that the generator does not write in the target fails the test of its own case by name
     // (GN-13e) and supplies no value here, so the placeholder stands, as when no case exists.
     try {

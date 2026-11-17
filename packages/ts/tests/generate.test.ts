@@ -13574,6 +13574,56 @@ test('B2.463: a B-5c test makes each instance of its class from the first case o
   }
 });
 
+// B2.493: the generated tests of the whole copy of orm, by target, from the one generation of B2.363.
+const ORM_TESTS = { php: STATEFUL_TESTS.php, python: STATEFUL_TESTS.python, node: STATEFUL_TESTS.node } as const;
+const ormTests = (target: keyof typeof ORM_TESTS): string => {
+  const copy = WHOLE_CONSUMERS.find((consumer) => consumer.name === 'orm');
+  assert.ok(copy !== undefined);
+  return String(wholeConsumerTarget(copy.name, wholeConsumer(copy), target).get(ORM_TESTS[target]) ?? '');
+};
+
+test('B2.493: the G-7 test gives an argument of an interface type the case value of a case of the member, not the placeholder of the factory of its first implementer, in PHP, Python and Node (GN-13t, GN-6ap)', () => {
+  // orm: the connection of Query.connect and StepRunner.new is the interface connection, whose placeholder was
+  // Db::connect("a", 0, ..., planCacheSize: 0, ...), which the core refuses with "config: cache sizes must be positive".
+  const starts = {
+    php: [/function testG7QueryConnectCounts/, /function testG7StepRunnerNewCounts/],
+    python: [/def test_g7_query_connect_counts/, /def test_g7_step_runner_new_counts/],
+    node: [/test\('G-7: Query\.connect counts/, /test\('G-7: StepRunner\.new counts/],
+  } as const;
+  for (const target of ['php', 'python', 'node'] as const) {
+    const all = ormTests(target);
+    for (const start of starts[target]) {
+      const [own] = bodiesOf(all, start, STATEFUL_END[target]);
+      assert.ok(own !== undefined, `${target}: no test ${start.source}`);
+      // Python makes an instance of several steps in a function of the module, which the test calls.
+      const body = own + [...own.matchAll(/\b(_made_\d+)\(/g)].map((found) => bodiesOf(all, new RegExp(`\\ndef ${found[1] ?? ''}\\(`), '\n\n\n').join('')).join('');
+      // The case gives the connection as db.connect_schema; the placeholder is the first factory db.connect.
+      assert.match(body, /Db(::|\.)connect_?[Ss]chema\(/, `${target}: ${body.slice(0, 600)}`);
+      assert.doesNotMatch(body, /Db(::|\.)connect\(/, `${target}: ${body.slice(0, 600)}`);
+    }
+  }
+});
+
+test('B2.493: each B-5c test that makes its instance of a case text sets the root of the case texts in its own body, in PHP, Python and Node (GN-13l)', () => {
+  // orm: the instances of the B-5c tests were all made before the first test was written, so only the first test set
+  // the root, and the closure of the instance of StepRunner took a root that its method never set (PHP: caseTextPath
+  // with a null root; Node: _caseTextRoot is not defined).
+  const forms = {
+    php: { start: /public function testB5c/, uses: /\$_caseTextRoot\b/, sets: /\$_caseTextRoot = / },
+    python: { start: /def test_b5c_/, uses: /\b_case_text_root\b/, sets: /\b_case_text_root = / },
+    node: { start: /test\('B-5c: /, uses: /\b_caseTextRoot\b/, sets: /const _caseTextRoot = / },
+  } as const;
+  for (const target of ['php', 'python', 'node'] as const) {
+    const form = forms[target];
+    const bodies = bodiesOf(ormTests(target), form.start, STATEFUL_END[target]);
+    assert.ok(bodies.some((body) => form.uses.test(body)), `${target}: no B-5c test takes the root`);
+    for (const body of bodies) {
+      if (form.uses.test(body)) assert.match(body, form.sets, `${target}: ${body.slice(0, 300)}`);
+      else assert.doesNotMatch(body, form.sets, `${target}: ${body.slice(0, 300)}`);
+    }
+  }
+});
+
 test('B2.478: the hidden names of a construction and of an iteration are names that no member takes, in Node and WASM (GN-6b)', () => {
   // orm: query.new and step_runner.new are static members named new of classes without a constructor. Node wrote the
   // guard of a direct construction and the member as one static __new, so new Query() ran the member.

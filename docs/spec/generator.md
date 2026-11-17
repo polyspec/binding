@@ -3550,6 +3550,10 @@ the design ids are those of the binding design.
   Existing plain text, `ill_formed` and typed `path` keep their meanings. Private helpers that defer a new text
   conversion carry the same case owner through a hidden argument or a private closure; they resolve no global
   root and add no lifetime beyond the existing case. Helpers that do not use this form remain unchanged.
+  Each test sets the root in its own body when an expression of that test takes it, and only then: a target makes the
+  expressions of a test as it writes that test, so no test takes a root that another test set (B2.493). Why: the B-5c
+  tests of orm were all made before the first was written, so the instance of `StepRunner` took a root that only the
+  test of `Query` set (PHP: `caseTextPath()` with a null root; Node: `_caseTextRoot is not defined`).
 
   A JSON string token escapes quote, backslash and U+0000–001F, using `\b`, `\t`, `\n`, `\f`, `\r` for their named
   controls and lower-case `\u00xx` for the others. Slash, non-ASCII Unicode, `<`, `>`, `&`, U+2028 and U+2029 remain
@@ -3629,7 +3633,12 @@ the design ids are those of the binding design.
   `FormTemplate.from_json` of a JSON null with `invalid_form_input`, so the B-3 test failed in its argument before the
   call that it checks. A case value that the generator does not write in a target supplies no value there, and the
   placeholder stands: that case fails its own test by name (G-4, GN-13e), and the tests of the other rules are written.
-  The G-7 test of a member, and the Python test of GN-11a, give an argument of a class by the same rule (B2.463). A B-5c test makes each instance of a class that it needs (the instance that it poisons or gives
+  The G-7 test of a member, and the Python test of GN-11a, give an argument of a class by the same rule (B2.463).
+  An argument of a generated interface (GN-6ap) takes the case value by the same rule, because its placeholder is an
+  instance that the first factory of a class that implements it makes of placeholders (B2.493). Why: the connection of
+  orm `Query.connect` and `StepRunner.new` is an interface, whose placeholder was `Db::connect("a", 0, …)` with a
+  cache size 0, which the core refuses with `config: cache sizes must be positive` before the argument count that
+  the G-7 test checks. A B-5c test makes each instance of a class that it needs (the instance that it poisons or gives
   at two places, the receiver of the call that takes that instance as an argument, and the other instance of GN-8a)
   as the tests that need any receiver do: from the factory arguments of the first case of the class that does not
   raise, arms no faults, writes no files and runs against no service (GN-13f); the placeholder of GN-13 stands there

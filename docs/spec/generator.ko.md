@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 6ac291c51419c4eb16ad945bcd9740d6328af35acb20b403f53b3d37cd5adf37 -->
+<!-- source-sha256: 75b79054cb898ab1f1b7f7729b27e9dbcf311011901ce1fe823b643aa1e6fd22 -->
 # 생성기
 
 [English](generator.md)
@@ -2915,6 +2915,10 @@
   `path`의 의미는 유지한다. 새 text 변환을 나중에 수행하는 private helper는 숨은 인자나 private closure로
   같은 case owner를 전달한다. 전역 root를 풀지 않고 기존 case 밖의 수명을 더하지 않는다. 이 형태를 쓰지
   않는 helper는 바꾸지 않는다.
+  각 시험은 그 시험의 표현식이 root를 받을 때, 그때에만 자기 본문에서 root를 정한다. target은 시험의 표현식을 그
+  시험을 쓸 때 만들므로, 어떤 시험도 다른 시험이 정한 root를 받지 않는다(B2.493). 이유: orm의 B-5c 시험은 첫 시험을
+  쓰기 전에 모두 만들어져서, `StepRunner`의 instance가 `Query`의 시험만 정한 root를 받았다(PHP: null root의
+  `caseTextPath()`, Node: `_caseTextRoot is not defined`).
 
   JSON string token은 따옴표, backslash, U+0000–001F를 escape한다. 이름이 있는 제어 문자는 `\b`, `\t`,
   `\n`, `\f`, `\r`로 쓰고 나머지는 소문자 `\u00xx`로 쓴다. slash, 비-ASCII Unicode, `<`, `>`, `&`,
@@ -2984,7 +2988,11 @@
   `FormTemplate.from_json`을 `invalid_form_input`으로 거부해서, B-3 시험은 검사하는 호출 전에 그 인자에서 실패했다.
   생성기가 어떤 target에서 쓰지 못하는 case 값은 거기서 값을 주지 않고 placeholder가 선다. 그 case는 자기 시험이 이름을
   대며 실패하고(G-4, GN-13e), 다른 규칙의 시험은 쓰인다.
-  member의 G-7 시험과 Python의 GN-11a 시험도 class의 인자를 같은 규칙으로 준다(B2.463). B-5c 시험은 필요한 class의
+  member의 G-7 시험과 Python의 GN-11a 시험도 class의 인자를 같은 규칙으로 준다(B2.463).
+  생성 interface(GN-6ap)의 인자도 같은 규칙으로 case 값을 받는다. 그 placeholder는 그것을 구현하는 class의 첫
+  factory가 placeholder로 만드는 instance이기 때문이다(B2.493). 이유: orm `Query.connect`와 `StepRunner.new`의
+  connection은 interface이고, 그 placeholder는 cache 크기 0의 `Db::connect("a", 0, …)`였으며, core는 G-7 시험이
+  검사하는 인자 수 전에 그것을 `config: cache sizes must be positive`로 거부했다. B-5c 시험은 필요한 class의
   instance 각각(poison하거나 두 자리에 주는 instance, 그 instance를 인자로 받는 호출의 receiver, GN-8a의 다른
   instance)을 아무 receiver나 필요한 시험이 만드는 대로 만든다. 곧 raise하지 않고, fault를 걸지 않고, 파일을 쓰지 않고,
   service에 대해 돌지 않는 그 class의 첫 case의 factory 인자로 만든다(GN-13f). 그 class의 어느 case도 instance를 만들지
