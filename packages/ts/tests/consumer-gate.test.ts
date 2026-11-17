@@ -3,7 +3,9 @@
 // scripts/consumer-gate.mts, which these tests read without a consumer and without the network.
 
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { test } from 'node:test';
 import { BINDING_GIT, patchManifest } from '../../../scripts/consumers.mts';
 import { OFFLINE, bindingVariables, cloneStep, consumersOf, gateStatus, gateSteps, gateTable, matrixOf, noCache, parseConsumers, rehearsalGoals, stops, updateSpecs, type Gate, type GateConsumer, type GateResult } from '../../../scripts/consumer-gate.mts';
@@ -74,6 +76,43 @@ test('B2.494: the patch gives polyspec-binding-core of the run by a path and ref
   assert.deepEqual(updateSpecs(['0.0.17', '0.0.20']), ['-p', 'polyspec-binding-core@0.0.17', '-p', 'polyspec-binding-core@0.0.20']);
 });
 
+test('B2.494: the update of the gate changes the lock of the tag in polyspec-binding-core alone, and a change of any other entry fails the consumer, naming it (GN-14m, GN-14d)', (t) => {
+  const work = mkdtempSync(join(tmpdir(), 'binding-consumer-gate-'));
+  t.after(() => rmSync(work, { recursive: true, force: true }));
+  const dir = join(work, 'json');
+  mkdirSync(dir);
+  const pkg = (name: string, version: string, source?: string, deps: string[] = []): string =>
+    `[[package]]\nname = "${name}"\nversion = "${version}"\n${source === undefined ? '' : `source = "${source}"\n`}${deps.length === 0 ? '' : `dependencies = [\n${deps.map((d) => ` "${d}",\n`).join('')}]\n`}`;
+  const git = 'git+https://github.com/polyspec/binding.git?tag=v0.0.20#06dfc6accfee6b272f96b32f12c8e7fb6182d59b';
+  const crate = 'registry+https://github.com/rust-lang/crates.io-index';
+  const tagLock = ['version = 4\n', pkg('polyspec-binding-core', '0.0.20', git, ['serde']), pkg('polyspec-json', '0.0.36', undefined, ['polyspec-binding-core', 'serde']), pkg('serde', '1.0.200', crate)].join('\n');
+  const lockOf = (text: string): string => {
+    writeFileSync(join(dir, 'Cargo.lock'), tagLock);
+    const steps = gateSteps({ ...gate, work }, json, ['0.0.20'], ['php'], () => {});
+    const keep = steps.find((s) => s.step.what === 'the lock of the tag, kept for the comparison')?.step;
+    const check = steps.find((s) => s.step.what === 'the lock changes in polyspec-binding-core alone')?.step;
+    assert.ok(keep !== undefined && 'write' in keep && check !== undefined && 'write' in check, 'the gate keeps no lock of the tag or does not compare the locks');
+    keep.write();
+    writeFileSync(join(dir, 'Cargo.lock'), text);
+    try {
+      check.write();
+      return '';
+    } catch (error) {
+      return error instanceof Error ? error.message : String(error);
+    }
+  };
+  // The patch alone: the entry of binding-core takes the path, its dependents keep their names.
+  const patched = ['version = 4\n', pkg('polyspec-binding-core', '0.0.22', undefined, ['serde']), pkg('polyspec-json', '0.0.36', undefined, ['polyspec-binding-core', 'serde']), pkg('serde', '1.0.200', crate)].join('\n');
+  assert.equal(lockOf(patched), '');
+  // Another entry changed, added or removed: the consumer fails, naming each.
+  const moved = patched.replace('version = "1.0.200"', 'version = "1.0.228"') + `\n${pkg('itoa', '1.0.15', crate)}`;
+  const message = lockOf(moved);
+  assert.match(message, /the update changed the lock of the tag outside polyspec-binding-core/);
+  assert.match(message, /removed serde 1\.0\.200/);
+  assert.match(message, /added serde 1\.0\.228/);
+  assert.match(message, /added itoa 1\.0\.15/);
+});
+
 test('B2.494: a consumer clones its tag, fetches its lock, takes the patch, then runs its own goals: install, bindings and test-bindings offline, and the rehearsal with no cache (GN-14m)', () => {
   const clone = cloneStep(gate, json);
   assert.deepEqual('argv' in clone.step ? clone.step.argv : [], ['clone', '--quiet', '--depth', '1', '--branch', 'v0.0.36', 'https://github.com/polyspec/json.git', '/work/json']);
@@ -82,8 +121,10 @@ test('B2.494: a consumer clones its tag, fetches its lock, takes the patch, then
   assert.deepEqual(steps.map((s) => [s.phase, s.step.what]), [
     ['prepare', 'rustup toolchain install of the rust-toolchain.toml of the consumer'],
     ['prepare', 'cargo fetch --locked'],
+    ['prepare', 'the lock of the tag, kept for the comparison'],
     ['prepare', 'the path patch of polyspec-binding-core to /binding/packages/core/rust'],
-    ['prepare', 'cargo update -p polyspec-binding-core --offline'],
+    ['prepare', 'cargo update -p polyspec-binding-core'],
+    ['prepare', 'the lock changes in polyspec-binding-core alone'],
     ['prepare', 'binding scaffold of the run'],
     ['prepare', 'make install of the consumer'],
     ['generate', 'make bindings of the consumer'],
@@ -96,7 +137,7 @@ test('B2.494: a consumer clones its tag, fetches its lock, takes the patch, then
   // have, so the toolchain of the clone is installed first, by rustup in the clone, where it reads that file.
   const toolchain = steps[0]?.step;
   assert.deepEqual(toolchain !== undefined && 'argv' in toolchain ? [toolchain.command, toolchain.argv, toolchain.cwd] : [], ['rustup', ['toolchain', 'install'], '/work/json']);
-  const patch = steps[2]?.step;
+  const patch = steps[3]?.step;
   if (patch !== undefined && 'write' in patch) patch.write();
   assert.equal(patched, 1);
   const commands = steps.flatMap((s) => ('argv' in s.step ? [{ phase: s.phase, ...s.step }] : []));
@@ -112,7 +153,10 @@ test('B2.494: a consumer clones its tag, fetches its lock, takes the patch, then
     assert.equal(c.env?.['GOFLAGS'], '-mod=readonly');
     assert.equal(c.env?.['GOWORK'], 'off', `${c.what} builds a Go module through the go.work of its repository`);
   }
-  assert.ok(commands.find((c) => c.what.startsWith('cargo update'))?.argv.includes('--offline'));
+  // The update takes the network: the patch unlocks the git entry, whose tag= cargo resolves by a ref that the locked
+  // fetch does not keep (polyspec/kit#63); the comparison of the locks keeps GN-14d.
+  const update = commands.find((c) => c.what.startsWith('cargo update'));
+  assert.ok(update !== undefined && !update.argv.includes('--offline') && update.env === undefined, 'cargo update of the gate runs offline');
   // A consumer whose goal install is missing names its install goals; a contract without go has no Go rehearsal.
   const own = gateSteps(gate, { ...json, install: ['install-rust', 'install-tools'] }, [], ['php', 'node'], () => {});
   assert.ok(own.some((s) => s.step.what === 'make install-rust install-tools of the consumer'));
