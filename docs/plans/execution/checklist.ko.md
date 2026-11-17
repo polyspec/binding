@@ -1,5 +1,5 @@
 <!-- doc-id: checklist-execution -->
-<!-- source-sha256: 0692ff50ced77f7cb0cdb8b85bf636503862647c5da5acfcd59e132790c455e0 -->
+<!-- source-sha256: 6ee8538f04fbf5c28903e934948c6c87fc42727fb0997269930a0fea7e2025d8 -->
 <!-- source-sha256: 77f47e337666115f15684bec23061034d93bcbce8cdb8c9c5572493a58f9d7bd -->
 <!-- source-sha256: c076a09130fde7ffa177368658166474a443bcbac273d2836fdff989952f68d8 -->
 <!-- source-sha256: ed9ac82905e975838aa07d5201b37ea858ae7b147c6a9e6abbc5ad4014aa9e22 -->
@@ -319,3 +319,4 @@
 | B2.441 | scaffold가 component의 php-ext package에 쓰는 composer.json은 자기 extension만 require하고, 그것이 load하는 다른 component의 extension(BINDING_PHP_REQUIRES_<component>, 예: crud-ui에서 generator의 validator extension)은 require하지 않는다. scaffold가 component 사이의 각 extension 의존을 manifest에 적는다. Red: component가 둘인 sample에서 생성된 composer.json에 다른 component의 extension이 없다. | `packages/ts/src/`; `packages/ts/tests/`; `docs/spec/` | make test-ts | [ ] |
 | B2.442 | 생성된 packages/release.mk의 target release-go-static은 cargo rustc --target <arch>-unknown-linux-musl을 C 컴파일러 없이 돌려서, C를 빌드하는 소비자의 의존(session-store: rustls, ring 0.17.14, 그 cc crate가 x86_64-linux-musl-gcc를 찾는다)이 Linux CI에서 실패한다. recipe가 소비자가 선언한 target C 컴파일러와 archiver(CC_<target>, AR_<target>)를 넘기고, 필요한데 선언되지 않았으면 그 이름을 대며 실패한다. Red: C를 빌드하는 의존을 가진 sample의 musl 빌드. | `packages/ts/src/release/`; `packages/ts/tests/`; `docs/spec/` | make test-ts | [ ] |
 | B2.443 | ajv strict 모드가 binding의 interface.schema.json을 거부해서(not 밑의 required "parameter"), 소비자가 schema로 interface.json을 검증하지 못하고 orm은 guard로 contract를 읽는다. schema는 같은 규칙을 말하면서 ajv strict 모드에서 compile된다. Red: ajv strict로 schema를 compile하는 시험. | `packages/ts/` (interface.schema.json); `packages/ts/tests/` | make test-ts | [ ] |
+| B2.444 | 0.0.19 release: `packages/ts/package.json`과 그 lock, `packages/core/rust/Cargo.toml`과 `packages/core/rust/Cargo.lock`의 version이 0.0.19이고, 0.0.18 이후의 변경은 두 changelog의 `## 0.0.19` 절이다: B2.432, B2.433, B2.434, B2.438, B2.439. 이 commit 전에 checkout은 여덟 레포 모두에서 make e2e-lint를 통과했다(B2.432). | `CHANGELOG.md`(.ko); `packages/ts/package.json`; `packages/ts/package-lock.json`; `packages/core/rust/Cargo.toml`; `packages/core/rust/Cargo.lock` | make docs-check; make lint-rust; make test-ts | [v] |

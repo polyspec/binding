@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: c3df68cedddc9d78039eb40cea6f9adff3a1be4f6af300825ca558fec25e06ac -->
+<!-- source-sha256: 0b51911e311df4ace8e69cfeb25f2708fe417a3fb6c1bf5f14e9d6aa1b61e741 -->
 <!-- source-sha256: dce74fc108cefbf6fdea8670936d6ac3b6685331f89502b2bcff9bb7fdce43f9 -->
 <!-- source-sha256: 572a52702492351cb65968c1adcca9fd4d7ee3730d5499deb4d7dc636ebd7d70 -->
 <!-- source-sha256: bce373cf4c855701e37f5c7104353ae283bab50f4dab5c209f03c078f224aacb -->
@@ -21,6 +21,8 @@
 [English](CHANGELOG.md)
 
 ## Unreleased
+
+## 0.0.19
 
 - build tag가 붙은 생성 시험을 가진 Go module의 각 package는 태그 없는 생성 시험 `zz_generated_tags_test.go`도 가진다. 그 `TestGN13bfEveryBuildTagOfThePackageIsBuilt`는 그 package의 태그 붙은 생성 시험 파일의 태그가 모두 build되지 않으면 실패하고, 그런 파일은 저마다 `init`에서 자기 태그를 `builtTags`에 등록한다(GN-13bf). 메시지는 빠진 태그를 밝히고 `go test -tags=<module의 모든 태그> ./...` 줄을 준다. GN-13ba(0.0.17) 이전 형태인 `go test -tags=polyspec_panic_test`나 태그 없이 돌린 소비자는 태그 붙은 생성 시험을 하나도 컴파일하지 않고 그것 없이 통과했고, 두 소비자가 그렇게 release했다(HR-84). 이제 그런 run은 실패한다. 컴파일만 하는 build(`go test -c`, `go vet`, deadcode)는 그대로다. `tests/e2e/sample`의 end-to-end check는 그 Go module의 `go test`를 `-tags=polyspec_panic_test`로 한 번 더 돌리고, 그 run이 guard 하나로만 실패하고 빠진 태그를 밝히지 않으면 실패한다(B2.438). `packages/ts`에서 `node --test --test-name-pattern=B2.438 tests/generate.test.ts tests/go-test-events.test.ts`로 검증했고, 생성 결과의 시험은 변경 전에 실패했다. 그 step의 증거는 CI의 e2e run이다.
 - checkout이 kit pin을 0.0.118 대신 0.0.119로 둔다(B2.439).
