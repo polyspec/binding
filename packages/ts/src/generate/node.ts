@@ -13,7 +13,7 @@ import { addonName, NODE_PLATFORM_JS } from './packages.ts';
 import { nodeTests } from './tests_node.ts';
 import { type Cycle, type CycleHost, cycleLeaf, cycleOf, cycles, cycleUnitRust, holdsCycle } from './cycles.ts';
 import { raisesAssertions } from './raises.ts';
-import { type FunctionType, JS_CONTAINERS, containerIn, containerOut, keptFunctionIn, recordIns, resultCycles, scalarIn, scalarOut } from './bindings_shared.ts';
+import { type FunctionType, JS_CONTAINERS, containerIn, containerOut, keptFunctionIn, type RecordForm, recordFns, recordParts, resultCycles, scalarIn, scalarOut } from './bindings_shared.ts';
 import { type Files, header, jsString, rustString, closure, optionRef, withUsedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
 
 const ROOT = 'packages/ts/generated';
@@ -532,31 +532,19 @@ const envParam = (model: Model, unit: Unit, library: string | undefined): string
 // T-4: the result form of a record, a plain object with a member per field.
 function recordRust(model: Model, unit: Unit, library?: string): string {
   const cycle = library === undefined ? cycleOf(nodeCycles(model), unit) : undefined;
-  if (cycle !== undefined) return cycleUnitRust(model, nodeCycleHost(model, cycle.units), unit, cycle, 'Fail', (typed, mode) => recordParts(typed, unit, mode));
-  const name = recordFn(unit);
-  const core = unit.core_type ?? '';
-  const { ins, outs } = recordParts(model, unit, 'in');
-  return `
-/// T-4: a value of the record ${langName('node', unit.name, 'class')} is an object with a member per field, judged as it enters (T-8).
-fn in_${name}(${envParam(model, unit, library)}value: Unknown<'_>, subject: &str) -> Result<${core}, Fail> {
-${ins}
+  if (cycle !== undefined) return cycleUnitRust(model, nodeCycleHost(model, cycle.units), unit, cycle, 'Fail', (typed, mode) => recordParts(typed, unit, mode, NODE_RECORD));
+  return recordFns('node', unit, `${envParam(model, unit, library)}value: Unknown<'_>`, `<'env>(env_: &'env Env, value: impl Borrow<${unit.core_type ?? ''}>) -> Result<Unknown<'env>, Fail>`, recordParts(model, unit, 'in', NODE_RECORD));
 }
 
-fn out_${name}<'env>(env_: &'env Env, value: impl Borrow<${core}>) -> Result<Unknown<'env>, Fail> {
-${outs}
-}
-`;
-}
-
-// The bodies of the conversions of a record: in, or the walk of the places of units of its cycle (kids, GN-6bt), and
-// out.
-function recordParts(model: Model, unit: Unit, mode: 'in' | 'kids'): { ins: string; outs: string } {
-  const writes = (unit.fields ?? []).map((f) => `    object.set_named_property(${rustString(langName('node', f.name, 'variable'))}, ${convertOut(model, f.type, `${byValue(model, f.type) ? "" : "&"}value.${rustField(f.name)}`)}?).map_err(internal)?;`);
-  return {
-    ins: recordIns(model, unit, mode === 'kids', 'node', (member) => `member(value, ${rustString(member)}, subject)?`, convertIn),
-    outs: `    let value = value.borrow();\n    let mut object = Object::new(env_).map_err(internal)?;\n${writes.join('\n')}\n    Ok(object.to_unknown())`,
-  };
-}
+// T-4: a record in Node reads its fields from the members of an object and sets them as its named properties.
+const NODE_RECORD: RecordForm = {
+  lang: 'node',
+  place: (member) => `member(value, ${rustString(member)}, subject)?`,
+  convert: convertIn,
+  write: (model, f) => `    object.set_named_property(${rustString(langName('node', f.name, 'variable'))}, ${convertOut(model, f.type, `${byValue(model, f.type) ? "" : "&"}value.${rustField(f.name)}`)}?).map_err(internal)?;`,
+  object: 'let mut object = Object::new(env_).map_err(internal)?;',
+  made: 'Ok(object.to_unknown())',
+};
 
 // GN-6bt: the host of the walks of a cycle in Node; the conversion in of a unit of the cycle takes the env_ when one
 // of the cycle reads it.

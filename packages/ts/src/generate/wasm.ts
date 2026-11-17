@@ -13,7 +13,7 @@ import { type Cycle, type CycleHost, cycleLeaf, cycleOf, cycles, cycleUnitRust, 
 import { WASM_NATIVE, aliasWasm, foreignFailureWasm, foreignRegistrationWasm, keptExportsWasm, wasmHost } from './alias_wasm.ts';
 import { jsErrorClasses, typeParameters } from './node.ts';
 import { raisesAssertions } from './raises.ts';
-import { type FunctionType, JS_CONTAINERS, containerIn, containerOut, keptFunctionIn, plainCycleHost, recordIns, resultCycles, scalarIn, scalarOut } from './bindings_shared.ts';
+import { type FunctionType, JS_CONTAINERS, containerIn, containerOut, keptFunctionIn, plainCycleHost, type RecordForm, recordFns, recordParts, resultCycles, scalarIn, scalarOut } from './bindings_shared.ts';
 import { TAKES_WASM, jsArguments, functionGiven, givenRust, memberGiven, placeSubject } from './callback_arguments.ts';
 import { type Files, header, jsString, rustString, closure, withUsedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
 
@@ -425,31 +425,19 @@ ${outArms}
 
 function recordRust(model: Model, unit: Unit, library?: string): string {
   const cycle = library === undefined ? cycleOf(wasmCycles(model), unit) : undefined;
-  if (cycle !== undefined) return cycleUnitRust(model, WASM_CYCLE, unit, cycle, 'Fail', (typed, mode) => recordParts(typed, unit, mode));
-  const { ins, outs } = recordParts(model, unit, 'in');
-  const name = recordFn(unit);
-  const core = unit.core_type ?? '';
-  return `
-/// T-4: a value of the record ${langName('wasm', unit.name, 'class')} is an object with a member per field, judged as it enters (T-8).
-fn in_${name}(value: &JsValue, subject: &str) -> Result<${core}, Fail> {
-${ins}
+  if (cycle !== undefined) return cycleUnitRust(model, WASM_CYCLE, unit, cycle, 'Fail', (typed, mode) => recordParts(typed, unit, mode, WASM_RECORD));
+  return recordFns('wasm', unit, 'value: &JsValue', `(value: impl Borrow<${unit.core_type ?? ''}>) -> Result<JsValue, Fail>`, recordParts(model, unit, 'in', WASM_RECORD));
 }
 
-fn out_${name}(value: impl Borrow<${core}>) -> Result<JsValue, Fail> {
-${outs}
-}
-`;
-}
-
-// The bodies of the conversions of a record: in, or the walk of the places of units of its cycle (kids, GN-6bt), and
-// out.
-function recordParts(model: Model, unit: Unit, mode: 'in' | 'kids'): { ins: string; outs: string } {
-  const writes = (unit.fields ?? []).map((f) => `    Reflect::set(&object, &JsValue::from_str(${rustString(langName('wasm', f.name, 'variable'))}), &${convertOut(model, f.type, `${copied(f.type) || (typeof f.type === 'object' && 'unit' in f.type && byValue(model, f.type)) ? '' : '&'}value.${rustField(f.name)}`)}?).map_err(|error| internal(&error))?;`);
-  return {
-    ins: recordIns(model, unit, mode === 'kids', 'wasm', (member) => `&member(value, ${rustString(member)}, subject)?`, convertIn),
-    outs: `    let value = value.borrow();\n    let object = Object::new();\n${writes.join('\n')}\n    Ok(object.into())`,
-  };
-}
+// T-4: a record in WASM reads its fields from the members of an object and sets them on it by Reflect.
+const WASM_RECORD: RecordForm = {
+  lang: 'wasm',
+  place: (member) => `&member(value, ${rustString(member)}, subject)?`,
+  convert: convertIn,
+  write: (model, f) => `    Reflect::set(&object, &JsValue::from_str(${rustString(langName('wasm', f.name, 'variable'))}), &${convertOut(model, f.type, `${copied(f.type) || (typeof f.type === 'object' && 'unit' in f.type && byValue(model, f.type)) ? '' : '&'}value.${rustField(f.name)}`)}?).map_err(|error| internal(&error))?;`,
+  object: 'let object = Object::new();',
+  made: 'Ok(object.into())',
+};
 
 // GN-6bt: the host of the walks of a cycle in WASM, and the cycles of the records and variants whose conversions the
 // crate holds.

@@ -4,7 +4,7 @@
 import type { Type, Unit } from '../contract.ts';
 import { functionGiven, givenRust } from './callback_arguments.ts';
 import { type Cycle, type CycleHost, cycles, holdsCycle } from './cycles.ts';
-import { absentInits, boxed, caseLeftOut, keptFunctionType, langName, type Model, narrowed, narrows, recordInit, recordLocal, rustType, traitParam, tupleIn, tupleOut, Unsupported } from './model.ts';
+import { absentInits, boxed, caseLeftOut, keptFunctionType, langName, type Model, narrowed, narrows, recordFn, recordInit, recordLocal, rustType, traitParam, tupleIn, tupleOut, Unsupported } from './model.ts';
 import { closure, optionRef, rustString } from './text.ts';
 
 // T-1: the input conversion of a scalar, by the helper of its name in the crate; overrides gives the helpers of a
@@ -74,9 +74,43 @@ export const plainCycleHost = (lang: string, own: (place: string) => string): Cy
 // GN-6bt: the cycles of the records and variants whose conversions the crate holds.
 export const resultCycles = (model: Model): Cycle[] => cycles(model, [...model.resultRecords, ...model.variants.map((v) => v.unit)]);
 
+// T-4: what the conversions of a record in node and wasm differ by: the place of a member that a field is read from,
+// the conversion in, the line that writes a field to the object, the line that makes the object and the end that
+// gives it.
+export interface RecordForm {
+  readonly lang: 'node' | 'wasm';
+  readonly place: (member: string) => string;
+  readonly convert: (model: Model, type: Type, value: string, subject: string) => string;
+  readonly write: (model: Model, field: NonNullable<Unit['fields']>[number]) => string;
+  readonly object: string;
+  readonly made: string;
+}
+
+// The bodies of the conversions of a record: in, or the walk of the places of units of its cycle (kids, GN-6bt), and
+// out.
+export function recordParts(model: Model, unit: Unit, mode: 'in' | 'kids', form: RecordForm): { ins: string; outs: string } {
+  const writes = (unit.fields ?? []).map((f) => form.write(model, f));
+  return {
+    ins: recordIns(model, unit, mode === 'kids', form.lang, form.place, form.convert),
+    outs: `    let value = value.borrow();\n    ${form.object}\n${writes.join('\n')}\n    ${form.made}`,
+  };
+}
+
+// T-4: the conversions in and out of a record, whose signatures in and out the language gives.
+export const recordFns = (lang: 'node' | 'wasm', unit: Unit, inParams: string, outSignature: string, parts: { ins: string; outs: string }): string => `
+/// T-4: a value of the record ${langName(lang, unit.name, 'class')} is an object with a member per field, judged as it enters (T-8).
+fn in_${recordFn(unit)}(${inParams}, subject: &str) -> Result<${unit.core_type ?? ''}, Fail> {
+${parts.ins}
+}
+
+fn out_${recordFn(unit)}${outSignature} {
+${parts.outs}
+}
+`;
+
 // T-4, GN-6bt: the conversion in of the fields of a record in node and wasm, or the walk of the places of units of its
 // cycle (kids): each field is read from its member, which place gives as the argument of the conversion.
-export function recordIns(model: Model, unit: Unit, kids: boolean, lang: 'node' | 'wasm', place: (member: string) => string, convert: (model: Model, type: Type, value: string, subject: string) => string): string {
+function recordIns(model: Model, unit: Unit, kids: boolean, lang: 'node' | 'wasm', place: (member: string) => string, convert: (model: Model, type: Type, value: string, subject: string) => string): string {
   const fields = unit.fields ?? [];
   const reads = fields.map((f) => {
     const member = langName(lang, f.name, 'variable');
