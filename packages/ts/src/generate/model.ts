@@ -1642,22 +1642,32 @@ const keptParams = (model: Model): Type[] =>
 // GN-6aa: whether a member takes a parameter with keeps.
 export const keepsAny = (model: Model): boolean => keptParams(model).length > 0;
 
-// GN-6aa: the callback units that a parameter with keeps holds, itself, in a list or in an optional, in contract order.
-export function keptCallbacks(model: Model): CallbackUnit[] {
+// U-3: the callback units that the types a visit is given hold, itself, in a list, an optional or a field of a record
+// of this repository, and when deep also in a map or a tuple.
+function callbacksIn(model: Model, deep: boolean): { found: Set<Unit>; visit: (type: Type | undefined) => void } {
   const found = new Set<Unit>();
   const seen = new Set<string>();
-  const visit = (type: Type): void => {
-    if (typeof type === 'string') return;
+  const visit = (type: Type | undefined): void => {
+    if (type === undefined || typeof type === 'string') return;
     if ('list' in type) return visit(type.list);
     if ('optional' in type) return visit(type.optional);
+    if (deep && 'map' in type) return visit(type.map);
+    if (deep && 'keyed_map' in type) return visit(type.keyed_map);
+    if (deep && 'tuple' in type) return type.tuple.forEach(visit);
     const unit = libraryOf(type) === undefined ? unitOf(model, type) : undefined;
     if (unit?.origin === 'callback') found.add(unit);
-    // GN-6aa: the callbacks of the fields of a record parameter with keeps are kept with it.
     if (unit?.kind === 'record' && !seen.has(unit.id)) {
       seen.add(unit.id);
       (unit.fields ?? []).forEach((f) => visit(f.type));
     }
   };
+  return { found, visit };
+}
+
+// GN-6aa: the callback units that a parameter with keeps holds, itself, in a list or in an optional, in contract order.
+export function keptCallbacks(model: Model): CallbackUnit[] {
+  // GN-6aa: the callbacks of the fields of a record parameter with keeps are kept with it.
+  const { found, visit } = callbacksIn(model, false);
   keptParams(model).forEach(visit);
   return model.callbacks.filter((c) => found.has(c.unit));
 }
@@ -1668,22 +1678,7 @@ export function keptCallbacks(model: Model): CallbackUnit[] {
 // callback unit that only a class implements (GN-6w), or that only another repository takes, has no wrapper and no
 // conversion in this crate, because no code of the crate would call them.
 export function takenCallbacks(model: Model): CallbackUnit[] {
-  const found = new Set<Unit>();
-  const seen = new Set<string>();
-  const visit = (type: Type | undefined): void => {
-    if (type === undefined || typeof type === 'string') return;
-    if ('list' in type) return visit(type.list);
-    if ('optional' in type) return visit(type.optional);
-    if ('map' in type) return visit(type.map);
-    if ('keyed_map' in type) return visit(type.keyed_map);
-    if ('tuple' in type) return type.tuple.forEach(visit);
-    const unit = libraryOf(type) === undefined ? unitOf(model, type) : undefined;
-    if (unit?.origin === 'callback') found.add(unit);
-    if (unit?.kind === 'record' && !seen.has(unit.id)) {
-      seen.add(unit.id);
-      (unit.fields ?? []).forEach((f) => visit(f.type));
-    }
-  };
+  const { found, visit } = callbacksIn(model, true);
   for (const fn of [...model.functions, ...model.objects.flatMap((o) => o.members)]) fn.params.forEach((p) => visit(p.type));
   for (const record of model.records) (record.fields ?? []).forEach((f) => visit(f.type));
   return [...model.callbacks.filter((c) => found.has(c.unit)), ...model.foreignCallbacks];
@@ -1696,22 +1691,7 @@ export function takenCallbacks(model: Model): CallbackUnit[] {
 // WASM a unit of keptUnits is called through the kept wrapper at a place without keeps as well, so it is no lent unit
 // there.
 export function lentCallbacks(model: Model): CallbackUnit[] {
-  const found = new Set<Unit>();
-  const seen = new Set<string>();
-  const visit = (type: Type | undefined): void => {
-    if (type === undefined || typeof type === 'string') return;
-    if ('list' in type) return visit(type.list);
-    if ('optional' in type) return visit(type.optional);
-    if ('map' in type) return visit(type.map);
-    if ('keyed_map' in type) return visit(type.keyed_map);
-    if ('tuple' in type) return type.tuple.forEach(visit);
-    const unit = libraryOf(type) === undefined ? unitOf(model, type) : undefined;
-    if (unit?.origin === 'callback') found.add(unit);
-    if (unit?.kind === 'record' && !seen.has(unit.id)) {
-      seen.add(unit.id);
-      (unit.fields ?? []).forEach((f) => visit(f.type));
-    }
-  };
+  const { found, visit } = callbacksIn(model, true);
   for (const fn of [...model.functions, ...model.objects.flatMap((o) => o.members)]) fn.params.filter((p) => p.keeps !== true).forEach((p) => visit(p.type));
   return [...model.callbacks.filter((c) => found.has(c.unit) && model.keptUnits?.has(c.unit.id) !== true), ...model.foreignCallbacks];
 }
@@ -1738,15 +1718,16 @@ export function usesNative(model: Model): boolean {
 }
 
 // T-1: the type of a parameter of a callback member or of a function type: a type with two forms is borrowed, a Copy
-// type by value, a list as a slice, and any other type by reference.
-export function traitParam(model: Model, type: Type): string {
+// type by value, a list as a slice, and any other type by reference. copied tells the types that go by value; Go takes
+// only an enum so.
+export function traitParam(model: Model, type: Type, copied: (model: Model, type: Type) => boolean = byValue): string {
   if (typeof type === 'string') {
     const borrowed: Record<string, string> = { text: '&str', latin1: '&[u8]', bytes: '&[u8]', source: '&[u8]', path: '&std::path::Path' };
     return borrowed[type] ?? rustType(model, type);
   }
-  if ('optional' in type && typeof type.optional === 'string' && ['text', 'latin1', 'bytes'].includes(type.optional)) return `Option<${traitParam(model, type.optional)}>`;
+  if ('optional' in type && typeof type.optional === 'string' && ['text', 'latin1', 'bytes'].includes(type.optional)) return `Option<${traitParam(model, type.optional, copied)}>`;
   if ('list' in type) return `&[${rustType(model, type.list)}]`;
-  if (byValue(model, type)) return rustType(model, type);
+  if (copied(model, type)) return rustType(model, type);
   return `&${rustType(model, type)}`;
 }
 

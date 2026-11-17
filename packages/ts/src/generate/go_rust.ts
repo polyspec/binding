@@ -22,7 +22,7 @@ import {
   anchorCalls,
   takenCallbacks,
   lentCallbacks,
-  absentInits, byValue, holdsFunction } from './model.ts';
+  absentInits, byValue, holdsFunction, traitParam as sharedTraitParam } from './model.ts';
 import { extensionName } from './packages.ts';
 import { raisesAssertions } from './raises.ts';
 import { type ForeignMake, type ForeignRead, type ValueRead, container, foreignReads, foreignRowClasses, outArms, valueReads } from './alias_shared.ts';
@@ -1325,17 +1325,9 @@ function functionRust(model: Model, fn: Fn): string {
 
 // ---- callbacks (U-3) ----
 
-// T-1: the type of a trait method parameter: a type with two forms is borrowed, a Copy type by value.
-function traitParam(model: Model, type: Type): string {
-  if (typeof type === 'string') {
-    const borrowed: Record<string, string> = { text: '&str', latin1: '&[u8]', bytes: '&[u8]', source: '&[u8]', path: '&std::path::Path' };
-    return borrowed[type] ?? rustType(model, type);
-  }
-  if ('optional' in type && typeof type.optional === 'string' && ['text', 'latin1', 'bytes'].includes(type.optional)) return `Option<${traitParam(model, type.optional)}>`;
-  if ('list' in type) return `&[${rustType(model, type.list)}]`;
-  if (typeof type === 'object' && 'unit' in type && unitOf(model, type)?.kind === 'enum') return rustType(model, type);
-  return `&${rustType(model, type)}`;
-}
+// T-1: the type of a trait method parameter: a type with two forms is borrowed, a Copy type by value; of the types
+// that are no string only an enum goes by value.
+const traitParam = (model: Model, type: Type): string => sharedTraitParam(model, type, (m, t) => typeof t === 'object' && 'unit' in t && unitOf(m, t)?.kind === 'enum');
 
 // U-3: a callback is a struct that names the Go object of the call that received it (the call and the index of the
 // callback in it) and implements the core trait; each member calls into Go, which runs the method of the object.
