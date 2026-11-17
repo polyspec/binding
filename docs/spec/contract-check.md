@@ -529,6 +529,12 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   each name is snake_case and not `receiver`, and no function fixture of the case gives the name again; a step of a
   function fixture and a call of `after` may then name it as `on`, a step argument may be `{"bound": <name>}`, and a
   `with` of a case of a member without a receiver is reported.
+- **CK-108** A case id is unique within its member (K-1, G-5), across all the groups that the rows of `cases` name for
+  that member: two groups of one member do not hold the same id. `binding check` reports the id, the member and both
+  groups, each with its file; a row that names a group again reads the same cases and is no finding. Why: a case id is
+  the name that picks one case within a member, and the `CASES` selection, the reports and the name of each
+  generated test (GN-13e) find a case by its id, so an id that two groups hold picks two cases, and the Go test of
+  each is defined twice.
 - **CK-101** The `args` of a call (G-5) follow one rule in every form. A call that the test makes, `new` and `from`
   of an instance value and each call of its `then` (generator GN-13f), a step of a function fixture and a call of
   `after` (CK-22), names in `args` only parameters of its member in snake_case and every parameter without a

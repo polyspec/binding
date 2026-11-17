@@ -1533,6 +1533,8 @@ class Checker {
     const groups = new Map<string, 'member' | 'alias'>();
     // CK-103: the {computed} defaults that a case leaves to the core, as "<member id> <place>".
     const leftToCore = new Set<string>();
+    // CK-108: the group, as "group of file", that holds each case id of a member, by member and id.
+    const caseIds = new Map<string, Map<string, string>>();
     for (const [i, row] of this.contract.cases.entries()) {
       const document = files.get(row.file);
       const group = typeof document === 'object' && document !== null ? (document as Record<string, unknown>)[row.group] : undefined;
@@ -1564,6 +1566,18 @@ class Checker {
         this.report('CK-92', `/cases/${i}`, `the row of ${row.member} names in only ${row.only.targets.join(', ')}, where ${row.member} is not generated (GN-13h, Q-4)`);
       }
       this.caseTargets(row.member, group, row.result ?? 'result', row.only?.targets, `/cases/${i}`);
+      // CK-108: a case id is unique within its member, across all its groups. A row that names a group again reads
+      // the same cases, which hold their ids once.
+      const ids = caseIds.get(row.member) ?? new Map<string, string>();
+      caseIds.set(row.member, ids);
+      const here = `the group ${row.group} of ${row.file}`;
+      for (const kase of group) {
+        const id = typeof kase === 'object' && kase !== null ? (kase as Record<string, unknown>)['id'] : undefined;
+        if (typeof id !== 'string') continue;
+        const held = ids.get(id);
+        if (held !== undefined && held !== here) this.report('CK-108', `/cases/${i}`, `the case id ${id} of ${row.member} is in ${held} and in ${here}: a case id is unique within its member, across all its groups (K-1, G-5)`);
+        if (held === undefined) ids.set(id, here);
+      }
       for (const kase of group) {
         const record = typeof kase === 'object' && kase !== null ? (kase as Record<string, unknown>) : {};
         const armedThen = this.caseInstances(row.member, record, `/cases/${i}`, row.only?.targets);

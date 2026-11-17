@@ -1,5 +1,5 @@
 <!-- doc-id: contract-check -->
-<!-- source-sha256: 51b578e9012d5d93d79d8df81d76dc8102ac5f42424e81df2fbb9bc75f29be2d -->
+<!-- source-sha256: 7e7ac44831699ee1325cd37fbc623005d45d97bd8436f81f5ba5e4181681d669 -->
 # 계약 검사
 
 [English](contract-check.md)
@@ -444,6 +444,11 @@ CK-70을 실행하지 않는다. 옵션은 release를 내지 않는 tree, 곧 bi
   `receiver`가 아니며, case의 어떤 function fixture도 그 이름을 다시 주지 않는다. 그러면 function fixture의 step과
   `after`의 호출은 그것을 `on`으로 이름할 수 있고, step의 인자는 `{"bound": <name>}`일 수 있다. receiver가 없는 member의
   case의 `with`는 보고된다.
+- **CK-108** case id는 그 member 안에서 유일하다(K-1, G-5). `cases`의 행들이 그 member에 대해 가리키는 모든 group에
+  걸쳐서도 그렇다. 곧 한 member의 두 group이 같은 id를 갖지 않는다. `binding check`는 그 id, member, 두 group을 각각의
+  파일과 함께 보고한다. 한 group을 다시 가리키는 행은 같은 case를 읽으므로 finding이 아니다. 이유: case id는 member 안에서
+  case 하나를 고르는 이름이다. `CASES` 선택, 보고, 각 생성 시험의 이름(GN-13e)이 id로 case를 찾는다. 그래서 두 group이
+  가진 id는 case 둘을 고르고, 각각의 Go 시험이 두 번 정의된다.
 - **CK-101** 호출의 `args`(G-5)는 모든 형태에서 한 규칙을 따른다. 시험이 하는 호출, 곧 인스턴스 값의 `new`와 `from`과
   그 `then`의 각 호출(generator GN-13f), 함수 fixture의 step, `after`의 호출(CK-22)은 `args`에 그 member의 parameter
   이름만 snake_case로 적고, `default`가 없는 parameter는 모두 적는다. `default`가 있는 parameter는 빠질 수 있고 생성된
