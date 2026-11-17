@@ -82,6 +82,13 @@ impl<T: PartialEq> PartialEq for OrderedMap<T> {
     }
 }
 
+/// The subject of an entry of a map in the message of a binding error: `<map subject>.<key>`, such as
+/// `functions.shout` (E-4, B2.475). The generated conversion of a map gives it to the conversion of each entry.
+#[must_use]
+pub fn entry_subject(subject: &str, key: &str) -> String {
+    format!("{subject}.{key}")
+}
+
 #[cfg(test)]
 mod tests {
     use super::OrderedMap;

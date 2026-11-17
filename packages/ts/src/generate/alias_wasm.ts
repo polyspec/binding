@@ -1039,7 +1039,7 @@ fn native_object(native: &Native) -> Result<JsValue, Fail> {
 /// binding calls it with (GN-6bu, kind invalid_callback), held as a Native.
 fn kept_function_in(value: &JsValue, subject: &str, given: &[&str]) -> Result<Native, Fail> {
     if !value.is_function() {
-        return Err(binding_error(BindingError::InvalidArgumentType { subject: subject.to_owned(), expected: String::from("a function") }));
+        return Err(binding_error(BindingError::NotAFunction { subject: subject.to_owned() }));
     }
     takes_in(value, subject, "", given)?;
     Ok(wasm_native(value))

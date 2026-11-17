@@ -13,7 +13,7 @@ import { addonName, NODE_PLATFORM_JS } from './packages.ts';
 import { nodeTests } from './tests_node.ts';
 import { type Cycle, type CycleHost, cycleLeaf, cycleOf, cycles, cycleUnitRust, holdsCycle } from './cycles.ts';
 import { raisesAssertions } from './raises.ts';
-import { type Files, header, jsString, rustString, closure, optionRef, withUsedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
+import { type Files, header, jsString, rustString, closure, entryClosure, optionRef, withUsedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
 
 const ROOT = 'packages/ts/generated';
 
@@ -29,7 +29,7 @@ function convertIn(model: Model, type: Type, value: string, subject: string): st
     return `${name}(${value}, ${subject})`;
   }
   if ('list' in type) return `list_in(${value}, ${subject}, ${closure(['item'], boxed(model, type.list, convertIn(model, type.list, 'item', subject)))})`;
-  if ('map' in type) return `map_in(${value}, ${subject}, ${closure(['item'], convertIn(model, type.map, 'item', subject))})`;
+  if ('map' in type) return `map_in(${value}, ${subject}, ${entryClosure([], 'item', (entry) => convertIn(model, type.map, 'item', entry))})`;
   if ('keyed_map' in type) {
     const tags = (['int', 'bytes', 'text'] as const).map((kind, tag) => (type.key.includes(kind) ? String(tag) : '')).filter((t) => t !== '');
     return `keyed_map_in(${value}, ${subject}, &[${tags.join(', ')}], ${rustString(`a Map whose keys are ${type.key.map((k) => ({ int: 'safe integers', text: 'strings' })[k] ?? k).join(' or ')}`)}, ${closure(['item'], convertIn(model, type.keyed_map, 'item', subject))})`;
@@ -405,13 +405,15 @@ fn entries_out<'env>(env_: &'env Env, entries: Vec<Unknown<'env>>) -> Result<Unk
 }
 
 /// T-2: a Map whose keys are strings; any other key is kind invalid_argument_type.
-fn map_in<'env, T>(value: Unknown<'env>, subject: &str, item: impl Fn(Unknown<'env>) -> Result<T, Fail>) -> Result<binding_core::OrderedMap<T>, Fail> {
+fn map_in<'env, T>(value: Unknown<'env>, subject: &str, item: impl Fn(&str, Unknown<'env>) -> Result<T, Fail>) -> Result<binding_core::OrderedMap<T>, Fail> {
     let mut map = binding_core::OrderedMap::new();
     for [key, value] in map_entries(value, subject, "a Map whose keys are strings")? {
         if key.get_type().map_err(internal)? != ValueType::String {
             return Err(type_error(subject, "a Map whose keys are strings"));
         }
-        if map.insert(text_in(key, subject)?, item(value)?).is_some() {
+        let key = text_in(key, subject)?;
+        let value = item(&binding_core::entry_subject(subject, &key), value)?;
+        if map.insert(key, value).is_some() {
             return Err(binding_error(BindingError::Internal { detail: String::from("a Map gave a key twice") }));
         }
     }
@@ -2212,6 +2214,10 @@ for (const made of [${[...model.classes.map((c) => c.name), ...model.errorUnits.
 `;
 }
 
+// E-2, GN-7a, B2.514: the declaration of the constructor of a category class of jsErrorClasses, for Node and WASM. The
+// status and the errno may be left out, as checkError takes them absent, null or an integer.
+export const ERROR_CONSTRUCTOR_DTS = 'constructor(message: string, kind: string, status?: number | null, errno?: number | null);';
+
 export function jsErrorClasses(model: Model, lang: 'node' | 'wasm', exported: string, base: (category: string) => string): { classes: string; units: string } {
   const typeClass = categoryClass(model, 'type');
   const valueClass = categoryClass(model, 'value');
@@ -2247,8 +2253,9 @@ ${exported}class ${c.name} extends globalThis.${base(c.category)} {
     Object.defineProperty(this, 'name', { value: ${jsString(c.name)}, configurable: true, writable: true });
     Object.defineProperties(this, {
       kind: { value: kind, enumerable: true },
-      status: { value: status, enumerable: true },
-      errno: { value: errno, enumerable: true },
+      // B2.522: a status or an errno that the caller leaves out is null, the type that the .d.ts declares.
+      status: { value: status === undefined ? null : status, enumerable: true },
+      errno: { value: errno === undefined ? null : errno, enumerable: true },
     });
   }
 }`).join('\n')}`;
@@ -2511,6 +2518,7 @@ function indexDts(model: Model): string {
   const classes = model.classes.map((c) => `
 /** The errors of category ${c.category} (E-2). */
 export declare class ${c.name} extends ${nodeBase(c.category)} {
+  ${ERROR_CONSTRUCTOR_DTS}
   readonly kind: string;
   readonly status: number | null;
   readonly errno: number | null;

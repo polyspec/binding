@@ -432,6 +432,9 @@ contract: Contract;
   resultKeys?: Map<string, Map<unknown, string>>;
   // GN-13h: the targets of the only of the row of `cases` that holds a case, for the cases of a row with only.
   caseTargets?: ReadonlyMap<unknown, readonly Lang[]>;
+  // Q-4, B2.512: the language whose units and members membersFor kept, so that the model of another library that a
+  // test of this model reads keeps those of the same language.
+  lang?: Lang;
 }
 
 const simple = (name: string): string => name.slice(name.lastIndexOf('\\') + 1);
@@ -2109,6 +2112,7 @@ export function membersFor(model: Model, lang: Lang): Model {
   const records = (units: Unit[]): Unit[] => units.filter(unitHas).map((u) => unitForLanguage(u, lang));
   const built: Model = {
     ...model,
+    lang,
     functions: model.functions.filter(has).map(without),
     // Q-4, B2.395: a constant whose only names other targets is no constant of the language, nor its assertion.
     constants: model.constants.filter((c) => unitHas(c.unit) && (c.member.only === undefined || c.member.only.targets.includes(lang))),

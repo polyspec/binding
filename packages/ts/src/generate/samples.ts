@@ -8,7 +8,7 @@ import type { Category, Contract, Member, Service, Unit } from '../contract.ts';
 import { jsArguments, jsDeclaredMember } from './callback_arguments.ts';
 import { classMakes, holdsForeign } from './value_class.ts';
 import { computedRule, defaultCaseValue } from './defaults.ts';
-import { BINDING_KINDS, type Arg, buildModel, caseName, type Fn, type KeptClass, type Model, type ObjectClass, type ValueAlias, type Variant, type VariantCase, Unsupported, aliasOf, interfaceOf, resolveNamedType, implementorsOf, caseFields, kindText, langName, libraryOf, objectUnit, unitOf, variantOf, caseLeftOut, machineFunction, makerOf } from './model.ts';
+import { BINDING_KINDS, type Arg, buildModel, caseName, type Fn, type KeptClass, type Model, type ObjectClass, type ValueAlias, type Variant, type VariantCase, Unsupported, aliasOf, interfaceOf, resolveNamedType, implementorsOf, caseFields, kindText, langName, libraryOf, objectUnit, unitOf, variantOf, caseLeftOut, machineFunction, makerOf, membersFor, resolveNamedTypes } from './model.ts';
 import { CATEGORIES, kindsOf } from '../contract.ts';
 import { jsString, phpLatin1, phpText, pyString } from './text.ts';
 
@@ -1937,21 +1937,25 @@ export function implementerInstance(model: Model, callback: Unit, value: unknown
 // GN-6s, GN-13f: the model of the contract of another repository, whose members an instance value at a place of a
 // callback unit of that repository names; each of its members names the library, so a test calls it through the
 // package of that library. GN-6ar: it also gives the value classes without core_type of the owner of a value alias,
-// whose instances a case value of that alias holds.
-const ownerModels = new WeakMap<Contract, Model>();
+// whose instances a case value of that alias holds. Q-4, B2.512: of a model of one language, it keeps the units, the
+// members and the parameters of that language, by the rule of membersFor, as the model of the contract does.
+const ownerModels = new WeakMap<Contract, Map<Lang | undefined, Model>>();
 export function ownerModel(model: Model, library: string): Model {
   const owner = model.foreign.get(library);
   if (owner === undefined) throw new Unsupported(`the contract of ${library} is not given (GN-6s, GN-13f)`);
-  const kept = ownerModels.get(owner);
+  const byLang = ownerModels.get(owner) ?? new Map<Lang | undefined, Model>();
+  ownerModels.set(owner, byLang);
+  const kept = byLang.get(model.lang);
   if (kept !== undefined) return kept;
   let built: Model;
   try {
-    built = buildModel(owner, '0.0.0', owner.library, new Map(), model.foreign);
+    const whole = buildModel(owner, '0.0.0', owner.library, new Map(), model.foreign);
+    built = model.lang === undefined ? whole : membersFor(whole, model.lang);
   } catch (error) {
     throw new Unsupported(`the contract of ${library} gives no members to a case: ${error instanceof Error ? error.message : String(error)} (GN-6s, GN-13f)`);
   }
   for (const fn of [...built.functions, ...built.objects.flatMap((o) => o.members)]) fn.library = library;
-  ownerModels.set(owner, built);
+  byLang.set(model.lang, built);
   return built;
 }
 
@@ -2913,7 +2917,18 @@ export function callbackArg(model: Model, fn: Fn): Arg | undefined {
 
 // K-2: whether a result of another type is a failure of the binding. A member that returns a value alias gives every
 // value to the alias's core, which judges it (B-1), so the kind of a refused result is the alias's, not the binding's.
-export function judgesCallbackResult(model: Model, callback: Unit): boolean {
+// GN-6s, B2.513: the return types of a callback unit of another library are types of that library, so they are read
+// in the contract of its owner, with its named types resolved as the model reads them; a unit of a third library that
+// such a type names is read in the contract of that library.
+export function judgesCallbackResult(model: Model, type: Type): boolean {
+  const library = libraryOf(type);
+  const contractOf = (of: string | undefined): Contract | undefined => {
+    if (of === undefined) return model.contract;
+    const foreign = model.foreign.get(of);
+    return foreign === undefined ? undefined : resolveNamedTypes(foreign);
+  };
+  const unitIn = (of: string | undefined, id: string): Unit | undefined => contractOf(of)?.units.find((u) => u.id === id);
+  const callback = typeof type === 'object' && 'unit' in type ? unitIn(library, type.unit) : undefined;
   const namesAlias = (type: Type): boolean => {
     if (typeof type === 'string') return false;
     if ('list' in type) return namesAlias(type.list);
@@ -2921,9 +2936,9 @@ export function judgesCallbackResult(model: Model, callback: Unit): boolean {
     if ('keyed_map' in type) return namesAlias(type.keyed_map);
     if ('optional' in type) return namesAlias(type.optional);
     if ('tuple' in type) return type.tuple.some(namesAlias);
-    return unitOf(model, type)?.kind === 'alias';
+    return 'unit' in type && unitIn(type.library ?? library, type.unit)?.kind === 'alias';
   };
-  return !(callback.members ?? []).some((m) => namesAlias(m.returns ?? 'none'));
+  return !(callback?.members ?? []).some((m) => namesAlias(m.returns ?? 'none'));
 }
 
 // G-5: the key of a keyed map in a case: a text, {"int": n} or {"hex": "<lower-case hex>"} for a byte string.

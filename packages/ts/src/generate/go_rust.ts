@@ -27,7 +27,7 @@ import { extensionName } from './packages.ts';
 import { raisesAssertions } from './raises.ts';
 import { type ForeignMake, type ForeignRead, type ValueRead, container, foreignReads, foreignRowClasses, outArms, valueReads } from './alias_shared.ts';
 import { classMakes } from './value_class.ts';
-import { header, closure, optionRef, rustString, usedHelpers, INTO_CORE, PARTS, WIDEN, CORE_FORM } from './text.ts';
+import { header, closure, entryClosure, optionRef, rustString, usedHelpers, INTO_CORE, PARTS, WIDEN, CORE_FORM } from './text.ts';
 import { type Cycle, coreWalk, cycleOf, cycles, holdsCycle, walkModel, walkUnit } from './cycles.ts';
 
 // GN-17: the C symbol prefix of the static library, the PHP extension name of P-1 and one underscore,
@@ -124,7 +124,7 @@ export function convertIn(model: Model, type: Type, input: string, subject: stri
     // T-2, GN-16: a tuple parameter or a tuple inside another type, its parts in order.
     return `tuple${type.tuple.length}_in(${input}, ${type.tuple.map((part) => closure(['input'], convertIn(model, part, 'input', subject))).join(', ')})`;
   }
-  if ('map' in type) return `map_in(${input}, ${subject}, ${closure(['input'], convertIn(model, type.map, 'input', subject))})`;
+  if ('map' in type) return `map_in(${input}, ${subject}, ${entryClosure([], 'input', (entry) => convertIn(model, type.map, 'input', entry))})`;
   if ('keyed_map' in type) {
     const tags = (['int', 'bytes', 'text'] as const).map((kind, tag) => (type.key.includes(kind) ? String(tag) : '')).filter((t) => t !== '');
     return `keyed_map_in(${input}, ${subject}, &[${tags.join(', ')}], ${rustString(`a key of ${type.key.join(' or ')}`)}, ${closure(['input'], convertIn(model, type.keyed_map, 'input', subject))})`;
@@ -304,12 +304,12 @@ fn optional_in<'a, T>(input: &mut &'a [u8], item: impl FnOnce(&mut &'a [u8]) -> 
 }
 
 /// T-2: an ordered map, its text keys each once; a key twice is a fault of the generated Go code (kind internal).
-fn map_in<'a, T>(input: &mut &'a [u8], subject: &str, item: impl Fn(&mut &'a [u8]) -> Result<T, Fail>) -> Result<binding_core::OrderedMap<T>, Fail> {
+fn map_in<'a, T>(input: &mut &'a [u8], subject: &str, item: impl Fn(&str, &mut &'a [u8]) -> Result<T, Fail>) -> Result<binding_core::OrderedMap<T>, Fail> {
     let count = read_length(input)?;
     let mut map = binding_core::OrderedMap::new();
     for _ in 0..count {
         let key = text_in(input, subject)?;
-        let value = item(input)?;
+        let value = item(&binding_core::entry_subject(subject, &key), input)?;
         if map.insert(key, value).is_some() {
             return Err(malformed());
         }
@@ -1110,7 +1110,7 @@ function keptFuncsRust(model: Model): string {
 /// func that the C ABI does not read is held by its call alone. A nil func is kind invalid_argument_type.
 fn kept_function_in(input: &mut &[u8], subject: &str) -> Result<Native, Fail> {
     if !read_tag(input)? {
-        return Err(binding_error(BindingError::InvalidArgumentType { subject: subject.to_owned(), expected: String::from("a function") }));
+        return Err(binding_error(BindingError::NotAFunction { subject: subject.to_owned() }));
     }
     let call = uint_in(input)?;
     let function = uint_in(input)?;
@@ -2288,7 +2288,7 @@ function testEntries(model: Model): string {
     ], 'codec-test');
   const out: string[] = [];
   if (echo.latin1) out.push(echoEntry('latin1', 'latin1_in(&mut input, "value")?', 'latin1_out(&mut buffer, &value)'));
-  if (echo.map) out.push(echoEntry('map', 'map_in(&mut input, "value", |input| text_in(input, "value"))?', 'map_out(&mut buffer, &value, |output, item| text_out(output, item))'));
+  if (echo.map) out.push(echoEntry('map', 'map_in(&mut input, "value", |entry_, input| text_in(input, entry_))?', 'map_out(&mut buffer, &value, |output, item| text_out(output, item))'));
   if (echo.keyed) out.push(echoEntry('keyed_map', 'keyed_map_in(&mut input, "value", &[0, 1, 2], "a key", |input| text_in(input, "value"))?', 'keyed_map_out(&mut buffer, &value, |output, item| text_out(output, item))'));
   // U-7: the in function of a value alias with in_raises alone.
   for (const alias of aliasesWithKinds(model).filter((a) => a.library === undefined)) {

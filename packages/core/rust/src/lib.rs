@@ -38,7 +38,7 @@ pub use host::{HostValues, OutValues};
 pub use keyed::{Key, KeyedMap};
 #[cfg(feature = "lock")]
 pub use lock::{Exclusive, Reading, Shared, Writing};
-pub use map::OrderedMap;
+pub use map::{entry_subject, OrderedMap};
 pub use native::{Native, NativeObject};
 pub use passthrough::Passthrough;
 pub use path::{path_bytes, path_from_bytes};

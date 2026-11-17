@@ -899,7 +899,12 @@ the design ids are those of the binding design.
   `invalid_argument_type` of the conversion for a return that a promise is no value of, a `Raised` for the core;
   where the return is `none` the promise is dropped, and its rejection reaches no caller. Awaiting a kept function is
   not designed yet (B2.483). When the value enters it must be callable (kind `invalid_argument_type`) and, where
-  the function is given one argument or more, take them (kind `invalid_callback`, GN-6bu). A call
+  the function is given one argument or more, take them (kind `invalid_callback`, GN-6bu). A value that is not
+  callable is the one form of the core, `<subject> is not a function` (`BindingError::NotAFunction`), in every target,
+  and the subject of an entry of a map is `<map subject>.<key>` (`binding_core::entry_subject`), at every place of a
+  map: an entry `shout` of a parameter `functions` that is not a function is `functions.shout is not a function`.
+  Why: the message named the map alone and the language word of each target, as `functions is not an instance of a
+  callable` in Python, while the contract of the consumer expected `functions.shout is not a function` (B2.475). A call
   converts the arguments out and the result in, and an exception of the language code, or a failure of the binding in
   the call, goes to the core as a `Raised`, as GN-6d states. A record of another library among the parameters or the
   return of a function type, also inside a list, a map or an optional, is converted by `out_<record>` and `in_<record>`
@@ -1645,7 +1650,12 @@ the design ids are those of the binding design.
   constructor of a category class and of an error unit, by which language code makes an error with the message, the
   kind, the status and the errno (GN-10), judges its arguments before it makes the error: the message is a text
   (B-3), the kind is a text and one of the kinds of the class, and the status and the errno are each absent, null
-  (`None`, `undefined`) or an integer, not a bool. The kinds of a class are those that the binding raises as an
+  (`None`, `undefined`) or an integer, not a bool. The `.d.ts` of Node and WASM declares that constructor on each
+  category class as `constructor(message: string, kind: string, status?: number | null, errno?: number | null)`, and an
+  error unit inherits it. Why: the `.d.ts` declared no constructor, so TypeScript took the one of `Error` or
+  `RangeError` and refused a consumer's `new XValueError(message, kind)`, which runs (B2.514). The runtime of Node and
+  WASM gives null to a status or an errno that the caller leaves out, so each is of its declared type. Why: the
+  runtime stored `undefined`, which the `.d.ts` type `number | null` does not hold (B2.522). The kinds of a class are those that the binding raises as an
   instance of that class itself: for an error unit, the kinds of the rows of `errors.kinds` whose `class` names it,
   without those of the units that extend it, which the binding raises as instances of those units; for a category
   class, the kinds of the rows of its category without `class` (own rows and rows with `library`), the kinds of E-1a
@@ -3038,7 +3048,11 @@ the design ids are those of the binding design.
   members is kind `invalid_callback`, the exception that the callback raises reaches the caller as the same object,
   and a result of another type is a binding kind, unless a member of the callback returns a value alias: the alias's
   core judges every value (B-1), so a refused result has the alias's kind and this test is not generated; its other
-  arguments are placeholders whose lists have one item. The tests of the raised exception and of the result of
+  arguments are placeholders whose lists have one item. The return type of a member of a callback unit of another
+  repository (GN-6s) is a type of the owner, so the generator reads it in the contract of the owner, and a value alias
+  of the owner is such an alias. Why: Node read `php_value` of store.get in the contract of the consumer, where it
+  names no unit, and generated the test, while the call raised `unsupported_value` of
+  php-serialization (B2.513). The tests of the raised exception and of the result of
   another type are generated only for a member whose core path gives back the failure of the callback (GN-7,
   `core.failure`), because only such a member calls the callback during the call: a member that takes the callback
   by a parameter with `keeps` and fails in no other way keeps it for a later member, so the call returns before the
@@ -3314,7 +3328,10 @@ the design ids are those of the binding design.
   class of the owner (GN-6x), and Node awaits a member of the owner that waits. The members are those that the generator
   takes from the contract of the owner for the target: a member that the owner leaves out of the target by `only`, or
   that the generator refuses in the contract of the owner, gives a test of the case that fails with that reason
-  (GN-13e). Not generated yet, each a test of the case that fails by name: a function of the owner, a member of an
+  (GN-13e). A parameter that the owner leaves out of the target by `only` (Q-4) is no argument of the call in that
+  target, by the same rule as for a member of this contract, so a key of the case that gives it is not written there.
+  Why: a consumer's Go test called `Open(nil, cookie)` of session-store, whose cancellation only Python and Node take,
+  against `Open(cookie)` (B2.512). Not generated yet, each a test of the case that fails by name: a function of the owner, a member of an
   internal unit of the owner, an argument that is an enum, a record, a variant or a callback of the owner, and the
   faults of a call of `then`. Go and WASM refuse the parameter itself (GN-6s), so they write no such instance.
   `binding check` does not judge such a value, because CK-22 reads the members of this contract alone. Why: the class

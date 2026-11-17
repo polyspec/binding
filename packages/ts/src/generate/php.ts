@@ -12,7 +12,7 @@ import { phpCaseTests } from './samples.ts';
 import { phpTests } from './tests_php.ts';
 import { type Cycle, type CycleHost, cycleLeaf, cycleOf, cycles, cycleUnitRust, holdsCycle } from './cycles.ts';
 import { raisesAssertions } from './raises.ts';
-import { type Files, header, phpText, rustString, closure, optionRef, withUsedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
+import { type Files, header, phpText, rustString, closure, entryClosure, optionRef, withUsedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
 
 const ROOT = 'packages/php-ext/generated';
 
@@ -79,7 +79,7 @@ export function convertIn(model: Model, type: Type, value: string, subject: stri
     return `${name}(${value}, ${subject})`;
   }
   if ('list' in type) return `list_in(${value}, ${subject}, ${closure(['item'], boxed(model, type.list, convertIn(model, type.list, 'item', subject)))})`;
-  if ('map' in type) return `map_in(${value}, ${subject}, ${closure(['item'], convertIn(model, type.map, 'item', subject))})`;
+  if ('map' in type) return `map_in(${value}, ${subject}, ${entryClosure([], 'item', (entry) => convertIn(model, type.map, 'item', entry))})`;
   if ('keyed_map' in type) {
     const tags = (['int', 'bytes', 'text'] as const).map((kind, tag) => (type.key.includes(kind) ? String(tag) : '')).filter((t) => t !== '');
     return `keyed_map_in(${value}, ${subject}, &[${tags.join(', ')}], ${rustString(`an array whose keys are ${type.key.map((k) => ({ int: 'ints', bytes: 'byte strings', text: 'UTF-8 strings' })[k] ?? k).join(' or ')}`)}, ${closure(['item'], convertIn(model, type.keyed_map, 'item', subject))})`;
@@ -460,7 +460,7 @@ fn array_out(items: Vec<Zval>) -> Result<Zval, Fail> {
 
 /// T-2: an array in its order whose keys are texts. A string key is its UTF-8 text (other bytes are kind invalid_text),
 /// and an int key is its decimal text, the inverse of PHP's own conversion of a decimal string key.
-fn map_in<T>(value: &Zval, subject: &str, item: impl Fn(&Zval) -> Result<T, Fail>) -> Result<binding_core::OrderedMap<T>, Fail> {
+fn map_in<T>(value: &Zval, subject: &str, item: impl Fn(&str, &Zval) -> Result<T, Fail>) -> Result<binding_core::OrderedMap<T>, Fail> {
     let Some(array) = value.array() else { return Err(type_error(subject, "array")) };
     let mut map = binding_core::OrderedMap::new();
     let mut entries = array.iter();
@@ -473,7 +473,8 @@ fn map_in<T>(value: &Zval, subject: &str, item: impl Fn(&Zval) -> Result<T, Fail
         } else {
             return Err(binding_error(BindingError::Internal { detail: String::from("an array key that is neither an int nor a string") }));
         };
-        if map.insert(key, item(value)?).is_some() {
+        let value = item(&binding_core::entry_subject(subject, &key), value)?;
+        if map.insert(key, value).is_some() {
             return Err(binding_error(BindingError::Internal { detail: String::from("an array gave a key twice") }));
         }
     }

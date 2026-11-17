@@ -6,7 +6,7 @@ import { variantPattern } from '../contract.ts';
 import { raisesAssertions } from './raises.ts';
 import { conversionsOf, convertedFn, ownerErrorClasses } from './model.ts';
 import { TAKES_PYTHON, functionGiven, givenRust, memberGiven, placeSubject } from './callback_arguments.ts';
-import { type Files, header, pyHeader, pyString, rustString, closure, optionRef, withUsedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
+import { type Files, header, pyHeader, pyString, rustString, closure, entryClosure, optionRef, withUsedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
 import { defaultAsserts, declaredValue } from './defaults.ts';
 import { absentInits, keptFunctionType, categoryClass,type Arg, type CallbackUnit, classKinds, type ErrorUnit, type Fn, type Model, isInternal, interfaceOf, implementorsOf, Unsupported, argType, leftOut, aliasOf, errorProperties, byValue, type ObjectClass, coreCallArgs, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, awaits, cleanupAsserts, cleanupMade, cleanupWarning, waitsAsync, waitsIo, waitsProcess, drivenCall, DRIVEN, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, recordLocal, recordInit, rustIdent, rustType, rustVariant, unitOf, traitParam, holdsFunction, keepsThrown, boxed, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, caseWritten, UNIT_CASE_ALLOW, tupleIn, caseLeftOut, narrows, narrowed, tupleOut, propertyValue, errorMatched, recognizedFn, recognizedMatch, unitFn, libraryBlocks, machineFunction, countsThrown, takenCallbacks , anchorCalls, lentRust} from './model.ts';
 import { HOST_PYTHON_SUBPACKAGE } from './packages.ts';
@@ -274,12 +274,13 @@ fn list_out<'py, T>(py_: Python<'py>, value: impl IntoIterator<Item = T>, item: 
     Ok(PyList::new(py_, items)?.into_any())
 }
 
-/// T-2: a dict in its order whose keys are str; any other key is kind invalid_argument_type.
+/// T-2: a dict in its order whose keys are str; any other key is kind invalid_argument_type. B2.475: each value is
+/// converted with the subject of its entry, <subject>.<key>.
 fn map_in<'py, T>(
     py_: Python<'py>,
     value: &Bound<'py, PyAny>,
     subject: &str,
-    item: impl Fn(Python<'py>, &Bound<'py, PyAny>) -> PyResult<T>,
+    item: impl Fn(Python<'py>, &str, &Bound<'py, PyAny>) -> PyResult<T>,
 ) -> PyResult<binding_core::OrderedMap<T>> {
     let Ok(dict) = value.cast::<PyDict>() else { return Err(binding_error(py_, type_error(subject, "dict"))) };
     let mut map = binding_core::OrderedMap::new();
@@ -288,7 +289,7 @@ fn map_in<'py, T>(
             return Err(binding_error(py_, type_error(subject, "a dict whose keys are str")));
         }
         let key = text_in(py_, &key, subject)?;
-        let value = item(py_, &value)?;
+        let value = item(py_, &binding_core::entry_subject(subject, &key), &value)?;
         if map.insert(key, value).is_some() {
             return Err(binding_error(py_, BindingError::Internal { detail: String::from("a dict gave a key twice") }));
         }
@@ -397,7 +398,7 @@ function convertIn(model: Model, type: Type, value: string, subject: string): st
     return `${fn[type]}(py_, ${value}, ${subject})`;
   }
   if ('list' in type) return `list_in(py_, ${value}, ${subject}, ${closure(['py_', 'item'], boxed(model, type.list, convertIn(model, type.list, 'item', subject)))})`;
-  if ('map' in type) return `map_in(py_, ${value}, ${subject}, ${closure(['py_', 'item'], convertIn(model, type.map, 'item', subject))})`;
+  if ('map' in type) return `map_in(py_, ${value}, ${subject}, ${entryClosure(['py_'], 'item', (entry) => convertIn(model, type.map, 'item', entry))})`;
   if ('keyed_map' in type) {
     const tags = (['int', 'bytes', 'text'] as const).map((kind, tag) => (type.key.includes(kind) ? String(tag) : '')).filter((t) => t !== '');
     return `keyed_map_in(py_, ${value}, ${subject}, &[${tags.join(', ')}], ${rustString(`a dict whose keys are ${type.key.map((k) => ({ int: 'int', bytes: 'bytes', text: 'str' })[k] ?? k).join(' or ')}`)}, ${closure(['py_', 'item'], convertIn(model, type.keyed_map, 'item', subject))})`;
@@ -441,7 +442,7 @@ const FUNCTION_IN = `
 /// calls it with (GN-6bu, kind invalid_callback); the function holds it.
 fn kept_function_in(py_: Python<'_>, value: &Bound<'_, PyAny>, subject: &str, given: &[&str]) -> PyResult<Py<PyAny>> {
     if !value.is_callable() {
-        return Err(binding_error(py_, BindingError::InvalidArgumentType { subject: subject.to_owned(), expected: String::from("a callable") }));
+        return Err(binding_error(py_, BindingError::NotAFunction { subject: subject.to_owned() }));
     }
     takes_in(py_, value, subject, "", given)?;
     Ok(value.clone().unbind())

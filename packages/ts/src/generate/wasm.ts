@@ -11,10 +11,10 @@ import { declaredValue, defaultAsserts } from './defaults.ts';
 import { wasmTests } from './tests_wasm.ts';
 import { type Cycle, type CycleHost, cycleLeaf, cycleOf, cycles, cycleUnitRust, holdsCycle } from './cycles.ts';
 import { WASM_NATIVE, aliasWasm, foreignFailureWasm, foreignRegistrationWasm, keptExportsWasm, wasmHost } from './alias_wasm.ts';
-import { jsErrorClasses, typeParameters } from './node.ts';
+import { ERROR_CONSTRUCTOR_DTS, jsErrorClasses, typeParameters } from './node.ts';
 import { raisesAssertions } from './raises.ts';
 import { TAKES_WASM, jsArguments, functionGiven, givenRust, memberGiven, placeSubject } from './callback_arguments.ts';
-import { type Files, header, jsString, rustString, closure, withUsedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
+import { type Files, header, jsString, rustString, closure, entryClosure, withUsedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
 
 export const WASM = 'packages/ts/wasm';
 const ROOT = `${WASM}/generated`;
@@ -34,7 +34,7 @@ function convertIn(model: Model, type: Type, value: string, subject: string): st
     return `${name}(${value}, ${subject})`;
   }
   if ('list' in type) return `list_in(${value}, ${subject}, ${closure(['item'], boxed(model, type.list, convertIn(model, type.list, 'item', subject)))})`;
-  if ('map' in type) return `map_in(${value}, ${subject}, ${closure(['item'], convertIn(model, type.map, 'item', subject))})`;
+  if ('map' in type) return `map_in(${value}, ${subject}, ${entryClosure([], 'item', (entry) => convertIn(model, type.map, 'item', entry))})`;
   if ('keyed_map' in type) {
     const tags = (['int', 'bytes', 'text'] as const).map((kind, tag) => (type.key.includes(kind) ? String(tag) : '')).filter((t) => t !== '');
     return `keyed_map_in(${value}, ${subject}, &[${tags.join(', ')}], ${rustString(`a Map whose keys are ${type.key.map((k) => ({ int: 'safe integers', text: 'strings' })[k] ?? k).join(' or ')}`)}, ${closure(['item'], convertIn(model, type.keyed_map, 'item', subject))})`;
@@ -344,14 +344,16 @@ fn map_entries(value: &JsValue, subject: &str, expected: &str) -> Result<Vec<(Js
 }
 
 /// T-2: a Map whose keys are strings; any other key is kind invalid_argument_type.
-fn map_in<T>(value: &JsValue, subject: &str, item: impl Fn(&JsValue) -> Result<T, Fail>) -> Result<binding_core::OrderedMap<T>, Fail> {
+fn map_in<T>(value: &JsValue, subject: &str, item: impl Fn(&str, &JsValue) -> Result<T, Fail>) -> Result<binding_core::OrderedMap<T>, Fail> {
     let expected = "a Map whose keys are strings";
     let mut map = binding_core::OrderedMap::new();
     for (key, value) in map_entries(value, subject, expected)? {
         if !key.is_string() {
             return Err(type_error(subject, expected));
         }
-        if map.insert(text_in(&key, subject)?, item(&value)?).is_some() {
+        let key = text_in(&key, subject)?;
+        let value = item(&binding_core::entry_subject(subject, &key), &value)?;
+        if map.insert(key, value).is_some() {
             return Err(binding_error(BindingError::Internal { detail: String::from("a Map gave a key twice") }));
         }
     }
@@ -2004,6 +2006,7 @@ function indexDts(model: Model): string {
   const classes = model.classes.map((c) => `
 /** The errors of category ${c.category} (E-2). */
 export declare class ${c.name} extends ${jsBase(c.category)} {
+  ${ERROR_CONSTRUCTOR_DTS}
   readonly kind: string;
   readonly status: number | null;
   readonly errno: number | null;

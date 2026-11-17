@@ -940,6 +940,13 @@ fn lent_receiver<'a, T, R: LentReceiver<'a, T>>(receiver: &'a T) -> R {
 
 // A closure that only calls a function with its own parameters is the function itself (clippy redundant_closure); the
 // function may be named by its path, as the conversion of a unit of another library is (GN-4c).
+// B2.475: the closure of an entry of a map, which map_in calls with the subject of the entry (<map>.<key>) as
+// `entry_`; a conversion that names no subject takes it as `_`, so the generated crate has no unused binding.
+export function entryClosure(before: string[], item: string, body: (subject: string) => string): string {
+  const named = body('entry_');
+  return closure([...before, /\bentry_\b/.test(named) ? 'entry_' : '_', item], named);
+}
+
 export function closure(params: string[], body: string): string {
   const call = /^([a-z_][a-z_0-9]*(?:::[a-z_][a-z_0-9]*)*)\((.*)\)$/.exec(body);
   if (call !== null && call[2] === params.join(', ')) return call[1] ?? '';

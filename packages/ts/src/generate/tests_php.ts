@@ -1024,7 +1024,7 @@ ${kase.raises.status === undefined ? '' : `            self::assertSame(${kase.r
         } catch (\\LogicException $error) {
             self::assertSame($raised, $error);
         }
-    }`}${fn.failure && judgesCallbackResult(model, cbUnit) ? `
+    }`}${fn.failure && judgesCallbackResult(model, callback.type) ? `
 
     public function testK2${name}RefusesACallbackResultOfAnotherType(): void
     {

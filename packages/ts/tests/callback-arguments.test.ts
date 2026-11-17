@@ -115,10 +115,11 @@ for (const target of TARGETS) {
     const enters = rustFn(lib, 'kept_function_in');
     assert.match(enters, /given: &\[&str\]\)/);
     const check = {
-      node: /BindingError::InvalidArgumentType \{[^\n]*\n {4}\}\n {4}takes_in\(env_, value, subject, "", given\)\?;\n/,
-      wasm: /BindingError::InvalidArgumentType \{[^\n]*\n {4}\}\n {4}takes_in\(value, subject, "", given\)\?;\n/,
-      python: /BindingError::InvalidArgumentType \{[^\n]*\n {4}\}\n {4}takes_in\(py_, value, subject, "", given\)\?;\n/,
-      php: /BindingError::InvalidArgumentType \{[^\n]*\n {4}\}\n {4}takes_in\(\|\| reflected\("ReflectionFunction", vec!\[value\]\), subject, "", given\)\?;\n/,
+      // B2.475: the kind is invalid_argument_type, in the one form NotAFunction of the core.
+      node: /BindingError::NotAFunction \{[^\n]*\n {4}\}\n {4}takes_in\(env_, value, subject, "", given\)\?;\n/,
+      wasm: /BindingError::NotAFunction \{[^\n]*\n {4}\}\n {4}takes_in\(value, subject, "", given\)\?;\n/,
+      python: /BindingError::NotAFunction \{[^\n]*\n {4}\}\n {4}takes_in\(py_, value, subject, "", given\)\?;\n/,
+      php: /BindingError::NotAFunction \{[^\n]*\n {4}\}\n {4}takes_in\(\|\| reflected\("ReflectionFunction", vec!\[value\]\), subject, "", given\)\?;\n/,
     }[target];
     assert.match(enters, check);
     // A function type names no argument, so the message gives the types of the contract.

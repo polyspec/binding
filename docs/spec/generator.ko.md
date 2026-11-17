@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 464490383d5d4ea530e1358c800e7146bb01aefc7012aaca8710e35a9db2e2d2 -->
+<!-- source-sha256: 0f0709cb3619125f7cb2541fc96c44fc88b2c1197850170fa88f0caffbb37873 -->
 # 생성기
 
 [English](generator.md)
@@ -738,7 +738,12 @@
   `invalid_argument_type`, 곧 코어에게 `Raised`다. 반환이 `none`이면 promise는 버려지고 그 거부는 어느 호출자에게도
   닿지 않는다. 보관된 함수를 기다리는 일은 아직 설계되지 않았다(B2.483). 값이
   들어올 때 호출 가능해야 하고(kind `invalid_argument_type`), 함수가 인자를 하나 이상 받는 곳에서는 그 인자를 받아야
-  한다(kind `invalid_callback`, GN-6bu). 호출은 인자를 내보내고 결과를 들이며, 언어 코드의 예외나 호출
+  한다(kind `invalid_callback`, GN-6bu). 호출할 수 없는 값은 모든 target에서 코어의 한 형식인
+  `<subject> is not a function`(`BindingError::NotAFunction`)이며, map entry의 subject는 map의 모든 자리에서
+  `<map subject>.<key>`(`binding_core::entry_subject`)다: parameter `functions`의 함수가 아닌 entry `shout`은
+  `functions.shout is not a function`이다. 이유: 메시지가 map만, 그리고 target마다의 언어 낱말을 이름해서 Python에서
+  `functions is not an instance of a callable`이었고, 소비자의 계약은 `functions.shout is not a function`을 기대했다
+  (B2.475). 호출은 인자를 내보내고 결과를 들이며, 언어 코드의 예외나 호출
   중 바인딩의 실패는 GN-6d대로 `Raised`로 코어에 간다. 함수 타입의 parameter나 반환에 있는 다른 라이브러리의 record는
   list, map, optional 안에 있어도 module `library_<library>`의 `out_<record>`와 `in_<record>`로 변환하고(GN-4c), crate는
   member의 parameter에서처럼 그 변환을 정의한다. crate는 자기가 정의한 변환만 부른다. Python은 호출 가능한 객체를 함수 안에 갖고 parameter를
@@ -1359,7 +1364,12 @@
   인스턴스의 읽기 전용 own property, PHP에서 선언한 클래스의 private property 위의 메서드다. 언어 코드가 직접 만든
   인스턴스에는 값이 없다: Python은 `None`, PHP는 `null`을 준다. 언어 코드가 message, kind, status, errno로 오류를 만드는
   category 클래스와 오류 unit의 생성자(GN-10)는 오류를 만들기 전에 인자를 판정한다: message는 text이고(B-3), kind는 text이며
-  그 클래스의 kind 중 하나이고, status와 errno는 각각 없거나 null(`None`, `undefined`)이거나 bool이 아닌 정수다. 클래스의
+  그 클래스의 kind 중 하나이고, status와 errno는 각각 없거나 null(`None`, `undefined`)이거나 bool이 아닌 정수다. Node와
+  WASM의 `.d.ts`는 각 category 클래스에 그 생성자를 `constructor(message: string, kind: string, status?: number | null,
+  errno?: number | null)`로 선언하고, 오류 unit은 그것을 상속한다. 이유: `.d.ts`가 생성자를 선언하지 않아
+  TypeScript가 `Error`나 `RangeError`의 생성자를 써서, 실행되는 `new XValueError(message, kind)`를 거부했다(B2.514). Node와 WASM의
+  runtime은 호출자가 뺀 status나 errno에 null을 주므로 각각은 선언된 타입의 값이다. 이유: runtime이 `.d.ts`의 타입
+  `number | null`이 담지 않는 `undefined`를 저장했다(B2.522). 클래스의
   kind는 binding이 바로 그 클래스의 인스턴스로 일으키는 kind다: 오류 unit은 `class`가 그 unit을 가리키는 `errors.kinds` 행의
   kind이며, 그 unit을 상속하는 unit의 행은 binding이 그 unit의 인스턴스로 일으키므로 들지 않는다. category 클래스는 그
   category의 `class` 없는 행(자기 행과 `library`가 있는 행)의 kind, 그 category의 E-1a kind, 그리고 category가 그것인 다른
@@ -2489,7 +2499,10 @@
   생성자와 property의 case를 실행한다. callback을 받는 member에는 K-2 시험이 있다:
   member가 없는 객체는 kind `invalid_callback`, callback이 던진 예외는 같은 객체로 호출자에게 가고, 다른 타입의 결과는 바인딩
   kind다. 단, callback의 member가 값 alias를 돌려주면 이 시험을 생성하지 않는다. alias의 코어가 모든 값을 판정하므로(B-1)
-  거부된 결과의 kind는 alias의 것이기 때문이다. 그 밖의 인자는 목록에 항목이 하나 있는 자리표시 값이다. 던진
+  거부된 결과의 kind는 alias의 것이기 때문이다. 그 밖의 인자는 목록에 항목이 하나 있는 자리표시 값이다. 다른 레포의
+  callback unit(GN-6s) member의 반환 타입은 소유 레포의 타입이므로 생성기는 그것을 소유 계약에서 읽고, 소유 레포의 값
+  alias도 그런 alias다. 이유: Node가 store.get의 `php_value`를 아무 unit도 가리키지 않는 consumer의 계약에서
+  읽어 이 시험을 생성했고, 호출은 php-serialization의 `unsupported_value`를 던졌다(B2.513). 던진
   예외와 다른 타입의 결과 시험은 코어 경로가 callback의 실패를 돌려주는 member(GN-7, `core.failure`)에만 생성한다. 그런 member만 호출
   중에 callback을 부르기 때문이다. `keeps`가 있는 parameter로 callback을 받고 다른 방식으로 실패하지 않는 member는
   그것을 나중 member를 위해 보관하므로, callback이 실행되기 전에 호출이 돌아온다. K-2는 binding 자신의 요구이며 case에 기대지 않는다.
@@ -2712,6 +2725,9 @@
   값이다. Python, Node, PHP의 시험은 소유 레포의 value class에 하듯(GN-6x) 소유 패키지를 import해 그 패키지로 그것들을
   부르고, Node는 기다리는 소유 member를 await한다. member는 생성기가 그 target에 대해 소유 계약에서 받는 것이다: 소유 레포가
   `only`로 그 target에서 뺀 member나 생성기가 소유 계약에서 거부하는 member는 그 이유로 실패하는 case 시험이 된다(GN-13e).
+  소유 레포가 `only`로 그 target에서 뺀 parameter(Q-4)는 이 계약의 member와 같은 규칙으로 그 target의 호출 인자가 아니므로,
+  그것을 주는 case의 키는 거기에 쓰지 않는다. 이유: 소비자의 Go 시험이 Python과 Node만 취소를 받는 session-store의
+  `Open(nil, cookie)`를 `Open(cookie)`에 대고 불렀다(B2.512).
   아직 생성하지 않으며 각각 이름을 대고 실패하는 case 시험이 되는 것: 소유 레포의 function, 소유 레포 internal unit의
   member, 소유 레포의 enum·record·variant·callback인 인자, `then` 호출의 faults. Go와 WASM은 그 parameter 자체를
   거부하므로(GN-6s) 그런 instance를 쓰지 않는다. CK-22는 이 계약의 member만 읽으므로 `binding check`는 그런 값을 판정하지

@@ -235,6 +235,12 @@ pub enum BindingError {
         /// The language class that the parameter takes.
         expected: String,
     },
+    /// A value of a function type that is not a function of the language (E-1a, GN-6z, B2.475): one message,
+    /// `<subject> is not a function`, in every target. Kind `invalid_argument_type`, category `type`.
+    NotAFunction {
+        /// The parameter, field or entry, such as `functions.shout` for the entry `shout` of a map `functions`.
+        subject: String,
+    },
     /// A call reached an object that a `self` member already consumed (E-1a). Kind `consumed`, category `type`.
     Consumed {
         /// The class of the consumed object.
@@ -284,7 +290,8 @@ impl BindingError {
             Self::DirectConstruction { .. }
             | Self::InvalidCallback { .. }
             | Self::Consumed { .. }
-            | Self::InvalidArgumentType { .. } => Category::Type,
+            | Self::InvalidArgumentType { .. }
+            | Self::NotAFunction { .. } => Category::Type,
             Self::Busy { .. } | Self::WrongThread { .. } => Category::Busy,
             Self::Internal { .. } => Category::Internal,
         }
@@ -300,7 +307,7 @@ impl Kinds for BindingError {
             Self::DirectConstruction { .. } => "direct_construction",
             Self::InvalidCallback { .. } => "invalid_callback",
             Self::Consumed { .. } => "consumed",
-            Self::InvalidArgumentType { .. } => "invalid_argument_type",
+            Self::InvalidArgumentType { .. } | Self::NotAFunction { .. } => "invalid_argument_type",
             Self::Busy { .. } => "busy",
             Self::WrongThread { .. } => "wrong_thread",
             Self::Internal { .. } => "internal",
@@ -347,6 +354,7 @@ impl fmt::Display for BindingError {
             }
             Self::Consumed { class } => write!(f, "{class} was consumed by an earlier call"),
             Self::InvalidArgumentType { subject, expected } => write!(f, "{subject} is not an instance of {expected}"),
+            Self::NotAFunction { subject } => write!(f, "{subject} is not a function"),
             Self::Busy { class } => write!(f, "{class} has a call in progress"),
             Self::WrongThread { subject } => write!(f, "{subject} was called from a thread other than its owner"),
             Self::Internal { detail } => write!(f, "internal error: {detail}"),
@@ -432,6 +440,19 @@ mod tests {
             class: String::from("Session"),
         };
         assert_eq!(error.to_string(), "Session has a call in progress");
+    }
+
+    #[test]
+    fn a_value_that_is_not_a_function_is_invalid_argument_type_and_says_so() {
+        // E-1a, GN-6z, B2.475: one form in every target, with the kind and category of InvalidArgumentType.
+        let error = BindingError::NotAFunction {
+            subject: crate::entry_subject("functions", "shout"),
+        };
+        assert_eq!(error.to_string(), "functions.shout is not a function");
+        assert_eq!(error.kind(), "invalid_argument_type");
+        assert_eq!(error.category(), Category::Type);
+        assert_eq!(error.status(), None);
+        assert_eq!(error.errno(), None);
     }
 
     fn refused(subject: &str, member: &str, declared: Declared, given: &[&str], named_only: bool) -> BindingError {
