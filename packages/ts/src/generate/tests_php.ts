@@ -904,7 +904,8 @@ ${kase.raises.status === undefined ? '' : `            self::assertSame(${kase.r
     {${caseFileLines(kase.files, kase.listener)}${serviceStart(kase.service)}${receiverMade.lines}${before}${check}${after}${afterChecks(kase.after, '$receiver')}${serviceEnd(kase.service)}${kept(fn)}
     }`);
     }
-    const values = (arg: { type: unknown }): string => placeholder(model, ctx, arg.type as never);
+    // GN-13t: an argument of a class of the G-7 test is the case value of a case of the member, where one gives it.
+    const values = (arg: Fn['args'][number]): string => otherValue(model, ctx, arg, classGiven);
     const callback = callbackArg(model, fn);
     // GN-13y: the other arguments of a case that reaches the callback, where one exists.
     const reaching = callbackReachingArgs(model, fn);
@@ -956,23 +957,27 @@ ${kase.raises.status === undefined ? '' : `            self::assertSame(${kase.r
     }
     // N-4: a hook takes the arguments of the language's protocol, so it has no G-7 test.
     if (fn.kind === 'property' || fn.special !== undefined || !reachable) continue;
+    // G-7: the receiver is made once, as a local, and every call of the test runs on it: a receiver that holds state
+    // cannot be made twice in one case folder (orm: StepRunner.run, "table owner already exists").
+    const once = receiverOfCase(sample);
+    const onOnce = (args: string): string => invoke(fn, args, once.expr);
     append(`
     public function testG7${name}CountsAndNamesItsArguments(): void
-    {${fn.args.every((a) => a.default !== undefined) ? '' : `
+    {${once.lines}${fn.args.every((a) => a.default !== undefined) ? '' : `
         try {
-            ${qualified('')};
+            ${onOnce('')};
             self::fail('no error for no argument');
         } catch (\\ArgumentCountError $error) {
             self::assertStringContainsString('expects', $error->getMessage());
         }`}
         try {
-            ${qualified([...fn.args.map(values), 'null'].join(', '))};
+            ${onOnce([...fn.args.map(values), 'null'].join(', '))};
             self::fail('no error for one argument more');
         } catch (\\ArgumentCountError $error) {
             self::assertStringContainsString('expects', $error->getMessage());
         }
         try {
-            ${qualified([callArgs(model, ctx, fn, values), 'notAParameter: 1'].filter((a) => a !== '').join(', '))};
+            ${onOnce([callArgs(model, ctx, fn, values), 'notAParameter: 1'].filter((a) => a !== '').join(', '))};
             self::fail('no error for an unknown name');
         } catch (\\Error $error) {
             self::assertSame(\\Error::class, $error::class);

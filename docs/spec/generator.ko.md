@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 69df7b8234f1f706382e8c64f846e6351418b86ceffad45116b6a17c0f66506a -->
+<!-- source-sha256: e1a292b5b0f5abeb746e2ae85106466eb912b1a8d83d97b724d4cba87f9b5ba0 -->
 # 생성기
 
 [English](generator.md)
@@ -2761,6 +2761,18 @@
   주는 것은 class의 constructor의 case가 아니라 그 member의 case다. 그 member가 받는 instance를 말하는 것은 그것뿐이기
   때문이다. 이유: class의 core는 첫 constructor의 placeholder 인자를 거부할 수 있고, crud-ui는 JSON null의
   `FormTemplate.from_json`을 `invalid_form_input`으로 거부해서, B-3 시험은 검사하는 호출 전에 그 인자에서 실패했다.
+  생성기가 어떤 target에서 쓰지 못하는 case 값은 거기서 값을 주지 않고 placeholder가 선다. 그 case는 자기 시험이 이름을
+  대며 실패하고(G-4, GN-13e), 다른 규칙의 시험은 쓰인다.
+  member의 G-7 시험과 Python의 GN-11a 시험도 class의 인자를 같은 규칙으로 준다(B2.463). B-5c 시험은 필요한 class의
+  instance 각각(poison하거나 두 자리에 주는 instance, 그 instance를 인자로 받는 호출의 receiver, GN-8a의 다른
+  instance)을 아무 receiver나 필요한 시험이 만드는 대로 만든다. 곧 raise하지 않고, fault를 걸지 않고, 파일을 쓰지 않고,
+  service에 대해 돌지 않는 그 class의 첫 case의 factory 인자로 만든다(GN-13f). 그 class의 어느 case도 instance를 만들지
+  않을 때만 GN-13의 placeholder가 그 자리에 선다. 이유: orm의 core는 text `a` 셋의 `Schema.load`를 거부해서, `Query`와
+  `StepRunner`의 G-7과 B-5c 시험은 검사하는 인자 수나 poison entry point 전에 인자나 instance에서 실패했다.
+  method의 G-7 시험은 receiver를 시험의 지역 변수로 한 번 만들고, 시험의 모든 호출을 그 지역 변수에 한다(PHP, Python,
+  Node, WASM; B2.463). 이유: 상태를 가진 receiver는 한 case 폴더에서 두 번 만들 수 없고, orm `StepRunner.run`의 G-7
+  시험은 세 호출이 각각 receiver를 만들어서 둘째가 `table owner already exists`로 실패했다. G-7의 호출은 core가 돌기
+  전에 실패하므로 하나뿐인 receiver를 그대로 둔다.
 - **GN-13z** Python의 U-2와 T-1 시험은 두 결과를 `assertEqual`이 아니라 `_same`으로 비교한다. `_same`은 다른 저장소의 값
   class instance를 in row의 member가 읽는 것으로 비교한다(B2.121). 이유: 소유자의 class는 `__eq__`를 선언하지 않아도
   되고 `polyspec.json.Value`는 선언하지 않아서, 같은 두 결과가 identity로 비교되어 달랐다(crud-ui validator). token으로

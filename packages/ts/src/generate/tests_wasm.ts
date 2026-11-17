@@ -460,20 +460,25 @@ test('N-4: ${name} ${kase.id}', () => {${receiverOfCase(kase.receiver).lines}
     }
     // N-4: a hook takes the arguments of the language's protocol, so it has no G-7 test.
     if (fn.kind === 'property' || fn.special !== undefined || !reachable) continue;
-    const values = (arg: { type: unknown }): string => placeholder(model, ctx, arg.type as never);
+    // G-7: the receiver is made once, as a local, and every call of the test runs on it: a receiver that holds state
+    // cannot be made twice in one case folder (orm: StepRunner.run, "table owner already exists").
+    const once = receiverOfCase(sample);
+    const onOnce = (args: string): string => invoke(fn, args, once.expr);
+    // GN-13t: an argument of a class of the G-7 test is the case value of a case of the member, where one gives it.
+    const values = (arg: Fn['args'][number]): string => otherValue(model, ctx, arg, classGiven);
     const record = fn.record;
     const recordTests = record === undefined ? '' : `
   const fields = { ${(record.unit.fields ?? []).map((f) => `${langName('wasm', f.name, 'variable')}: ${placeholder(model, ctx, f.type)}`).join(', ')} };
   const positional = [${fn.args.filter((a) => !a.field).map(values).join(', ')}];
-  assert.throws(() => ${target('...positional, { ...fields, notAMember: 1 }')}, (error) => error.constructor === TypeError && /no member notAMember/.test(error.message));
+  assert.throws(() => ${onOnce('...positional, { ...fields, notAMember: 1 }')}, (error) => error.constructor === TypeError && /no member notAMember/.test(error.message));
   for (const field of [${(record.unit.fields ?? []).filter((f) => f.default === undefined).map((f) => jsString(langName('wasm', f.name, 'variable'))).join(', ')}]) {
     const lacking = { ...fields, [field]: undefined };
-    assert.throws(() => ${target('...positional, lacking')}, (error) => error.constructor === TypeError && /lacks the member/.test(error.message), field);
+    assert.throws(() => ${onOnce('...positional, lacking')}, (error) => error.constructor === TypeError && /lacks the member/.test(error.message), field);
   }`;
     emit(`
-test('G-7: ${name} counts and names its arguments', () => {${fn.params.every((p) => p.default !== undefined) ? '' : `
-  assert.throws(() => ${target('')}, (error) => error.constructor === TypeError && /takes/.test(error.message));`}
-  assert.throws(() => ${target([callArgs(model, ctx, fn, values), 'null'].filter((a) => a !== '').join(', '))}, (error) => error.constructor === TypeError && /takes/.test(error.message));${recordTests}
+test('G-7: ${name} counts and names its arguments', () => {${once.lines}${fn.params.every((p) => p.default !== undefined) ? '' : `
+  assert.throws(() => ${onOnce('')}, (error) => error.constructor === TypeError && /takes/.test(error.message));`}
+  assert.throws(() => ${onOnce([callArgs(model, ctx, fn, values), 'null'].filter((a) => a !== '').join(', '))}, (error) => error.constructor === TypeError && /takes/.test(error.message));${recordTests}
 });`);
   }
   // GN-6u: an object goes through the native row and back as the same object, and the binding releases its Native.

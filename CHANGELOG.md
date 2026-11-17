@@ -5,6 +5,7 @@
 
 ## Unreleased
 
+- The generated G-7 test of a member and the Python test of GN-11a give an argument of a class the case value of a case of the member, and a B-5c test makes each instance of its class from the first case of the class that does not raise, where they gave the placeholder of the first constructor, which a core may refuse (GN-13t, B2.463). The G-7 test of a method makes its receiver once and runs every call on it, so a receiver that holds state is not made again in the same case folder.
 
 
 ## 0.0.20

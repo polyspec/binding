@@ -3368,7 +3368,19 @@ the design ids are those of the binding design.
   constructor of the class, supplies the value, because only it states an instance that the member takes. Why: the
   core of a class may refuse the placeholder arguments of its first constructor, and crud-ui refused
   `FormTemplate.from_json` of a JSON null with `invalid_form_input`, so the B-3 test failed in its argument before the
-  call that it checks.
+  call that it checks. A case value that the generator does not write in a target supplies no value there, and the
+  placeholder stands: that case fails its own test by name (G-4, GN-13e), and the tests of the other rules are written.
+  The G-7 test of a member, and the Python test of GN-11a, give an argument of a class by the same rule (B2.463). A B-5c test makes each instance of a class that it needs (the instance that it poisons or gives
+  at two places, the receiver of the call that takes that instance as an argument, and the other instance of GN-8a)
+  as the tests that need any receiver do: from the factory arguments of the first case of the class that does not
+  raise, arms no faults, writes no files and runs against no service (GN-13f); the placeholder of GN-13 stands there
+  only when no case of the class makes an instance. Why: the core of orm refuses `Schema.load` of three texts `a`, so
+  the tests of G-7 and B-5c of `Query` and `StepRunner` failed in an argument or in the instance, before the argument
+  count or the poison entry point that they check.
+  The G-7 test of a method makes its receiver once, as a local of the test, and runs every call of the test on that
+  local (PHP, Python, Node, WASM; B2.463). Why: a receiver that holds state cannot be made twice in one case folder,
+  and the three calls of the G-7 test of orm `StepRunner.run` each made the receiver, so the second failed with
+  `table owner already exists`; the calls of G-7 fail before the core runs, so they leave the one receiver as it was.
 - **GN-13z** The Python U-2 and T-1 tests compare the two outcomes by `_same`, which compares an instance of a value
   class of another repository by what the members of its in row read (B2.121), and not by `assertEqual`. Why: the class
   of the owner need not declare `__eq__`, and `polyspec.json.Value` does not, so two equal results compared by identity

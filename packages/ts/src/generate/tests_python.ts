@@ -926,7 +926,9 @@ ${kase.raises.status === undefined ? '' : `        self.assertEqual(error.status
       append(`
     def test_gn13e_${name}_${caseSnake(kase.id)}(self) -> None:${caseFileLines(kase.files, kase.listener)}${serviceStart(kase.service)}${receiverMade.lines}${before}${check}${after}${afterChecks(kase.after, 'receiver')}${serviceEnd(kase.service)}${kept(fn)}`);
     }
-    const values = (arg: { type: unknown }): string => placeholder(model, ctx, arg.type as never);
+    // GN-13t: an argument of a class of the G-7 and GN-11a tests is the case value of a case of the member, where one
+    // gives it.
+    const values = (arg: Fn['args'][number]): string => otherValue(model, ctx, arg, classGiven);
     const callback = callbackArg(model, fn);
     // GN-13y: the other arguments of a case that reaches the callback, where one exists.
     const reaching = callbackReachingArgs(model, fn);
@@ -986,24 +988,30 @@ ${kase.raises.status === undefined ? '' : `        self.assertEqual(error.status
     const pyo3New = bare && fn.kind === 'constructor';
     const extra = pyo3New ? 'takes 0 positional arguments' : bare ? 'takes no arguments' : 'positional';
     const unknown = pyo3New ? 'unexpected keyword argument' : bare ? 'takes no keyword arguments' : 'unexpected keyword';
+    // G-7: the receiver is made once, as a local, and every call of the test runs on it: a receiver that holds state
+    // cannot be made twice in one case folder (orm: StepRunner.run, "table owner already exists").
+    const once = receiverOfCase(sample);
+    const onOnce = (args: string): string => invoke(fn, args, once.expr);
     append(`
-    def test_g7_${name}_counts_and_names_its_arguments(self) -> None:${fn.args.every((a) => a.default !== undefined) ? '' : `
+    def test_g7_${name}_counts_and_names_its_arguments(self) -> None:${once.lines}${fn.args.every((a) => a.default !== undefined) ? '' : `
         with self.assertRaisesRegex(TypeError, "missing"):
-            ${target('')}`}
+            ${onOnce('')}`}
         with self.assertRaisesRegex(TypeError, "${extra}"):
-            ${target(callArgs(model, ctx, fn, values, 'None'))}
+            ${onOnce(callArgs(model, ctx, fn, values, 'None'))}
         with self.assertRaisesRegex(TypeError, "${unknown}"):
-            ${target([callArgs(model, ctx, fn, values), 'not_a_parameter=1'].filter((a) => a !== '').join(', '))}`);
+            ${onOnce([callArgs(model, ctx, fn, values), 'not_a_parameter=1'].filter((a) => a !== '').join(', '))}`);
     // GN-11a: a keyword-only argument passed by position is a call of the wrong shape, the TypeError of Python and
     // no kind of the contract.
     const keywordOnly = fn.args.find((a) => a.field);
     if (keywordOnly !== undefined) {
       const { record: _record, ...rest } = fn;
       const byPosition: Fn = { ...rest, args: fn.args.map((a) => ({ ...a, field: false })) };
+      // The case of GN-13t names the arguments of the member, which the arguments by position stand for in order.
+      const named = new Map(byPosition.args.map((a, i) => [a, fn.args[i] ?? a]));
       append(`
     def test_gn11a_${name}_takes_${langName('python', keywordOnly.name, 'variable')}_by_keyword_only(self) -> None:
         with self.assertRaisesRegex(TypeError, "positional") as caught:
-            ${target(callArgs(model, ctx, byPosition, values))}
+            ${target(callArgs(model, ctx, byPosition, (arg) => values(named.get(arg) ?? arg)))}
         self.assertIs(type(caught.exception), TypeError)`);
     }
   }

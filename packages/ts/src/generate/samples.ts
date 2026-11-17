@@ -2124,6 +2124,13 @@ export function sampleReceiver(model: Model, fn: Fn): Receiver | undefined {
   return undefined;
 }
 
+// GN-13t: an instance of a class for a test that needs any instance of it (B-5c): the receiver of sampleReceiver of
+// its first member that has a receiver, or undefined when no case of the class makes one.
+export function sampleInstance(model: Model, object: ObjectClass): Receiver | undefined {
+  const member = object.members.find((m) => m.receiver !== undefined);
+  return member === undefined ? undefined : sampleReceiver(model, member);
+}
+
 // N-4: the cases of a stringify that do not raise, each with the instance of its factory arguments and the text that
 // the language's string form gives.
 export function stringCases(model: Model, fn: Fn): { id: string; receiver: Receiver; result: string }[] {
@@ -2638,7 +2645,16 @@ export function classCaseArgs(model: Model, fn: Fn): ReadonlyMap<Arg, unknown> |
 // GN-13t: the value of another argument of a test that gives one argument a value of its own: the case value of an
 // argument of a class in the case of classCaseArgs, and the placeholder of GN-13 otherwise.
 export function otherValue(model: Model, ctx: Context, arg: Arg, given: ReadonlyMap<Arg, unknown> | undefined, rich = false): string {
-  if (given !== undefined && given.has(arg) && objectUnit(model, arg.type) !== undefined) return caseValue(model, ctx, arg, given) ?? placeholder(model, ctx, arg.type, rich);
+  if (given !== undefined && given.has(arg) && objectUnit(model, arg.type) !== undefined) {
+    // G-4: a case value that the generator does not write in the target fails the test of its own case by name
+    // (GN-13e) and supplies no value here, so the placeholder stands, as when no case exists.
+    try {
+      const value = caseValue(model, ctx, arg, given);
+      if (value !== undefined) return value;
+    } catch (error) {
+      if (!(error instanceof Unsupported)) throw error;
+    }
+  }
   return placeholder(model, ctx, arg.type, rich);
 }
 

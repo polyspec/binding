@@ -5,7 +5,7 @@
 // injection point, the test arms it before the refused call: the next call takes the arming (GN-8a).
 
 import { type Arg, type Fn, type Model, type ObjectClass, heldParam, kindText, places, pointName, unitOf } from './model.ts';
-import { type Context, callArgs, placeholder } from './samples.ts';
+import { type Context, callArgs, classCaseArgs, otherValue, placeholder, sampleInstance } from './samples.ts';
 
 export interface PoisonTest {
   object: ObjectClass;
@@ -39,11 +39,20 @@ export function heldTests(
   invoke: (fn: Fn, args: string, receiver: string) => string,
   held: string,
 ): { poison: PoisonTest[]; busy: BusyTest[] } {
-  const instanceOf = (object: ObjectClass): string => placeholder(model, ctx, { unit: object.unit.id });
+  // GN-13t: an instance of the class is made from the first case of the class that does not raise, because the core
+  // may refuse the placeholder arguments of its first factory (orm: Schema.load of three texts "a"); the placeholder
+  // of GN-13 stands only when no case of the class makes an instance.
+  const instanceOf = (object: ObjectClass): string => {
+    const sample = sampleInstance(model, object);
+    return sample === undefined || ctx.instanceNew === undefined ? placeholder(model, ctx, { unit: object.unit.id }) : ctx.instanceNew(sample);
+  };
   const objectOf = (fn: Fn): ObjectClass | undefined => model.objects.find((o) => o.unit === fn.unit);
   const takes = (fn: Fn, object: ObjectClass): Arg | undefined => fn.args.find((a) => !a.field && heldParam(model, a.type)?.unit === object.unit);
-  const callWith = (fn: Fn, receiver: string, arg?: Arg): string =>
-    invoke(fn, callArgs(model, ctx, fn, (a) => (a === arg ? held : placeholder(model, ctx, a.type))), receiver);
+  // The call that gives the argument `arg` the value `value`, and every other argument its value of GN-13t.
+  const callWith = (fn: Fn, receiver: string, arg?: Arg, value: string = held): string => {
+    const classGiven = classCaseArgs(model, fn);
+    return invoke(fn, callArgs(model, ctx, fn, (a) => (a === arg ? value : otherValue(model, ctx, a, classGiven))), receiver);
+  };
   // A member whose only place is its receiver: a call that fails for the receiver alone.
   const onReceiver = (object: ObjectClass): Fn | undefined =>
     object.members.find((m) => m.kind === 'property' && m.receiver !== undefined) ??
@@ -75,7 +84,7 @@ export function heldTests(
       const inject = point?.inject.find((i) => i !== 'short');
       const armed = point === undefined || filled === undefined || inject === undefined
         ? undefined
-        : { faults: JSON.stringify([{ point: pointName(model, point), kind: inject }]), again: callWith(fn, held), kind: kindText(filled.variant), category: filled.category };
+        : { faults: JSON.stringify([{ point: pointName(model, point), kind: inject }]), again: callWith(fn, held, arg, instanceOf(object)), kind: kindText(filled.variant), category: filled.category };
       busy.push({ fn, instance: instanceOf(object), call: callWith(fn, held, arg), after: receiverFn === undefined ? undefined : callWith(receiverFn, held), armed });
     }
   }
