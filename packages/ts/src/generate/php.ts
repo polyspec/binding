@@ -2147,7 +2147,7 @@ pub fn alias_in_${rustField(alias.unit.name)}(value: &Zval) -> Result<(), PhpExc
 pub fn alias_round_${rustField(alias.unit.name)}(value: &Zval) -> Result<Zval, PhpException> {
     guard(|| {
         let value: ${alias.unit.core_type ?? ''} = in_${rustField(alias.unit.name)}(value, "value")?;
-        out_${rustField(alias.unit.name)}(&value)
+        out_${rustField(alias.unit.name)}(value)
     })
 }
 `).join('')}

@@ -14149,3 +14149,42 @@ test('B2.498: every helper fn of a generated binding crate has a caller in that 
     for (const target of targets) assert.deepEqual(uncalledHelpers(wholeConsumerTarget(consumer.name, inputs, target)), [], `${consumer.name} ${target}`);
   }
 });
+
+// B2.492 (GN-6af, GN-6x): clippy -D warnings refused the PHP crate of the sample. php_value_class took owned, the
+// entries of the maps of a value class of another repository, for every contract that reads values, also where no in
+// row has a map, so the parameter had no use (unused_variables) and, as a &mut Vec that the body did not push to,
+// clippy named it ptr_arg. The alias round trip of GN-13e gave the core value that it had just made to the out function
+// of the alias as &value, and that function takes impl Borrow, so clippy named the borrow of a value used no more
+// needless_borrows_for_generic_args; in each target that writes the round trip.
+const clippyFindings = (out: ReadonlyMap<string, string | Buffer>): string[] => {
+  const found: string[] = [];
+  for (const [path, content] of out) {
+    if (!path.endsWith('.rs')) continue;
+    const source = String(content);
+    const at = source.search(/^fn php_value_class\(/m);
+    if (at >= 0) {
+      const head = source.slice(at, source.indexOf(' {\n', at));
+      const body = source.slice(source.indexOf(' {\n', at), source.indexOf('\n}\n', at));
+      for (const [, name, type] of head.matchAll(/[(,] ?([a-z_]+): ([^,)]+(?:<[^>]*(?:<[^>]*>[^>]*)*>)?)/g)) {
+        if (!new RegExp(`\\b${name}\\b`).test(body)) found.push(`${path}: php_value_class does not use ${name}`);
+        if (type?.startsWith('&mut Vec<') && !new RegExp(`\\b${name}\\.push\\(`).test(body)) found.push(`${path}: php_value_class takes ${name} as &mut Vec and pushes to none`);
+      }
+    }
+    const generic = new Set([...source.matchAll(/^fn (out_[a-z0-9_]+)(?:<[^>]*>)?\([^)]*value: impl Borrow</gm)].map((m) => m[1]));
+    for (const [call, name] of source.matchAll(/^\s+(out_[a-z0-9_]+)\((?:[a-z_]+, )?&value\)\n\s+\}\)/gm)) {
+      if (generic.has(name ?? '')) found.push(`${path}: ${call?.trim()}`);
+    }
+  }
+  return found;
+};
+test('B2.492: the PHP host and the alias round trip give clippy no unused parameter, no &mut Vec where a slice will do and no needless borrow, in the sample and the consumer copies (GN-6af, GN-6x, GN-13e, clippy)', () => {
+  const targets: Lang[] = ['php', 'python', 'node', 'wasm'];
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/sample/${path}`, import.meta.url), 'utf8'));
+  const sample = generateTargets({ contract: read('packages/rust/interface.json'), version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: new Map([['contracts/cases.json', read('contracts/cases.json')]]), targets });
+  assert.match(text(sample, 'packages/php-ext/generated/lib.rs'), /^fn php_value_class\(/m, 'the sample reads the values of weight in the PHP host');
+  assert.deepEqual(clippyFindings(sample), [], 'sample');
+  for (const consumer of WHOLE_CONSUMERS) {
+    const inputs = wholeConsumer(consumer);
+    for (const target of targets) assert.deepEqual(clippyFindings(wholeConsumerTarget(consumer.name, inputs, target)), [], `${consumer.name} ${target}`);
+  }
+});
