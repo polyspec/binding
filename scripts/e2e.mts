@@ -587,20 +587,6 @@ const judgedCount = (t: Lang, what: string, passed: number, failedTests: FailedT
 // The failed tests of a run, and the run itself as a failure where it failed without a failed test.
 const withRun = (failedTests: FailedTest[], status: number | null, output: string): FailedTest[] => (status !== 0 && failedTests.length === 0 ? [{ name: RUN_FAILED, text: output }] : failedTests);
 
-// GN-14a: a run of go test -json, which prints its command and its output, fails at a package that failed without a
-// failed test, and judges the count of the tests that passed, failed and were skipped.
-function goTestJudged(goTool: string, what: string, args: string[], cwd: string, env: NodeJS.ProcessEnv): void {
-  process.stdout.write(`$ ${goTool} test -json -count=1 ${args.join(' ')}\n`);
-  const goTest = spawnSync(goTool, ['test', '-json', '-count=1', ...args], { cwd, encoding: 'utf8', maxBuffer: 1 << 28, env });
-  const read = readGoTestEvents(goTest.stdout);
-  process.stdout.write(read.printed);
-  process.stdout.write(goTest.stderr);
-  const failure = goPackageFailure(read, goTest.status);
-  if (failure !== undefined) throw new Error(failure);
-  const { counts, packageFailures } = read;
-  judgedCount('go', what, counts.pass.length, withRun(goFailures(read), goTest.status, goTest.stderr), counts.fail.length + (goTest.status !== 0 && counts.fail.length === 0 && packageFailures.length === 0 ? 1 : 0), counts.skip.length, counts.skip);
-}
-
 // GN-14 (B2.402): a repository with refused.json is the check that the compiler refuses its binding: cargo check of
 // the crate of each target must fail with the rustc code that it names, which counts as the test of the target, and
 // the run ends there, since no later step can build that crate.
@@ -1210,6 +1196,21 @@ function goCarry(carried: readonly CarriedCopy[], platform: string): Required[] 
 }
 // The consumer of the released form: a module that requires each module of the repository at its tag and nothing
 // else; its test and the tests of every fetched module of `carried` run from the module cache of the run.
+// GN-14a: a run of go test -json, which prints its command and its output, fails at a package that failed without a
+// failed test, and judges the count of the tests that passed, failed and were skipped. It stands after the stop of a
+// lint run, which runs no test before it (B2.432).
+function goTestJudged(goTool: string, what: string, args: string[], cwd: string, env: NodeJS.ProcessEnv): void {
+  process.stdout.write(`$ ${goTool} test -json -count=1 ${args.join(' ')}\n`);
+  const goTest = spawnSync(goTool, ['test', '-json', '-count=1', ...args], { cwd, encoding: 'utf8', maxBuffer: 1 << 28, env });
+  const read = readGoTestEvents(goTest.stdout);
+  process.stdout.write(read.printed);
+  process.stdout.write(goTest.stderr);
+  const failure = goPackageFailure(read, goTest.status);
+  if (failure !== undefined) throw new Error(failure);
+  const { counts, packageFailures } = read;
+  judgedCount('go', what, counts.pass.length, withRun(goFailures(read), goTest.status, goTest.stderr), counts.fail.length + (goTest.status !== 0 && counts.fail.length === 0 && packageFailures.length === 0 ? 1 : 0), counts.skip.length, counts.skip);
+}
+
 function goConsumer(required: readonly Required[], carried: readonly CarriedCopy[], what: string = released): void {
   const consumer = join(goRoot, 'consumer');
   mkdirSync(consumer, { recursive: true });
