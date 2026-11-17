@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 7f0bafab4e77c459f3b7d86fadeb08e324158f75ebc53cbeb76dcf2e6f7643be -->
+<!-- source-sha256: ae6aeb89c4b4e59ba0adfea9ec6c8be528f19f021c9a16095f9a068bd448fa14 -->
 # 생성기
 
 [English](generator.md)
@@ -2405,7 +2405,8 @@
 - **GN-13d** Python, Node, PHP, WASM은 GN-6i, GN-6j, GN-7a의 형태에 대해 다음도 확인한다. U-2: `{literal}`·`{const}`·`{empty}`
   기본값이 있는 parameter와 field마다, 그것을 뺀 호출과 선언된 값을 준 호출이 같은 결과, 또는 같은 클래스와 kind의 실패를
   낸다. 다른 인자는 그 member의 실패하지 않는 첫 case의 것이거나 자리표시 값이다. 이 시험은 언어가 결과를 값으로 비교하는
-  member(class가 아니고 결과가 `none`이 아닌 것)이면서 callback을 받지 않고 hook이 아닌 것에 쓴다. `{computed}` 기본값에는
+  member(class가 아니고 결과가 `none`이 아닌 것)이면서 callback을 받지 않고 hook이 아닌 것에 쓴다. `machine`이 있는
+  member(GN-6ab)도 그런 member다. 두 호출은 그 case의 함수를 받고, 결과 `passthrough`는 함수가 돌려준 값으로 비교한다. `{computed}` 기본값에는
   선언된 값이 없다. 코어가 호출마다 값을 만들므로 두 호출의 결과가 다를 수 있다. `optional` 타입의 `{computed}` 기본값에
   대해서는 같은 member에, Go에서도, 그 parameter나 field를 뺀 호출과 null을 준 호출을 실행하고 각 결과를 버린 뒤 같은
   outcome을 요구한다: 둘 다 실패가 없거나, 같은 클래스와 kind의 실패다. 이 시험은 값을 비교하지 않으며 이름에 그 기본값의

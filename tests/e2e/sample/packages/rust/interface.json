@@ -2156,6 +2156,30 @@
       ]
     },
     {
+      "id": "tag_options",
+      "name": [
+        "tag",
+        "options"
+      ],
+      "module": "",
+      "kind": "record",
+      "visibility": "public",
+      "origin": "generated",
+      "core_type": "polyspec_sample::TagOptions",
+      "fields": [
+        {
+          "name": [
+            "tag"
+          ],
+          "type": "text",
+          "default": {
+            "literal": "plain"
+          },
+          "default_core": "polyspec_sample::DEFAULT_TAG"
+        }
+      ]
+    },
+    {
       "id": "supply",
       "name": [
         "supply"
@@ -2516,6 +2540,56 @@
           "wait": "async_driver",
           "core": {
             "path": "polyspec_sample::Store::audited",
+            "receiver": "&self",
+            "machine": true
+          }
+        },
+        {
+          "id": "store.tagged",
+          "name": [
+            "tagged"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "work"
+              ],
+              "type": {
+                "function": {
+                  "parameters": [
+                    {
+                      "unit": "scope"
+                    }
+                  ],
+                  "returns": {
+                    "passthrough": "T"
+                  },
+                  "async_allowed": true
+                }
+              },
+              "required": true
+            },
+            {
+              "name": [
+                "options"
+              ],
+              "type": {
+                "unit": "tag_options"
+              },
+              "default": {
+                "empty": "object"
+              }
+            }
+          ],
+          "returns": {
+            "passthrough": "T"
+          },
+          "raises": [],
+          "wait": "async_driver",
+          "core": {
+            "path": "polyspec_sample::Store::tagged",
             "receiver": "&self",
             "machine": true
           }
@@ -3134,6 +3208,11 @@
       "member": "store.audited",
       "file": "contracts/cases.json",
       "group": "store_audited"
+    },
+    {
+      "member": "store.tagged",
+      "file": "contracts/cases.json",
+      "group": "store_tagged"
     },
     {
       "member": "store.attempt",

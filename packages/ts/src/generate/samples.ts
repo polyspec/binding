@@ -1632,8 +1632,9 @@ const leftOutNew = (ctx: Context, record: Unit, fields: string[]): string => {
 // the class and kind of the failure): for each argument with a {literal}, {const} or {empty} default, the call that
 // leaves it out and the call that gives its default (U-2); for each source parameter, the call with a text and the
 // call with its UTF-8 bytes (T-1; PHP has one string). The other arguments are those of the first case of the member
-// that does not raise, or placeholders. A member whose result the language cannot compare, or that takes a callback,
-// has no such test (GN-13a).
+// that does not raise, or placeholders, and a function of that case. A member whose result the language cannot
+// compare, or that takes a callback unit, has no such test (GN-13a); a result passthrough of a member with machine is
+// compared as the value that the function of the case returned (B2.486).
 export interface SamePair {
   rule: 'U-2' | 'T-1';
   arg: Arg;
@@ -1645,7 +1646,10 @@ export interface SamePair {
 }
 
 export function samePairs(model: Model, ctx: Context, fn: Fn): SamePair[] {
-  if (!comparable(model, fn.returns) || callbackArg(model, fn) !== undefined || fn.special !== undefined) return [];
+  // GN-6ae, B2.486: a result passthrough of a member with machine is the value that its function returned, which the
+  // case gives, so the two calls compare what the function of the case returned in each.
+  const passed = typeof fn.returns === 'object' && 'passthrough' in fn.returns && fn.machine === true;
+  if (!(passed || comparable(model, fn.returns)) || callbackArg(model, fn) !== undefined || fn.special !== undefined) return [];
   let given: Map<Arg, unknown> | undefined;
   for (const kase of model.cases.get(fn.member.id) ?? []) {
     const record = kase as Record<string, unknown>;

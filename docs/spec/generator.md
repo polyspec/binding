@@ -2950,7 +2950,9 @@ the design ids are those of the binding design.
   field with a `{literal}`, `{const}` or `{empty}` default, that the call without it and the call with its declared
   value give the same result, or the same class and kind of failure; the other arguments are those of the first case
   of the member that does not raise, or placeholders. The test is written for a member whose result the language
-  compares by value (no class, no result of `none`) and that takes no callback and is no hook. A `{computed}` default
+  compares by value (no class, no result of `none`) and that takes no callback and is no hook. A member with
+  `machine` (GN-6ab) is such a member too: both calls take the function of that case, and its result `passthrough`
+  is compared as the value that the function returned. A `{computed}` default
   has no declared value, because the core makes the value at each call, so two calls may give two results. For a
   `{computed}` default of an `optional` type the test, of the same members and in Go too, runs the call without the
   parameter or field and the call with null, drops the result of each and requires the same outcome: both without a

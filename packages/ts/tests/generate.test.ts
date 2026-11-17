@@ -4582,7 +4582,8 @@ test('a record parameter whose every field has a default may be left out as a wh
   const wasmOut = generate({ ...shapes(), version: '0.0.0', coreLib: 'polyspec_shapes', targets: ['wasm'] });
   for (const [files, dir] of [[out, 'packages/ts/generated'], [wasmOut, 'packages/ts/wasm/generated']] as const) {
     assert.match(text(files, `${dir}/index.d.ts`), /export declare function wrap\(text: string, options\?: WrapOptions\): string;/);
-    assert.match(text(files, `${dir}/lib.rs`), /let left: Option<String> = default_in\(&?member_or_undefined\(&?options, "left", "options"\)\?/);
+    // GN-4c: the helper is field_or_undefined in WASM, where member_ begins the entries of the members of a class.
+    assert.match(text(files, `${dir}/lib.rs`), dir.includes('wasm') ? /let left: Option<String> = default_in\(&field_or_undefined\(&options, "left", "options"\)\?/ : /let left: Option<String> = default_in\(member_or_undefined\(options, "left", "options"\)\?/);
     const tests = text(files, `${dir}/tests/generated.test.mjs`);
     assert.match(tests, /test\('GN-13e: wrap options_left_out', \(\) => \{\n[^\n]*pkg\.wrap\('a'\)/);
     assert.match(tests, /test\('U-2: wrap without left is the call with its default'/);
@@ -7958,7 +7959,7 @@ test('Node makes a closure of a function that the machine owns, holds its value 
   // The entry passes the function as it is, and the declarations name the passthrough as a type parameter.
   assert.match(text(out, 'packages/ts/generated/index.cjs'), /return drive\(Reflect\.apply\(original, this, \[args\[0\]\]\)\);/);
   const dts = text(out, 'packages/ts/generated/index.d.ts');
-  assert.match(dts, /export declare class Store \{\n {2}constructor\(\);\n {2}get\(key: string\): string \| null;\n {2}getBlob\(key: string\): unknown \| null;\n {2}count\(\): number;\n {2}transaction<T>\(work: \(arg0: Scope\) => T\): Promise<Awaited<T>>;\n {2}static once<T>\(work: \(arg0: Scope\) => T\): Promise<Awaited<T>>;\n {2}audited<T>\(work: \(arg0: Scope\) => T\): Promise<Awaited<T>>;\n {2}attempt<T>\(work: \(arg0: Scope\) => T\): Promise<boolean>;\n\}/);
+  assert.match(dts, /export declare class Store \{\n {2}constructor\(\);\n {2}get\(key: string\): string \| null;\n {2}getBlob\(key: string\): unknown \| null;\n {2}count\(\): number;\n {2}transaction<T>\(work: \(arg0: Scope\) => T\): Promise<Awaited<T>>;\n {2}static once<T>\(work: \(arg0: Scope\) => T\): Promise<Awaited<T>>;\n {2}audited<T>\(work: \(arg0: Scope\) => T\): Promise<Awaited<T>>;\n {2}tagged<T>\(work: \(arg0: Scope\) => T, options\?: TagOptions\): Promise<Awaited<T>>;\n {2}attempt<T>\(work: \(arg0: Scope\) => T\): Promise<boolean>;\n\}/);
   assert.match(dts, /\n {2}nested<T>\(work: \(arg0: Scope\) => T\): Promise<Awaited<T>>;\n/);
   // A contract without a function parameter has no table, and its machine takes no outcome.
   const plain = text(generateTargets({ contract: JSON.parse(readFileSync(new URL('./fixtures/repo/packages/rust/interface.json', import.meta.url), 'utf8')), version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: new Map([['contracts/cases.json', JSON.parse(readFileSync(new URL('./fixtures/repo/contracts/cases.json', import.meta.url), 'utf8'))]]), targets: ['node'] }), 'packages/ts/generated/lib.rs');
@@ -7989,8 +7990,8 @@ test('B2.486: a member with machine takes a parameter with a default, which the 
     // Node and WASM: the options record is a trailing argument that may be missing or undefined, whose fields are then
     // each left out (GN-6i), as for a member without a machine.
     const lib = text(files, `${dir}/lib.rs`);
-    assert.match(lib, /let retry: Option<u64> = default_in\(&?member_or_undefined\(&?options, "retry", "options"\)\?, \|value\| optional_in\(value, \|value\| uint_in\(value, "retry"\)\)\)\.map\(Option::flatten\)\?;/);
-    assert.match(lib, /let label: Option<String> = default_in\(&?member_or_undefined\(&?options, "label", "options"\)\?, \|value\| text_in\(value, "label"\)\)\?;/);
+    assert.match(lib, /let retry: Option<u64> = default_in\(&?(?:member|field)_or_undefined\(&?options, "retry", "options"\)\?, \|value\| optional_in\(value, \|value\| uint_in\(value, "retry"\)\)\)\.map\(Option::flatten\)\?;/);
+    assert.match(lib, /let label: Option<String> = default_in\(&?(?:member|field)_or_undefined\(&?options, "label", "options"\)\?, \|value\| text_in\(value, "label"\)\)\?;/);
     assert.match(lib, record);
     assert.match(lib, new RegExp(String.raw`let mut machine = binding_core::machine::Driving::new\(${taken.source}\);`));
     assert.match(lib, /let label: Option<String> = default_in\(&?label, \|value\| text_in\(value, "label"\)\)\?;/);
@@ -7999,14 +8000,22 @@ test('B2.486: a member with machine takes a parameter with a default, which the 
     assert.match(dts, /\n {2}transaction<T>\(work: \(arg0: Scope\) => T, options\?: TransactionOptions\): Promise<Awaited<T>>;\n/);
     assert.match(dts, /\n {2}nested<T>\(work: \(arg0: Scope\) => T, label\?: string\): Promise<Awaited<T>>;\n/);
     // The generated tests: a case that gives no options calls the member without them, and the tests of the fields
-    // give the record. No test compares the call without a field with the call with its default, because the member
-    // takes a function (GN-13a).
+    // give the record. The U-2 test compares the call without each field with the call with its default, with the
+    // function of the first case that does not raise.
     const tests = text(files, `${dir}/tests/generated.test.mjs`);
+    assert.match(tests, /\ntest\('U-2: Store\.transaction without label is the call with its default', async \(\) => \{\n {2}assert\.deepStrictEqual\(await settled\(async \(\) => \(await new pkg\.Store\(\)\.transaction\(\(arg0\) => \{[^\n]*\}\)\)\), await settled\(async \(\) => \(await new pkg\.Store\(\)\.transaction\(\(arg0\) => \{[^\n]*\}, \{ label: 'plain' \}\)\)\)\);\n\}\);\n/);
     assert.match(tests, /test\('GN-13e: Store\.transaction the_entries_of_a_function_that_returns_are_committed', async \(\) => \{\n[^\n]*\n[^\n]*await receiver\.transaction\(\(arg0\) => \{[^\n]*return 'done'; \}\)\)\)/);
     assert.match(tests, /test\('GN-12a: Store\.transaction refuses a retry of another type than uint'[^\n]*\n[^\n]*\n[^\n]*\.transaction\(\(arg0\) => \{ return null; \}, \{ retry: bad, label: 'a' \}\)/);
     assert.match(tests, /test\('G-7: Store\.transaction counts and names its arguments'/);
-    assert.doesNotMatch(tests, /U-2: Store\.transaction without/);
   }
+  // Python, PHP and Go write the same test of the call without a field and the call with its default.
+  const python = text(scopedSample(['python'], optioned), 'packages/python/generated/tests/test_generated.py');
+  assert.match(python, /\n {4}def test_u2_store_transaction_label_left_out_is_its_default\(self\) -> None:\n {8}left = _outcome\(lambda: pkg\.Store\(\)\.transaction\([^\n]*\)\)\n {8}right = _outcome\(lambda: pkg\.Store\(\)\.transaction\([^\n]*, label="plain"\)\)\n/);
+  assert.match(python, /def test_u2_store_transaction_retry_left_out_is_its_default\(self\)/);
+  const php = text(scopedSample(['php'], optioned), 'packages/php-ext/generated/tests/GeneratedTest.php');
+  assert.match(php, /\n {4}public function testU2StoreTransactionLabelLeftOutIsItsDefault\(\): void\n/);
+  const go = text(scopedSample(['go'], optioned), 'packages/go/zz_generated_test.go');
+  assert.match(go, /\nfunc TestU2StoreTransactionWithoutLabelIsTheCallWithItsDefault\(t \*testing\.T\) \{\n/);
   // The JavaScript entry takes one or two arguments and gives the addon both places, the second undefined when it is
   // left out.
   assert.match(text(node, 'packages/ts/generated/index.cjs'), /async \['transaction'\]\(arg0, arg1\) \{\n\s+const args = arguments;\n\s+if \(args\.length < 1 \|\| args\.length > 2\) \{\n\s+throw new TypeError\(`Store\.transaction\(\) takes 1 to 2 arguments, \$\{args\.length\} given`\);\n\s+\}\n\s+checkRecord\('Store\.transaction\(\)', 'options', args\[1\], \['retry', 'label'\], \[\]\);\n\s+return drive\(Reflect\.apply\(original, this, \[args\[0\], args\[1\]\]\)\);/);
@@ -8362,7 +8371,7 @@ test('Python makes a closure of a callable, holds its value in the passthrough t
   assert.match(stub, / {4}def transaction\(self, work: Callable\[\[Scope\], object\]\) -> object: \.\.\.\n {4}async def atransaction\(self, work: Callable\[\[Scope\], object\]\) -> object: \.\.\./);
   // A member with a function that may return no awaitable settles its value at once and has no entry of a loop.
   const plain = text(scopedSample(['python'], (contract) => {
-    for (const id of ['store.transaction', 'store.once', 'store.audited', 'scope.nested', 'sample.scoped']) member(contract, id).parameters[0].type.function.async_allowed = false;
+    for (const id of ['store.transaction', 'store.once', 'store.audited', 'store.tagged', 'scope.nested', 'sample.scoped']) member(contract, id).parameters[0].type.function.async_allowed = false;
   }), 'packages/python/generated/lib.rs');
   assert.match(plain, /\|io\| driven\(py_\.detach\([^\n]*\)\), \|value\| Ok\(Ok\(value\)\)\)/);
   assert.doesNotMatch(plain, /on_loop|fn settled|fn awaiting/);
