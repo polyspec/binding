@@ -637,6 +637,29 @@
           "core": "polyspec_sample::size"
         },
         {
+          "id": "sample.weigh",
+          "name": [
+            "weigh"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "value"
+              ],
+              "type": {
+                "unit": "amount"
+              },
+              "required": true
+            }
+          ],
+          "returns": "float",
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_sample::weigh"
+        },
+        {
           "id": "sample.describe",
           "name": [
             "describe"
@@ -1213,24 +1236,6 @@
         },
         {
           "kind": "float",
-          "when": {
-            "predicate": "integral_float",
-            "is": true
-          },
-          "make": {
-            "php": "ratio.constructor",
-            "python": "float",
-            "node": "float",
-            "go": "float",
-            "wasm": "float"
-          }
-        },
-        {
-          "kind": "float",
-          "when": {
-            "predicate": "integral_float",
-            "is": false
-          },
           "make": {
             "php": "float",
             "python": "float",
@@ -1724,15 +1729,6 @@
               "read": "ratio.value"
             }
           ]
-        },
-        {
-          "php": "ratio",
-          "cases": [
-            {
-              "kind": "float",
-              "read": "ratio.value"
-            }
-          ]
         }
       ]
     },
@@ -1913,6 +1909,110 @@
             "path": "polyspec_sample::Ratio::value",
             "receiver": "&self"
           }
+        }
+      ]
+    },
+    {
+      "id": "amount",
+      "name": [
+        "amount"
+      ],
+      "module": "",
+      "kind": "alias",
+      "visibility": "public",
+      "origin": "value",
+      "core_type": "polyspec_sample::Amount",
+      "core": {
+        "in": "polyspec_sample::amount_from_host",
+        "out": "polyspec_sample::amount_to_out"
+      },
+      "in_raises": [
+        "polyspec_sample::Error::Unsupported"
+      ],
+      "out": [
+        {
+          "kind": "float",
+          "when": {
+            "predicate": "integral_float",
+            "is": true
+          },
+          "make": {
+            "php": "ratio.constructor",
+            "python": "float",
+            "node": "float",
+            "go": "float",
+            "wasm": "float"
+          }
+        },
+        {
+          "kind": "float",
+          "when": {
+            "predicate": "integral_float",
+            "is": false
+          },
+          "make": {
+            "php": "float",
+            "python": "float",
+            "node": "float",
+            "go": "float",
+            "wasm": "float"
+          }
+        }
+      ],
+      "in": [
+        {
+          "php": "float",
+          "cases": [
+            {
+              "kind": "float",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "php": "ratio",
+          "cases": [
+            {
+              "kind": "float",
+              "read": "ratio.value"
+            }
+          ]
+        },
+        {
+          "python": "float",
+          "cases": [
+            {
+              "kind": "float",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "node": "number",
+          "cases": [
+            {
+              "kind": "float",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "go": "float64",
+          "cases": [
+            {
+              "kind": "float",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "wasm": "number",
+          "cases": [
+            {
+              "kind": "float",
+              "read": "builtin"
+            }
+          ]
         }
       ]
     },
@@ -3131,6 +3231,16 @@
       "alias": "blob",
       "file": "contracts/cases.json",
       "group": "blob_in"
+    },
+    {
+      "alias": "amount",
+      "file": "contracts/cases.json",
+      "group": "amount_in"
+    },
+    {
+      "member": "sample.weigh",
+      "file": "contracts/cases.json",
+      "group": "weigh"
     },
     {
       "member": "sample.first",

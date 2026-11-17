@@ -965,6 +965,63 @@ pub fn blob_to_out(value: &Blob) -> (OutValue, BlobOut) {
     (OutValue::Bytes(BytesOut::new(value.0.clone())), BlobOut)
 }
 
+/// A float whose out rows make an integral float an instance of ratio in PHP, as the `orm_value` of orm makes an int
+/// an instance of `integer_value` (B2.492), so that the case value of a PHP test is that instance.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Amount(pub f64);
+
+/// The float that a float or an instance of ratio of the language holds (U-7 `in`); any other value is kind
+/// `unsupported`, as orm refuses "an object of the language".
+///
+/// # Errors
+///
+/// Kind `unsupported` for a value that is no float and no instance of ratio.
+pub fn amount_from_host(
+    host: &mut dyn HostValues,
+    value: HostValue,
+) -> Result<Amount, Failure<Error>> {
+    match value {
+        HostValue::Float(value) | HostValue::UntypedNumber(value) => Ok(Amount(value)),
+        // B2.492: an instance of ratio gives its float when it is read.
+        HostValue::Value {
+            kind: ValueKind::Float,
+            handle,
+        } => match host.read(handle).map_err(Failure::Raised)? {
+            HostValue::Float(value) | HostValue::UntypedNumber(value) => Ok(Amount(value)),
+            _other => Err(unsupported("a ratio whose value is no float")),
+        },
+        other => Err(Failure::Kind(Error::Unsupported {
+            what: format!("{other:?}"),
+        })),
+    }
+}
+
+/// The children of an amount, which has none.
+pub struct AmountOut;
+
+impl OutValues for AmountOut {
+    fn item(&mut self, _list: Handle, _index: u64) -> OutValue {
+        OutValue::Null
+    }
+
+    fn entry(&mut self, _map: Handle, _index: u64) -> (OutValue, OutValue) {
+        (OutValue::Null, OutValue::Null)
+    }
+}
+
+/// The language form of an amount (U-7 `out`): its float, which the out rows of PHP make an instance of ratio when it
+/// is integral.
+#[must_use]
+pub fn amount_to_out(value: &Amount) -> (OutValue, AmountOut) {
+    (OutValue::Float(FloatOut::new(value.0)), AmountOut)
+}
+
+/// The float of an amount.
+#[must_use]
+pub fn weigh(value: &Amount) -> f64 {
+    value.0
+}
+
 /// The data itself, which crosses the boundary in and out.
 #[must_use]
 pub fn echo(value: &Data) -> Data {

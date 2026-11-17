@@ -417,14 +417,6 @@
         ]
       },
       "result": "list"
-    },
-    {
-      "id": "an_integral_float_is_a_float",
-      "value": {
-        "kind": "float",
-        "value": 2
-      },
-      "result": "float"
     }
   ],
   "tag_entries": [],
@@ -1549,6 +1541,38 @@
         "status": null,
         "category": "value"
       }
+    }
+  ],
+  "amount_in": [
+    {
+      "id": "a_text_is_no_amount",
+      "value": {
+        "kind": "text",
+        "value": "2"
+      },
+      "raises": {
+        "kind": "unsupported",
+        "status": null,
+        "category": "value"
+      }
+    }
+  ],
+  "weigh": [
+    {
+      "id": "an_integral_float_is_weighed",
+      "value": {
+        "kind": "float",
+        "value": 2
+      },
+      "result": 2
+    },
+    {
+      "id": "a_fraction_is_weighed",
+      "value": {
+        "kind": "float",
+        "value": 0.5
+      },
+      "result": 0.5
     }
   ],
   "blob_in": [
