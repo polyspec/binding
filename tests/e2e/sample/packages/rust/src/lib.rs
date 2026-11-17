@@ -1352,21 +1352,21 @@ impl Store {
     /// future, the function is language code that the driver calls on its thread, and its value, which may be an
     /// awaitable, is settled by the driver. The pending entries of the scope are committed when the function returns,
     /// and dropped when it raises, whose exception the machine returns.
-    pub fn transaction<F>(self, function: F) -> Scoped<F>
+    pub fn transaction<F>(&self, function: F) -> Scoped<F>
     where
         F: FnMut(Scope) -> Result<binding_core::Passthrough, Failure<Error>>,
     {
         self.running
             .store(true, std::sync::atomic::Ordering::SeqCst);
-        let mut scoped = Scoped::new(self.entries, function);
-        scoped.running = Some(self.running);
+        let mut scoped = Scoped::new(self.entries.clone(), function);
+        scoped.running = Some(self.running.clone());
         scoped
     }
 
     /// Runs `function` as [`Store::transaction`] does, with the pending entry `tag` written before the function runs:
     /// the tag of `options`, or [`DEFAULT_TAG`] when the options leave it out (GN-6ab, GN-6i: a member with machine
     /// takes a record parameter with a default, which the machine owns).
-    pub fn tagged<F>(self, function: F, options: TagOptions) -> Scoped<F>
+    pub fn tagged<F>(&self, function: F, options: TagOptions) -> Scoped<F>
     where
         F: FnMut(Scope) -> Result<binding_core::Passthrough, Failure<Error>>,
     {
@@ -1379,12 +1379,13 @@ impl Store {
 
     /// Runs `function` as [`Store::transaction`] does and then writes the entry `audited` of the store by an I/O
     /// future, also when the function raised: the machine goes on to a wait after language code raised, and returns
-    /// the exception when the wait is over (GN-6ae).
-    pub fn audited<F>(self, function: F) -> Scoped<F>
+    /// the exception when the wait is over (GN-6ae). Its receiver is `&self`, as CK-69 names it: the binding lends the
+    /// core a clone of the value of the instance, whose entries the machine keeps by a clone of their handle.
+    pub fn audited<F>(&self, function: F) -> Scoped<F>
     where
         F: FnMut(Scope) -> Result<binding_core::Passthrough, Failure<Error>>,
     {
-        let mut scoped = Scoped::new(self.entries, function);
+        let mut scoped = Scoped::new(self.entries.clone(), function);
         scoped.audit = true;
         scoped
     }
@@ -1394,13 +1395,13 @@ impl Store {
     /// core answers its exception by dropping the `Raised`, on another thread where the target has one, so the call
     /// gives `false` and ends without the exception (U-3, GN-6u). A function that raised before it wrote an entry
     /// made no attempt, and its exception returns.
-    pub fn attempt<F>(self, function: F) -> Attempted<F>
+    pub fn attempt<F>(&self, function: F) -> Attempted<F>
     where
         F: FnMut(Scope) -> Result<binding_core::Passthrough, Failure<Error>>,
     {
         Attempted {
             scope: Scope {
-                parent: self.entries,
+                parent: self.entries.clone(),
                 pending: Entries::default(),
                 open: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),
             },
@@ -1474,11 +1475,11 @@ impl Scope {
 
     /// Runs `function` with an inner scope over the pending entries of this scope, as [`Store::transaction`] does: the
     /// entries of the inner scope become pending entries of this scope when the function returns.
-    pub fn nested<F>(self, function: F) -> Scoped<F>
+    pub fn nested<F>(&self, function: F) -> Scoped<F>
     where
         F: FnMut(Scope) -> Result<binding_core::Passthrough, Failure<Error>>,
     {
-        Scoped::new(self.pending, function)
+        Scoped::new(self.pending.clone(), function)
     }
 }
 
