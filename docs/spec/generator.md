@@ -3007,6 +3007,9 @@ the design ids are those of the binding design.
   kind whose `when` the value holds, makes an instance of a value class (`<unit>.constructor`) is that instance made
   from the built-in value, for every kind that a row makes so (`int`, `int64`, `float`, `text`, `bytes`, `list`,
   `map`) and in PHP, Python, Node and WASM, as an argument and as the expected value inside another type (B2.465).
+  An `int` outside the range of i64 is the built-in value: an out row makes an `OutValue` int, an i64, so no out
+  row makes it, and a Node `bigint` outside i64 enters as a large integer, which the in function judges (U-7 (f),
+  B2.493; orm: `IntegerValue(9223372036854775808n)` was refused by its `int64` parameter before the in function ran).
   Why: the binding takes back the form that it gives. A Node number would carry an integral float as an `int`; an
   alias of orm reads a PHP `int` as `int64` and an instance of `integer_value` as `int`, and reads a PHP array with
   sequence keys, the empty array among them, as a list and an instance of `map_value` as a map, so the built-in value

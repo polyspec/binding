@@ -13624,6 +13624,18 @@ test('B2.493: each B-5c test that makes its instance of a case text sets the roo
   }
 });
 
+test('B2.493: an int of a value alias outside the range of i64 is the built-in integer of the target, not an instance that its out row makes, in Node and Python (U-7 (f), GN-13)', () => {
+  // orm: the U-7 tests gave new pkg.IntegerValue(9223372036854775808n), whose int64 parameter refused the value with
+  // "value is not a value of the type int" before the in function of orm_value ran. An out row makes an OutValue
+  // int, which is an i64, so no out row makes such a value; a Node bigint outside i64 enters as a large integer.
+  const node = ormTests('node');
+  assert.match(node, /test\('U-7: decode gives the kind of orm_value in cell', \(\) => \{\n {2}assert\.throws\(\(\) => pkg\.decode\(\[\], 9223372036854775808n\)/);
+  assert.doesNotMatch(node, /IntegerValue\(9223372036854775808n\)/);
+  const python = ormTests('python');
+  assert.match(python, /pkg\.decode\(\[\], 9223372036854775808\)/);
+  assert.doesNotMatch(python, /IntegerValue\(9223372036854775808\)/);
+});
+
 test('B2.478: the hidden names of a construction and of an iteration are names that no member takes, in Node and WASM (GN-6b)', () => {
   // orm: query.new and step_runner.new are static members named new of classes without a constructor. Node wrote the
   // guard of a direct construction and the member as one static __new, so new Query() ran the member.

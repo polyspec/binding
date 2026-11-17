@@ -1408,6 +1408,10 @@ function valueOf(model: Model, ctx: Context, value: unknown, where: string, maki
   const kind = String(record['kind']);
   const alias = making.alias;
   if (alias === undefined || making.library !== undefined || !CLASSED_KINDS.has(kind) || !(alias.out ?? []).some((row) => row.kind === kind)) return built;
+  // U-7 (f), B2.493: an out row makes an OutValue int, an i64, so an int outside i64 is no value of an out row; it is
+  // the built-in integer of the target (a Node bigint enters as a large integer), which the in function judges
+  // (orm: IntegerValue(2^63) was refused by its int64 parameter before the in function of orm_value ran).
+  if (kind === 'int' && outsideI64(record['value'])) return built;
   const form = aliasOutForm(alias, ctx.target ?? ctx.lang, kind, record);
   if (typeof form !== 'string' || !form.endsWith('.constructor')) return built;
   const factory = memberById(model, form);
@@ -1420,6 +1424,12 @@ function valueOf(model: Model, ctx: Context, value: unknown, where: string, maki
   if (cls === undefined || ctx.lang === 'php') throw new Unsupported(`a case value of the kind ${kind} of ${where} is an instance of ${form}, which this target does not make in a case yet (GN-13)`);
   return ctx.lang === 'python' ? `pkg.${langName('python', cls.name, 'class')}(${built})` : `new pkg.${langName('node', cls.name, 'class')}(${built})`;
 }
+
+// Whether an integer of a case, a number, a bigint or a decimal text, is outside the range of i64.
+const outsideI64 = (held: unknown): boolean => {
+  const token = typeof held === 'bigint' ? held : typeof held === 'number' && Number.isInteger(held) ? BigInt(held) : typeof held === 'string' && /^-?(0|[1-9][0-9]*)$/.test(held) ? BigInt(held) : undefined;
+  return token !== undefined && (token < -(2n ** 63n) || token >= 2n ** 63n);
+};
 
 // GN-13, B2.465: the kinds whose value an out row may make as an instance of a value class of one value.
 const CLASSED_KINDS: ReadonlySet<string> = new Set(['int', 'int64', 'float', 'text', 'bytes', 'list', 'map']);

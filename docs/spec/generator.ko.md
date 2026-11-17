@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 75b79054cb898ab1f1b7f7729b27e9dbcf311011901ce1fe823b643aa1e6fd22 -->
+<!-- source-sha256: ceca9e4eec4b6a8a7537d9446621ab5f8e3de1005955a69fda6ff2d25070e9ab -->
 # 생성기
 
 [English](generator.md)
@@ -2462,7 +2462,10 @@
   `-0.0`은 0이기 때문이다. 그 target에서 alias의 out 행, 곧 그 kind의 행 중 값이
   `when`을 만족하는 행이 값 class의 인스턴스를 만드는(`<unit>.constructor`) 값은, 내장 값으로 만든 그 인스턴스다. 행이
   그렇게 만드는 모든 kind(`int`, `int64`, `float`, `text`, `bytes`, `list`, `map`)에서, PHP, Python, Node, WASM에서,
-  인자로도 다른 타입 안의 기대값으로도 그렇다(B2.465). 이유: binding은 자기가 주는 형태를 다시 받는다. Node의 number는
+  인자로도 다른 타입 안의 기대값으로도 그렇다(B2.465). i64 범위 밖의 `int`는 내장 값이다. out 행은 i64인
+  `OutValue` int를 만들므로 어느 out 행도 그것을 만들지 않고, i64 밖의 Node `bigint`는 큰 정수로 들어가 in 함수가
+  판정한다(U-7 (f), B2.493. orm: `IntegerValue(9223372036854775808n)`는 in 함수 전에 `int64` parameter에서
+  거부되었다). 이유: binding은 자기가 주는 형태를 다시 받는다. Node의 number는
   정수 float을 `int`로 실어 나른다. orm의 alias는 PHP `int`를 `int64`로, `integer_value`의 인스턴스를 `int`로 읽고,
   sequence key를 가진 PHP array(빈 array도 그렇다)를 list로, `map_value`의 인스턴스를 map으로 읽어서, 내장 값은 다른
   kind로 들어갔다. GN-13v는 빈 map에 class를 만드는 행이 없는 alias의 규칙으로 남는다. 값 타입의 값이 아닌 언어의 값은 종류의 닫힌
