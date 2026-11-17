@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: a720cd0fb3d28ab7fc889983eb237ddad5c6bec571b90055efcaa2ec67f1e967 -->
+<!-- source-sha256: 51ededc0c83277811cd2d9cc4cadc5dae6d12e99383a629c2bc6116734fb7399 -->
 <!-- source-sha256: af39c2057c369878bbe45717f4c37a928f4d473b67aa37090bb0916dd6cd5e5f -->
 <!-- source-sha256: baf3548b9f3653972ddd969c66fbc61139860af40b54c2e12379b6f4df57ba2c -->
 <!-- source-sha256: bb28dfd6025b03b96be79ca11dcac3969e000c5324ce6b643123791d04a79f0c -->
@@ -14,6 +14,8 @@
 
 ## Unreleased
 
+- 끝에서 끝까지 확인이 release 형식을 쓰고 설치한다(GN-14l, GN-14f, GN-3h, B2.458). 레포가 `DEPS`의 레포를 path로 적는 실행은, `tests/e2e/consumer`와 `tests/e2e/plot`이 그런데, development 형식의 모든 단계 뒤에 더해진 단계들로 끝난다. 각 의존의 Go 모듈은 실행의 remote에서 자기 version의 tag에 선다. 코어의 줄은 `version = "=X.Y.Z"`가 되고 path는 workspace의 `[patch.crates-io]`에 들어간다. `binding scaffold`와 `binding check`는 release의 manifest 위에서, `go.sum`도 포함해서, status 0으로 끝나야 하고 `Cargo.lock`은 바뀌지 않아야 한다. wheel은 다시 빌드해서 의존의 wheel들과 함께 URL로 `pip install --no-index` 한 번에 설치하고, npm 패키지는 다시 pack해서 root manifest 하나로 설치하며, Python, Node, WASM의 생성된 시험을 그 설치 위에서 실행한다. 레포의 Go 모듈은 그 tag에 실리고 release 형태의 소비자가 그것을 받는다. PHP에는 설치 단계가 없다. 그 증거는 실제 release의 PIE 단계다. Go 모듈의 release 형태에서 바뀌는 것: 실행이 줄을 고쳐 쓰는 의존은 `v0.0.0`이 아니라 자기 version의 tag를 가지며, 그런 레포의 release 형태는 release 형식에서만 증명한다. Go 단계의 Git은 모든 owner에 대해 `https://github.com/`를 실행의 디렉터리로 읽고 file 말고는 어떤 transport도 열지 않으며(`GIT_ALLOW_PROTOCOL=file`), release 형식의 단계들은 Cargo를 offline으로 실행한다. 그래서 실행이 만들지 않은 tag는 실행의 디렉터리에서 실패한다. 이 단계들을 켜거나 끄는 option은 없고, CI의 job `e2e`의 어떤 항목도 그것을 실행하지 않으면 시험이 실패한다. `tests/e2e/relay`는 job 밖에 남는다. 실제 release의 asset을 내려받는 단계는 아직 쓰지 않았다. 이 항목 때문에 레포가 할 일은 없다.
+- GN-3h는 소비자가 npm 패키지를 자신의 lock과 함께 설치한다고 정한다(B2.458). lock이 전혀 없으면 npm 12는 처음부터 풀다가 `allow-remote=root`에서 `EALLOWREMOTE … Refusing to fetch "https://registry.npmjs.org/…"`로 멈춘다. root의 의존이 아닌 registry의 패키지는 받을 수 없기 때문이다. lock이 있으면, 형제 패키지를 이름과 정확한 버전으로 require하는 workspace 패키지는 `overrides` 없이 root의 URL 항목으로 풀린다(hyper에서 잰 것이다).
 - 생성된 member의 G-7 시험과 Python의 GN-11a 시험은 class의 인자에 그 member의 case의 case 값을 주고, B-5c 시험은 그 class의 instance 각각을 raise하지 않는 그 class의 첫 case로 만든다. 전에는 core가 거부할 수 있는 첫 constructor의 placeholder를 주었다(GN-13t, B2.463). method의 G-7 시험은 receiver를 한 번 만들고 모든 호출을 그 receiver에 하므로, 상태를 가진 receiver를 같은 case 폴더에서 다시 만들지 않는다.
 - 이 version으로 옮기는 레포가 Go 모듈에 할 일(B2.459): `zz_generated_*.go` 파일을 하나도 추적하지 않는다. `binding release-go-module`이 이제 그 파일을 하나라도 추적하는 tag의 commit을 거부하므로, 그 파일을 추적하는 레포(orm)는 tag를 만들기 전에 그 파일을 index에서 지우고(각각 `git rm --cached`) ignore한다(Go 모듈의 `.gitignore`에 `zz_generated_*.go` 한 줄). 소비자가 받는 모듈에 레포 자신의 시험과 program이 있다고 기대하지 않는다. 소비자가 `go install`로 설치하는 명령에는 자기 Go 모듈을 준다.
 - `binding release-go-module`은 tag의 commit이 추적하는 모든 생성 파일을 거부하고, 하나씩 밝히며, commit도 tag도 만들지 않는다(GN-3, GN-15g, GN-19f, B2.459). 전에는 test feature의 build tag 뒤의 추적 파일과 추적된 guard만 거부했다(B2.446). 나머지 추적 파일 위에는 work tree의 파일을 덮어썼고 생성이 더는 쓰지 않는 추적 파일은 그대로 두었으므로, release 형태가 release가 검사한 commit과 달랐고 아무것도 그것을 말하지 않았다. GN-3은 `zz_generated_*.go` 파일을 추적한다고 적고 G-6을 인용했는데, G-6은 binding의 어떤 문서도 정의하지 않는 규칙이다. 그 문장은 이제 GN-15g와 GN-19h처럼 추적하는 tree가 그 파일을 담지 않는다고 적고, 인용은 지웠다.

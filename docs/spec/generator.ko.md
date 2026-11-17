@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 4dc6e0315bab0c8ce49c7764e43d59d4b8885191d5f044b09ebecb4d45a2c8b4 -->
+<!-- source-sha256: f6105f7edd0ae2b4583e33a511cc1c98a05c7f9678ef820cbeb381ab657c43d4 -->
 # 생성기
 
 [English](generator.md)
@@ -240,10 +240,16 @@
   tag에서 받는다(GN-15l, GN-14f, GN-19f). 나머지 셋은 다음과 같다.
   - npm: 소비자는 자신의 root `package.json`에, 자신의 그래프에 있는 모든 polyspec 라이브러리의 npm 패키지를 그 release
     asset의 URL로 적고(GN-3c), 다른 패키지만 require하는 패키지도 적으며, 각 패키지의 플랫폼 패키지도 적는다.
-    `overrides`는 쓰지 않는다. 각 URL이 적는 release는 pack한 manifest들이 require하는 버전의 release다. 이유: npm은 pack한
+    `overrides`는 쓰지 않으며, 자신의 lock(`package-lock.json`)과 함께 설치한다. 각 URL이 적는 release는 pack한
+    manifest들이 require하는 버전의 release다. 이유: npm은 pack한
     manifest의 요구 `X.Y.Z`를, 그 이름의 root 의존의 URL에 있는 패키지가 그 버전일 때 그 root 의존으로 만족시키고 그것을
     한 벌만 설치한다. 그렇지 않으면 그 버전을 registry에 묻는데, registry에는 없다. pack한 manifest 안의 URL은
     `allow-remote=root`에서 거부되고(GN-3c), `overrides` 항목은 패키지의 manifest가 이미 적은 버전을 한 번 더 적게 된다.
+    lock인 이유는 hyper에서 npm 12로 잰 것이다. lock이 전혀 없는 설치는 그래프를 처음부터 풀다가 `allow-remote=root`에서
+    `EALLOWREMOTE … Refusing to fetch "https://registry.npmjs.org/…"`로 멈춘다. root의 의존이 아닌 registry의 패키지는
+    받을 수 없기 때문이다. lock이 있으면, 형제 패키지를 이름과 정확한 버전으로 require하는 workspace 패키지는 `overrides`
+    없이 root의 URL 항목으로 풀리고, 그 lock은 `overrides`를 쓴 설치가 쓰는 lock과 byte 단위로 같으며, registry에는 묻지
+    않는다.
   - Python: 소비자는 자신의 그래프에 있는 모든 polyspec 라이브러리의 wheel, 곧 자신의 플랫폼의 wheel을 그 release asset의
     URL로 installer에 주며, 모두 한 번의 설치에 준다(프로젝트의 요구 `polyspec-<library> @ <URL>`, 또는 `pip install`의
     인자인 URL). 각 URL이 적는 release는 wheel들의 metadata가 require하는 버전의 release다. 이유: pip와 uv는 wheel의
@@ -263,8 +269,10 @@
   끝에서 끝까지 확인은 실행의 npm 패키지와 wheel을 이 두 형식으로 설치한다(GN-3c, GN-14a). npm이 시작하기 전에 각 tarball의
   manifest를 읽는다. 실행의 다른 패키지에 대한 요구 `X.Y.Z` 가운데 그 버전의 tarball을 실행이 갖지 않은 것은 두 이름과
   함께 실패한다(`scripts/e2e-npm-install.mts`). npm은 그것을 registry에 묻고 어느 이름도 대지 않기 때문이다. `tests/e2e`의
-  모든 저장소는 의존을 path로 적으므로, 실행의 설치가 만족시키는 요구는 development 형식이다(GN-3e). npm의 release 형식의
-  설치는 `packages/ts`의 시험이며, 그 시험은 패키지 둘을 pack하고 그 script를 그 위에서 실행한다.
+  모든 저장소는 의존을 path로 적으므로, 이 설치들이 먼저 만족시키는 요구는 development 형식이다(GN-3e). 그다음 실행은
+  사본의 release 형식을 쓰고 그것을 같은 두 형식으로 설치하며(GN-14l), `packages/ts`의 시험 하나가 패키지 둘을 pack하고 그
+  script를 그 위에서 실행한다. 실행의 npm 설치에는 lock이 없다. 생성기가 쓰는 패키지는 registry의 패키지를 require하지
+  않으므로, 처음부터 푸는 설치가 그런 패키지를 만나지 않는다.
 - **GN-3f** `scaffold`가 쓰는 manifest 가운데 licence 항목이 있는 것은 모두 코어 crate의 licence를 담는다. 그것은 코어
   manifest의 `package.license`이며, 코어가 `license.workspace = true`를 적으면 root manifest의 `workspace.package.license`다.
   바인딩 crate의 Cargo manifest는 그것을 `license`로, `pyproject.toml`은 `project.license`로, `package.json`과
@@ -2944,13 +2952,24 @@
   각 의존 레포의 정적 라이브러리를 release profile로 feature 없이 빌드하고, `llvm-tools`의 `llvm-strip --strip-debug`로
   debug section을 떼고, `llvm-size -A`가 그 안에 debug section을 여전히 적으면 실패하며, 각각에 대해 remote를 대신하는 Git 레포를 work
   디렉터리에 만든다. commit 하나의 tree는 제자리의 Go 모듈과 `internal/ffi/lib/<platform>`에 둔 실행 플랫폼의
-  라이브러리이고, tag는 `<Go 모듈 디렉터리>/<version>`이다. version은 `v`와 코어의 version이고, 의존 레포는 `go.mod`가
-  require하는 version이다. Git은 `https://github.com/<owner>/`를 이 레포들의 디렉터리로 읽는다(실행의 설정 파일의
-  `url.<base>.insteadOf`이며, 이 명령들의 Git이 읽는 설정은 그 파일 하나다). 그래서 `go`는 network 없이 각 모듈을 모듈
-  경로와 tag로 받는다. 소비자 모듈의 `go.mod`는 각 계약의 Go 모듈의 `require` 줄만 담고, 소비자의 시험 하나가 그
+  라이브러리이고, tag는 `<Go 모듈 디렉터리>/<version>`이다. version은 `v`와 그 모듈의 코어의 version이며, 레포의 모듈도
+  의존의 모듈도 그렇다. release 형식을 쓰는 실행(GN-14l)은 이 레포들을 그 형식의 단계들 가운데 두 부분으로 만든다. 각
+  의존의 레포는 release 형식의 `binding scaffold`보다 먼저 만든다. 그 scaffold가 그 tag에서 `go.sum`을 쓰기
+  때문이다(GN-15l). 레포 자신의 것은 그 뒤에 만들어서, 그 commit이 release의 `go.mod`와 `go.sum`을 담는다. 그러면 아래의
+  소비자가 실행의 마지막 단계다. release 형식을 쓰지 않는 실행은, 의존이 없는 레포의 실행도 그 가운데 하나인데, Go 시험
+  뒤의 한 단계에서 이 레포들을 모두 만들고, `go.mod`가 `v0.0.0`으로 require하는 의존, 곧 실행이 고쳐 쓰지 않는
+  development 형식의 의존에는 `v0.0.0`의 tag를 단다. B2.458이 바꾼 것: 그 전에는 의존의 tag가 언제나 `go.mod`가
+  require하는 version이었고 path에서는 `v0.0.0`이었다. 그래서 의존이 있는 `tests/e2e` 레포의 소비자는 `go.mod`가
+  `v0.0.0`을 require하는 모듈을 받았는데, 그런 모듈은 어떤 release에도 없다(GN-19f가 거부한다). 이제 그런 레포의 release
+  형태는 release 형식에서만 증명하고, development 형식의 `go.mod`로는 더 증명하지 않는다. Git은
+  `https://github.com/`를 이 레포들의 디렉터리로 읽는다(실행의 설정 파일의 `url.<base>.insteadOf`이며, 이 명령들의 Git이
+  읽는 설정은 그 파일 하나다. `GIT_CONFIG_GLOBAL`이 그 파일을 적고, system 파일도 Cargo의 Git 의존의 변수도 읽지
+  않는다). 그리고 file 말고는 어떤 transport도 열지 않는다(`GIT_ALLOW_PROTOCOL=file`). 그래서 `go`는 network 없이 각
+  모듈을 모듈 경로와 tag로 받는다. 실행이 만들지 않은 레포나 tag는 실행의 디렉터리에서 실패하고, 설정이 그 디렉터리로
+  바꾸지 않는 URL은 연결하기 전에 거부된다. 소비자 모듈의 `go.mod`는 각 계약의 Go 모듈의 `require` 줄만 담고, 소비자의 시험 하나가 그
   모듈들의 모든 패키지를 import한다. 실행은 `go mod tidy`로 `go.sum`을 쓴 다음, 소비자와 받은 모듈의 모든 패키지의
-  `go test`를 실행의 모듈 cache에서 돌린다. Go는 그 cache의 디렉터리를 읽기 전용으로 두며, 환경은 `GOPROXY=direct`, 빈
-  `GOFLAGS`이고 `CGO_LDFLAGS`는 없다. 소비자의 `go.mod`에 `replace`가 있으면 실행은 실패하고, 시험은 GN-14a대로 센다.
+  `go test`를 실행의 모듈 cache에서 돌린다. Go는 그 cache의 디렉터리를 읽기 전용으로 두며, 환경은 `GOPROXY=direct`,
+  `GOSUMDB=off`, `GOENV=off`, 빈 `GOFLAGS`이고 `CGO_LDFLAGS`는 없다. 소비자의 `go.mod`에 `replace`가 있으면 실행은 실패하고, 시험은 GN-14a대로 센다.
   단계가 끝나면 `go clean -modcache`로 모듈 cache를 지운다. commit의 tree는 release의 commit이 싣는 파일을 담으며,
   실행은 그것을 `binding release-go-module`이 읽는 GN-15g의 함수에서 읽고 다른 규칙으로는 모듈의 파일을 빼지 않는다. test
   feature의 build tag 뒤의 생성 파일도, 그 tag들의 guard(GN-13bf)도, 레포의 시험도 없으며, 실행이 모듈에 복사한 계약
@@ -2988,14 +3007,65 @@
   실패하는 검사는 그 target을 실패시킨다(`scripts/e2e-refusal.mts`). `tests/e2e/lent`가 그런 레포다. 그 코어는 빌린
   record를 호출 뒤까지 가지며(GN-6d), 모든 target이 E0597로, Node는 E0521로 거부된다. 이유: 한 번의 검사는 호출의
   lifetime을 한 번 증명하고, CI의 실행은 생성기의 변경이 빌린 record에 다시 `'static`을 주는 것을 막는다.
+- **GN-14l** 실행의 release 형식(B2.458; GN-3e, GN-3h). 레포의 코어가 `[dependencies]`의 한 줄에서 `DEPS`의 레포를
+  `path`로 적는 실행은, 의존이 있는 `tests/e2e`의 모든 레포가 그런데, development 형식의 모든 단계 뒤에 release 형식의
+  단계들로 끝난다. 이 단계들은 실행에 더해지며 어떤 단계도 대신하지 않는다. development 형식은 의존이 release를 가질
+  때까지 레포가 가지는 형식이고, CI의 다른 어떤 실행도 그것을 확인하지 않기 때문이다. 이 단계들을 켜거나 끄는 option은
+  없다. 그런 줄이 없는 레포의 실행과 `--until lint`의 실행에는 이 단계들이 없고, host 패키지(L-2a)가 있는 레포는 빼고
+  그 이름을 적는다. host 패키지의 manifest는 손으로 쓰므로 실행의 scaffold가 그 release 형식을 쓰지 못하기 때문이다. 네
+  생태계는 함께 release 형식이 되며, 그 순서는 하나이고 `scripts/e2e-release-form.mts`의 함수 하나가 준다.
+  - 레포의 `go.mod`가 require하는 각 의존의 Go 모듈은 실행의 remote에서 자기 version의 tag에 선다(GN-14f). 실행은 그
+    레포를 만들기 전에 Go에 그 tag의 모듈을 요청하며, Go가 실패하면서 실행의 remote 디렉터리를 적지 않으면 그 단계는
+    실패한다. 이것은 이 명령들이 그 디렉터리를 읽고 network를 읽지 않는다는 것을 실행마다 보인다.
+  - 사본에서 코어의 그런 줄은 각각 그 의존의 코어의 version으로 `version = "=X.Y.Z"`가 되고 다른 항목은 그대로 남으며,
+    root workspace는 각 의존의 사본의 path를 담은 `[patch.crates-io]`를 얻는다. 실행은 각 변경을 찍는다(GN-14d). 한 줄의
+    inline table이 아닌 줄과, 이미 crates.io를 patch하는 root manifest는 이름을 적은 실패다.
+  - 각 계약의 `binding scaffold`는 release의 manifest를 쓰고, 그 가운데 `go.sum`은 첫 단계의 tag에서 쓰며(GN-15l),
+    `binding check`는 그 위에서 통과한다. 둘 다 `--go`와 GN-14f의 Git과 Go의 설정을 받는다. 둘이 status 0으로 끝나고,
+    `Cargo.lock`이 byte 단위로 전과 같고, development 형식에서 의존을 적던 각 manifest가 그것을 그 version으로 적어야
+    이 단계가 통과한다. `package.json`과 `composer.json`은 `X.Y.Z`, `pyproject.toml`은 `polyspec-<library>==X.Y.Z`,
+    `go.mod`는 `replace` 줄 없이 `require <module> vX.Y.Z`, `go.sum`은 그 모듈의 hash 둘이다.
+  - Python: 레포의 wheel을 다시 빌드한다. wheel의 metadata가 `pyproject.toml`의 요구를 담기 때문이다. 그리고 실행의
+    의존의 wheel들과 함께, 각각 loopback의 URL로, 한 번의 `pip install --no-index`로 따로 만든 venv에 설치한다(GN-3h).
+    설치된 distribution이 `polyspec-<library>==X.Y.Z`를 require하지 않으면 이 단계는 실패한다. 그다음 생성된 시험을 그
+    venv의 unittest로 실행한다.
+  - npm: 레포의 패키지를 다시 pack하고, 실행의 tarball들, 곧 의존의 것과 플랫폼의 것과 함께, 각각을 URL로 적은 root
+    manifest 하나로 설치한다(GN-3c, GN-3h). 그 전에 pack한 manifest의 요구 `X.Y.Z`마다 그 tarball이 그 가운데 있는지
+    확인한다. 그다음 Node와 WASM의 생성된 시험을 그 디렉터리에서 실행한다. pack한 manifest가 의존의 패키지를 require하지
+    않으면, manifest는 value class나 callback unit 때문에만 그것을 적는데(GN-3e), 실행은 그렇다고 적고 아무것도 설치하지
+    않는다.
+  - Go: scaffold가 쓴 `go.mod`와 `go.sum`을 담은 레포의 Go 모듈을 실행의 remote에서 그 tag에 싣고, GN-14f의 소비자가
+    그것을, 그 `go.mod`가 require하는 version의 각 의존 모듈과 함께 받아서 자신의 시험과 받은 모든 모듈의 시험을
+    실행한다.
+  - PHP는 여기서 설치하지 않는다. 그 증거는 실제 release의 PIE 단계다(GN-3h). 그 `composer.json`은 다른 manifest와
+    함께 쓰고 확인한다.
+  Cargo는 실행에서 자기 release 형식을 가지지 않는다. release는 의존을 tag로 적는데, 그 요구는 `*`이므로 Cargo는 그
+  tag에 있는 어떤 version의 crate도 받고, 의존의 remote도 필요하다. 실행은 patch와 함께 `=X.Y.Z` 형식을 쓴다. Cargo는 그
+  path에 있는 crate의 version이 다르면 그것을 거부하고, 그 형식은 lock이 이미 적은 crate로 풀린다.
+  release 형식에서 실행하는 것은 그 형식이 바꾸는 것이다. manifest, 각 package manager의 설치, 그리고 설치된 패키지가
+  의존의 패키지를 싣는 일이며, 마지막 것은 생성된 시험이 각 target에서 실행한다. 실행은 그 형식이 그대로 두는 것을
+  되풀이하지 않는다. 계약 case, 측정, lint(`cargo clippy`, `tsc`, `gofmt`, `go vet`, `deadcode`), `llvm-nm`의 확인, 코어의
+  시험, tag guard의 시험(GN-13bf)이 그렇다. 생성도 되풀이하지 않는다. `binding check`가 `binding generate`처럼 각 의존의
+  계약을 Cargo로 읽으므로(GN-15f), 생성된 파일은 development 형식의 것이다. Node addon, WASM 모듈, PHP 확장의 빌드도
+  되풀이하지 않는다. 그 crate들은 같은 lock에서 같은 crate로 풀리므로, 플랫폼의 tarball과 패키지 안의 모듈은
+  development 형식의 것이다. PHP의 시험도 되풀이하지 않는다. 실행은 그 확장을 `composer.json`이 아니라 path로 싣는다.
+  wheel과 Go의 정적 라이브러리는 release 형식에서 빌드한다. wheel은 요구를 담고 tag는 라이브러리를 담기 때문이다.
+  이 단계들의 어떤 명령도 network를 열지 않는다. Cargo는 offline으로 실행하고(`CARGO_NET_OFFLINE=true`), Git과 Go는
+  실행의 remote만 읽으며(GN-14f), pip는 index를 읽지 않고, npm은 tarball의 확인 뒤에 각 패키지를 loopback에서 받는다.
+  이유: `tests/e2e`의 모든 레포는 의존을 path로 적으므로, 이 단계들 전에는 어떤 실행도 release 형식의 manifest를
+  설치하지 않았고, 그런 manifest의 첫 설치는 소비자의 release였다. release 형식의 scaffold를 처음 시도했을 때는 status
+  1로 끝났고 github.com에 닿았다. `go.mod`가 release를 require해서 `go mod download`가 실행되었는데(GN-15l) 의존의 tag가
+  어디에도 없었기 때문이다. 그래서 의존의 remote가 먼저다.
 - **GN-14g** CI가 실행하는 `tests/e2e`의 계약: `.github/workflows/ci.yml`의 job `e2e`는 코어가 `tests/e2e`의 레포에만
   의존하는 `tests/e2e`의 모든 레포를, 그 레포들을 `DEPS`로 주어 실행하며, job의 어떤 항목도 checkout에 없는 디렉터리를
   적지 않는다. 코어가 `tests/e2e`에 없는 레포에 의존하는 계약은, 그 계약의 추적되는 파일이 그 레포의 release tag를 적고
   run이 그 release의 package를 그 asset에서 가져올 때에만 job이 실행한다. run에는 아직 그런 단계가 없다. run은 의존의
   package를 `DEPS`의 사본에서만 가져오고(GN-14d) `https://github.com/polyspec/`를 checkout 옆의 디렉터리로 읽으므로,
-  tag를 적은 코어는 job에서 빌드되지 않고, release tag만으로는 아무것도 끝나지 않는다(B2.451). 그 단계는 B2.458의
-  것이다. 그때까지 `tests/e2e/not-in-ci.json`이 그 계약을 이유와 끝나는 조건과 함께 적고, job에는 그
-  항목이 없다. `packages/ts/tests/ci-workflow.test.ts`는 job에도 목록에도 없는 계약, 둘 다에 있는 계약, 그리고 코어가
+  tag를 적은 코어는 job에서 빌드되지 않고, release tag만으로는 아무것도 끝나지 않는다(B2.451). release 형식의
+  단계들(GN-14l, B2.458)은 `DEPS`의 사본의 release 형식을 설치하고, release의 asset을 설치하지 않는다. 그 asset을
+  내려받는 단계는 아직 쓰지 않았다. 그때까지 `tests/e2e/not-in-ci.json`이 그 계약을 이유와 끝나는 조건과 함께 적고,
+  job에는 그 항목이 없다. job의 항목 가운데 적어도 하나는, 코어가 자신의 `DEPS`의 레포를 path로 적어서 release 형식의
+  단계들을 실행하며, 그런 항목이 없으면 `packages/ts/tests/ci-workflow.test.ts`가 실패한다. `packages/ts/tests/ci-workflow.test.ts`는 job에도 목록에도 없는 계약, 둘 다에 있는 계약, 그리고 코어가
   `tests/e2e`에 없는 레포를 경로로 더는 적지 않는데 목록에 남은 계약을 실패로 한다. 코어가 json 레포에 의존하는
   `tests/e2e/relay`는 run이 json의 release를 그 asset에서 설치할 때까지 목록에 있다. json은 v0.0.35부터 release tag를
   가진다. 목록의 계약도 commit을 push하거나 merge하기 전에 의존

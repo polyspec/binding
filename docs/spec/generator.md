@@ -297,11 +297,17 @@ the design ids are those of the binding design.
   for the other three:
   - npm: the consumer names, in its own root `package.json`, the npm package of every polyspec library of its graph
     by the URL of its release asset (GN-3c), also a package that only another package requires, and each platform
-    package of each; it writes no `overrides`. The release that each URL names is the one whose version the packed
-    manifests require. Why: npm satisfies a requirement `X.Y.Z` of a packed manifest with the root dependency of that
-    name when the package at its URL has that version, and installs one copy of it; otherwise it asks the registry
-    for that version, which holds none. A URL in the packed manifest is refused under `allow-remote=root` (GN-3c),
-    and an `overrides` entry would state a second time the version that the manifest of the package already states.
+    package of each; it writes no `overrides`, and it installs with its lock (`package-lock.json`). The release that
+    each URL names is the one whose version the packed manifests require. Why: npm satisfies a requirement `X.Y.Z` of
+    a packed manifest with the root dependency of that name when the package at its URL has that version, and
+    installs one copy of it; otherwise it asks the registry for that version, which holds none. A URL in the packed
+    manifest is refused under `allow-remote=root` (GN-3c), and an `overrides` entry would state a second time the
+    version that the manifest of the package already states. Why the lock, as measured with npm 12 in hyper: an
+    install with no lock at all resolves the graph from scratch and stops under `allow-remote=root` with
+    `EALLOWREMOTE … Refusing to fetch "https://registry.npmjs.org/…"`, because a package of the registry that is not
+    a dependency of the root cannot be fetched; with a lock, a workspace package that requires a sibling by its name
+    and the exact version is resolved by the URL entry of the root with no `overrides`, the lock is byte for byte
+    the one that an install with `overrides` writes, and no registry is asked.
   - Python: the consumer gives the installer the wheel of every polyspec library of its graph, the one of its
     platform, by the URL of its release asset, all in one install (a requirement `polyspec-<library> @ <URL>` of its
     project, or the URL as an argument of `pip install`). The release that each URL names is the one whose version
@@ -325,8 +331,10 @@ the design ids are those of the binding design.
   npm starts it reads the manifest of each tarball: a requirement `X.Y.Z` on another package of the run whose tarball
   of that version the run does not hold fails with the two names (`scripts/e2e-npm-install.mts`), because npm would
   ask the registry for it and name neither. Every repository of `tests/e2e` names its dependency by a path, so the
-  requirements that the installs of a run satisfy are development forms (GN-3e); the install of the release form of
-  npm is a test of `packages/ts`, which packs two packages and runs that script on them.
+  requirements that these installs satisfy first are development forms (GN-3e); the run then writes the release form
+  of the copy and installs it in the same two forms (GN-14l), and a test of `packages/ts` packs two packages and
+  runs that script on them. The npm install of a run has no lock: the packages that the generator writes require no
+  package of a registry, so the resolution from scratch meets none.
 - **GN-3f** Every manifest that `scaffold` writes and that has a licence field carries the licence of the core crate:
   `package.license` of the manifest of the core, or `workspace.package.license` of the root manifest when the core
   names `license.workspace = true`. The Cargo manifest of each binding crate has it as `license`, `pyproject.toml` as
@@ -3606,14 +3614,26 @@ the design ids are those of the binding design.
   directory that stands for the
   remote: one commit whose tree is the Go module at its place with the library of the platform of the run in
   `internal/ffi/lib/<platform>`, and the tag `<directory of the Go module>/<version>`, where the version is `v` and
-  the version of the core, and for a dependency the version that the `go.mod` requires. Git reads
-  `https://github.com/<owner>/` as the directory of these repositories (`url.<base>.insteadOf` of a configuration
-  file of the run, the one configuration that the Git of these commands reads), so `go` fetches each module by its
-  module path and its tag without a network. A consumer module, whose `go.mod` holds the line `require` of the Go
+  the version of the core of that module, of the repository or of a dependency. A run that writes the release form
+  (GN-14l) makes these repositories in two parts, among the steps of that form: the one of each dependency before
+  `binding scaffold` of the release form, which writes `go.sum` from its tag (GN-15l), and the one of the repository
+  after it, so its commit holds the `go.mod` and the `go.sum` of a release; the consumer below is then the last step
+  of the run. A run that writes no release form, the one of a repository without a dependency among them, makes them
+  all in one step after the Go tests, and tags a dependency that its `go.mod` requires at `v0.0.0`, a development
+  form that the run does not rewrite, at `v0.0.0`. What B2.458 changed: before it a dependency always had the tag of
+  the version that the `go.mod` required, `v0.0.0` for a path, so the consumer of a repository of `tests/e2e` with a
+  dependency fetched a module whose `go.mod` required `v0.0.0`, which no release holds (GN-19f refuses it); the
+  released form of such a repository is now proven in the release form alone, and no longer with the `go.mod` of the
+  development form. Git reads `https://github.com/` as the directory of these repositories (`url.<base>.insteadOf`
+  of a configuration file of the run, the one configuration that the Git of these commands reads: `GIT_CONFIG_GLOBAL`
+  names it, with no system file and none of the variables of the Git dependency of Cargo) and opens no transport but
+  a file (`GIT_ALLOW_PROTOCOL=file`), so `go` fetches each module by its module path and its tag without a network: a
+  repository or a tag that the run did not make fails by the directory of the run, and a URL that the configuration
+  does not turn into that directory is refused before a connection. A consumer module, whose `go.mod` holds the line `require` of the Go
   module of each contract and nothing else of them, imports every package of those modules in a test; the run writes
   its `go.sum` with `go mod tidy`, then runs `go test` of the consumer and of every package of the fetched modules
-  from the module cache of the run, whose directories Go keeps read-only, with `GOPROXY=direct`, `GOFLAGS` empty and
-  no `CGO_LDFLAGS`. The run fails when the `go.mod` of the consumer holds a `replace`, and it counts the tests as
+  from the module cache of the run, whose directories Go keeps read-only, with `GOPROXY=direct`, `GOSUMDB=off`,
+  `GOENV=off`, `GOFLAGS` empty and no `CGO_LDFLAGS`. The run fails when the `go.mod` of the consumer holds a `replace`, and it counts the tests as
   GN-14a states. It removes the module cache with `go clean -modcache` when the step ends. The tree of the commit
   holds the files that the commit of a release carries, which the run reads from the function of GN-15g that
   `binding release-go-module` reads, and the run removes a file of the module by no other rule: no generated file
@@ -3658,6 +3678,65 @@ the design ids are those of the binding design.
   `tests/e2e/lent` is such a repository: its core keeps a lent record beyond the call (GN-6d), and every target is
   refused, with E0597 and in Node with E0521. Why: a one-time check proves the lifetime of the call once, and a run in
   CI keeps a change of the generator from giving a lent record `'static` again.
+- **GN-14l** The release form of a run (B2.458; GN-3e, GN-3h). A run whose repository names a repository of `DEPS`
+  by a `path` on one line of the `[dependencies]` of a core, which every repository of `tests/e2e` with a dependency
+  does, ends with the steps of the release form, after every step of the development form. The steps are added to
+  the run and stand in place of none: the development form is what a repository holds until its dependency has a
+  release, and no other run of CI checks it. No option turns the steps on or off; a run of a repository without
+  such a line, and one with `--until lint`, has none, and a repository with a host package (L-2a) is left out and
+  named, because the manifest of a host package is written by hand and no scaffold of the run writes its release
+  form. The four ecosystems are in the release form together, in one order, which one function of
+  `scripts/e2e-release-form.mts` gives:
+  - The Go module of each dependency that a `go.mod` of the repository requires stands at the tag of its own
+    version in a remote of the run (GN-14f). Before the run makes that repository it asks Go for the module at that
+    tag, and the step fails unless Go fails and names the directory of the remotes of the run, which shows in each
+    run that these commands read that directory and no network.
+  - In the copy, each such line of a core becomes `version = "=X.Y.Z"` with the version of the core of that
+    dependency, every other field kept, and the root workspace gets a `[patch.crates-io]` with the path of the copy
+    of each; the run prints each change (GN-14d). A line that is not one inline table and a root manifest that
+    already patches crates.io are named failures.
+  - `binding scaffold` of each contract writes the manifests of a release, the `go.sum` from the tag of the first
+    step among them (GN-15l), and `binding check` passes on them; both get `--go` and the settings of Git and Go of
+    GN-14f. The step fails unless both end with status 0, `Cargo.lock` is byte for byte what it was, and each
+    manifest that named a dependency in the development form names it at its version: `package.json` and
+    `composer.json` `X.Y.Z`, `pyproject.toml` `polyspec-<library>==X.Y.Z`, `go.mod` `require <module> vX.Y.Z` with no
+    `replace` line, and `go.sum` the two hashes of that module.
+  - Python: the wheel of the repository is built again, because its metadata hold the requirements of
+    `pyproject.toml`, and installed with the wheels of the dependencies of the run in one `pip install --no-index`,
+    each by its URL on the loopback, into a venv of its own (GN-3h); the step fails unless the installed
+    distribution requires `polyspec-<library>==X.Y.Z`. The generated tests then run on unittest in that venv.
+  - npm: the package of the repository is packed again and installed with the tarballs of the run, those of the
+    dependencies and of the platforms, through one root manifest that names each by its URL (GN-3c, GN-3h), after
+    the check that the tarball of each requirement `X.Y.Z` of a packed manifest is among them. The generated tests
+    of Node and of WASM then run in that directory. When no packed manifest requires the package of a dependency,
+    which a manifest names only for a value class or a callback unit (GN-3e), the run says so and installs nothing.
+  - Go: the Go module of the repository, with the `go.mod` and the `go.sum` that the scaffold wrote, is carried at
+    its tag in a remote of the run, and the consumer of GN-14f fetches it with the module of each dependency at the
+    version that its `go.mod` requires, and runs its test and the tests of every fetched module.
+  - PHP has no install here: its evidence is the PIE step of a real release (GN-3h). Its `composer.json` is
+    written and checked with the other manifests.
+  Cargo has no release form of its own in the run: a release names a dependency by its tag, whose requirement is
+  `*`, so Cargo would take a crate of any version at that tag, and it needs the remote of the dependency; the run
+  uses the form `=X.Y.Z` with the patch, which Cargo refuses when the version of the crate at the path differs and
+  which resolves to the crates that the lock already names.
+  What runs in the release form is what the form changes: the manifests, the install of each package manager and
+  the load of the package of a dependency by the installed package, which the generated tests exercise on each
+  target. The run does not repeat what the form leaves as it was: the contract cases, the measurements, the lints
+  (`cargo clippy`, `tsc`, `gofmt`, `go vet`, `deadcode`), the checks of `llvm-nm`, the test of the core and the test
+  of the tag guard (GN-13bf); the generation, since `binding check` reads the contract of each dependency through
+  Cargo as `binding generate` does (GN-15f), so the generated files are those of the development form; the builds
+  of the Node addon, the WASM module and the PHP extension, whose crates resolve to the same crates under the same
+  lock, so the tarballs of the platforms and the module inside the package are those of the development form; and
+  the tests of PHP, whose extension the run loads by its path and not by `composer.json`. The wheel and the static
+  library of Go are built in the release form, because the wheel carries the requirement and the tag carries the
+  library.
+  No command of these steps opens a network: Cargo runs offline (`CARGO_NET_OFFLINE=true`), Git and Go read the
+  remotes of the run alone (GN-14f), pip reads no index, and npm takes each package from the loopback after the
+  check of the tarballs. Why: every repository of `tests/e2e` names its dependency by a path, so before these steps
+  no run installed a manifest of the release form, and the first install of one was the release of a consumer. The
+  first attempt at the scaffold of the release form ended with status 1 and reached out to github.com: the `go.mod`
+  required a release, `go mod download` ran (GN-15l), and no tag of the dependency stood anywhere, so the remote of
+  the dependency comes first.
 - **GN-14g** The contracts of `tests/e2e` that CI runs: the job `e2e` of `.github/workflows/ci.yml` runs every
   repository of `tests/e2e` whose core depends only on repositories of `tests/e2e`, each with those repositories as
   `DEPS`, and no entry of the job names a directory that the checkout does not hold. A contract whose core depends on
@@ -3665,9 +3744,12 @@ the design ids are those of the binding design.
   tag of that repository and the run takes the packages of that release from its assets. The run has no such step
   yet: it takes the packages of a dependency from the copies of `DEPS` alone (GN-14d) and reads
   `https://github.com/polyspec/` as the directory beside the checkout, so a core that names the tag does not build in
-  the job, and the release tag alone ends nothing (B2.451). The step is the one of B2.458. Until then
-  `tests/e2e/not-in-ci.json` lists the contract with its reason and the condition
-  that ends it, and the job has no entry of it. `packages/ts/tests/ci-workflow.test.ts` fails a contract that is
+  the job, and the release tag alone ends nothing (B2.451). The steps of the release form (GN-14l, B2.458) install
+  the release form of the copies of `DEPS`, not the assets of a release: the step that downloads those assets is
+  not written. Until then `tests/e2e/not-in-ci.json` lists the contract with its reason and the condition
+  that ends it, and the job has no entry of it. At least one entry of the job runs the steps of the release form,
+  by a core that names a repository of its `DEPS` by a path, and `packages/ts/tests/ci-workflow.test.ts` fails when
+  none does. `packages/ts/tests/ci-workflow.test.ts` fails a contract that is
   neither in the job nor in the list, one that is in both, and a listed contract whose core no longer names by a
   path a repository that `tests/e2e` does not hold. `tests/e2e/relay`, whose core depends on the repository json, is
   listed until the run installs the release of json from its assets; json has a release tag since v0.0.35. A listed contract is still checked by `make e2e` with a checkout of

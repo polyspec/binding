@@ -14,6 +14,7 @@ import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSyn
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test, type TestContext } from 'node:test';
+import { namedByPath } from '../../../scripts/e2e-release-form.mts';
 import { candidateVersion } from '../../../scripts/release-candidate-version.mts';
 
 const top = new URL('../../../', import.meta.url).pathname;
@@ -292,6 +293,28 @@ test('the job e2e runs the end-to-end check of every repository of tests/e2e tha
 
 // GN-14g: a release carries the libraries of linux_amd64 and linux_amd64_musl, which only an amd64 machine links and
 // runs, so one job runs the sample and its consumer on musl there.
+// GN-14l: a run writes and installs the release form when a core of its repository names a repository of DEPS by a
+// path and no contract has a host package; no option turns the steps on or off, so an entry of the job runs them by
+// what its repository is.
+test('B2.458: at least one entry of the job e2e runs the release form, by a core that names a repository of its DEPS by a path (GN-14l, GN-14g)', () => {
+  const contractOf = (repository: string): { core: { crate: string; path: string }; packages: Record<string, { host?: boolean }> } =>
+    JSON.parse(readFileSync(`${top}${repository}/packages/rust/interface.json`, 'utf8')) as { core: { crate: string; path: string }; packages: Record<string, { host?: boolean }> };
+  const runs = matrix(jobs().get('e2e') ?? []).filter((entry) => {
+    const deps = (entry['deps'] ?? '').split(' ').filter((dep) => dep !== '');
+    const contract = contractOf(entry['repo'] ?? '');
+    const named = namedByPath(readFileSync(`${top}${entry['repo'] ?? ''}/${contract.core.path}/Cargo.toml`, 'utf8'), deps.map((dep) => contractOf(dep).core.crate));
+    return named.length > 0 && !Object.values(contract.packages).some((p) => p.host === true);
+  }).map((entry) => entry['repo']);
+  assert.ok(runs.length > 0, 'no entry of the job e2e runs the release form (GN-14l): no core of its repositories names a repository of its DEPS by a path');
+  assert.ok(runs.includes('tests/e2e/consumer'), `the entry of tests/e2e/consumer, whose package.json names the npm package of the sample, does not run the release form: ${runs.join(', ')}`);
+  // The run decides by the same reading, and by no option.
+  const script = readFileSync(`${top}scripts/e2e.mts`, 'utf8');
+  assert.match(script, /const pathNamed = mains\.flatMap\(\(p\) => namedByPath\(readFileSync\(coreManifestOf\(p\), 'utf8'\), dependencies\.map\(\(d\) => d\.contract\.core\.crate\)\)\);/);
+  assert.match(script, /const releaseForm = pathNamed\.length > 0 && hosts\.length === 0 && until !== 'lint';\n/);
+  assert.match(script, /\nif \(releaseForm\) \{\n/);
+  assert.match(script, /const options = \['--binding', '--repo', '--work', '--checkout', '--until'\];/);
+});
+
 test('the job e2e-amd64 runs the end-to-end check of the sample and its consumer on musl on linux/amd64 (GN-14g, GN-15g)', () => {
   const job = jobs().get('e2e-amd64');
   assert.ok(job !== undefined, 'the workflow has no job e2e-amd64');
