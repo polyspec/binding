@@ -13823,7 +13823,7 @@ test('B2.508: the G-7 test makes each argument of a class once, as a local of th
   const out = generateTargets({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles, targets: ['python', 'node', 'wasm', 'php', 'go'] });
   const starts = {
     absorb: { python: /def test_g7_counter_absorb_counts/, node: /test\('G-7: Counter\.absorb /, wasm: /test\('G-7: Counter\.absorb /, php: /function testG7CounterAbsorbCounts/ },
-    seek: { python: /def test_g7_seek_counts/, node: /test\('G-7: seek /, wasm: /test\('G-7: seek /, php: /function testG7SeekCounts/ },
+    seek: { python: /def test_g7_seek_counts/, node: /test\('G-7: seek /, wasm: /test\('G-7: seek /, php: /function testG7seekCounts/ },
   };
   for (const [member, start] of Object.entries(starts)) {
     for (const target of ['python', 'node', 'wasm', 'php'] as const) {
