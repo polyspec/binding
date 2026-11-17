@@ -126,6 +126,36 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   contract passes on (`library`, E-1b (a)) or holds as the source of its own kinds (`source`, E-1b (b)) has one
   `wrapped` row; `forward` names an error unit with a property of the same name and type; a row
   that matches no property is refused.
+- **CK-104** The conversion of an error of another library's package (generator GN-7c; B2.489, not yet run): for a
+  member that takes a callback unit of a library L at any depth of its parameters (GN-6s), the rows with `library:
+  L` that it names in `raises` are its conversion table for L, and the generated code converts an exception of L's
+  package by identity of the inner kind. A member that names rows of L and takes no callback unit of L has no table.
+  Refused: (a) two rows of one member with the same `library` and the same inner variant under different outer
+  variants, because the kind of the exception would pick two classes; (b) a row whose `class` names an error unit of
+  another category than the category of its inner variant in L's contract, as CK-10 refuses it for every row; (c) a
+  conversion from a unit of this contract: a row without `library` has no table, and a callback unit of this
+  contract raises its own kinds through recognition (U-3), so an exception of this contract's own classes is thrown
+  again unchanged. The message names the member, the rows, the library and the kind: `the member <id> names
+  <variant> and <variant> of <library>, whose inner kind <kind> converts to two classes (CK-104)`. Why: the
+  conversion is derived from `raises`, so a kind that arrives as an exception of L and as a kind of the core
+  (session-store `Random` of hyper, through `store.renew` and through `random_hex`) takes one class by one rule, and
+  the contract writes nothing new. A rename has no form: the kind does not change, and so the category does not.
+  Limit: a kind of L that the member does not name is thrown again unchanged, as L's class, outside the classes that
+  the member's `raises` states; nothing checks it at run time, and the check cannot see it, because the kinds that a
+  callback object throws are not stated by the member.
+- **CK-106** A case proves each converted row with values (generator GN-7c, GN-13; B2.489, not yet run): each row of
+  a conversion table of CK-104 has one case of its member, one case for each row, whose callback fixture of the unit
+  of L raises the row's inner kind with values, `{"library": L, "kind": <kind>, "message": <text>, "status": <int>,
+  "errno": <int>, "properties": {<property>: <value>}}` (CK-22), and whose `raises` names the kind. The fixture gives
+  `status`, `errno` and each property of CK-107 that the row's class holds, non-null and with a value other than
+  the one that the row would give by default. Why: each row is an arm of the generated match, so a dropped arm passes
+  the case of a sibling row, and a value that is null on both sides compares nothing.
+- **CK-107** The properties of a converted row (generator GN-7c; B2.489, not yet run): when the class of a row of a
+  conversion table is an error unit with properties, (a) L's row of the same inner variant names an error unit U of
+  L in `class`, and (b) `errors.wrapped` has a row `{"library": L, "unit": U, "property": [...], "forward": <the
+  row's unit>}` for every property of the row's unit, as CK-11 asks. A row whose class has a property while L's row
+  names no unit is refused, because no value exists to copy: `the row <variant> names <unit> with the property <p>,
+  which the class of <library> for <kind> does not have (CK-107)`.
 - **CK-12** Record parameters (T-4): a member takes at most one record, as its last parameter; in PHP and Python the
   record's field names, after conversion and exceptions, differ from the member's other parameter names.
 - **CK-13** Go names (E-7, P-2): an error unit's Go name is not a category error type (`ValueError`, `TypeError`,
@@ -440,7 +470,11 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   `in_raises` has one. A case of a member that takes a callback interface as a parameter gives it as a callback fixture (G-5, GN-13):
   `{"callback": {<member id>: [<row>]}}` whose member ids are members of that interface, whose rows and `calls` give
   in `args` the arguments that the core passes to their member (CK-101), and whose rows have no key but `args`, `result`, `raise`, `once`
-  and `async`; a `raise` is `{"error": <error unit>, "kind": <kind>}` or `"exception"`; a row with a `result` and a
+  and `async`; a `raise` is `{"error": <error unit>, "kind": <kind>}` or `"exception"`, and on a callback unit of
+  another library L also `{"library": L, "kind": <kind>, "message": <text>}` with the optional keys `status` and
+  `errno`, each an integer, and `properties`, an object of the snake_case names of the properties of L's class of the
+  kind (B2.489, CK-106): the kind is a kind of a row of L's `errors.kinds`, and the row needs no recognition, because
+  the fixture throws the instance that L's internal maker makes (generator GN-7a); a row with a `result` and a
   `raise`, a `raise` of an error unit that the member does not recognize (U-3), a `raise` of a function fixture or of
   a row whose kind is no kind of its error unit, that is of no row of `errors.kinds` whose `class` is that unit,
   which the constructor of the unit refuses (generator GN-7a), an `async` row of a member without `async_allowed`, and a row of a member that takes an object of the

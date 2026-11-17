@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 6ac291c51419c4eb16ad945bcd9740d6328af35acb20b403f53b3d37cd5adf37 -->
+<!-- source-sha256: 8aa872a29fce7463e7ba90555551325f4ea2de137f18216569135f45ed311159 -->
 # 생성기
 
 [English](generator.md)
@@ -1379,6 +1379,16 @@
   import하는 `<root>._errors`의 클래스이며(GN-11), Node와 WASM에서는 module의 다른 이름과 같이 그 이름으로 entry가
   내보낸다. Go는 오류 unit을 module과 관계없이 패키지 `errors`에 GN-15d대로 생성한다. WASM은 오류 unit을 Node와 같이 생성한다: parent를 상속하는 ES 모듈의 클래스이며
   category의 클래스들 뒤에 모듈에 넘기고, 그 property는 모듈이 인스턴스의 읽기 전용 own property로 정의한다(GN-18).
+  callback unit(U-1, origin `callback`)을 가진 계약은 category 클래스와 오류 unit마다 내부 maker를 가진다. maker는 message,
+  kind, status, errno와 property마다의 값으로 인스턴스를 만들고, message, kind, status, errno를 생성자처럼 판정한다(B2.489):
+  Python은 `<root>._errors._polyspec_make(cls, kind, message, status, errno, properties)`이고 properties는 snake_case
+  property 이름의 dict다. PHP는 각 클래스의 `@internal` static method `polyspec_make($kind, $message, $status, $errno,
+  $properties)`이고 같은 이름의 array를 받는다. Node와 WASM은 각 클래스의 `Symbol.for('polyspec.binding.make')` 아래 함수
+  `(kind, message, status, errno, properties)`이고 언어의 property 이름으로 된 객체를 받는다. Go는 `Make<Type>`이다(GN-15d).
+  사용자용 API가 아니다. 이 계약만으로 끌어낸다(GN-2). 다른 레포의 계약은 이 라이브러리의 객체를 이 라이브러리의 callback
+  unit을 통해서만 받으므로 binding은 어느 계약이 이 라이브러리의 행을 적는지 알 필요가 없고, callback unit이 없는 라이브러리는
+  다른 계약에 예외를 주지 않는다. 이유: 언어 코드가 만든 인스턴스는 property 값이 없어서, 이 라이브러리의 오류를 던지는 다른
+  레포의 fixture는 비교할 것이 null뿐이었다(CK-106).
 - **GN-7b** PHP: binding은 오류 unit의 property `p`를 그것을 선언한 class의 private property `polyspec_p`에 저장하고,
   class의 method `p()`가 그것을 읽는다(I-3). 이유: property의 PHP API는 그 method이고, `Exception`은 자기 property
   (`message`, `code`, `file`, `line`, `trace`, `previous`)를 가진다. 그중 private `trace`가 crud-ui `compose_load_error`의
@@ -1404,6 +1414,22 @@
   시험이다. `library`가 있는데 variant에 `<바깥>/`이 없는 행과, `library`가 없는데 variant에 그것이 있는 행은 이름을 대고 거부한다
   (G-4, CK-10). 이유: 코어 오류는 라이브러리의 오류를 자기 variant 하나 안에 담으므로, 안쪽 variant까지 내려가는 경로만이
   컴파일러가 코어 오류에 대해 검사하는 pattern을 준다(E-1b (a)).
+  L package 예외의 변환(B2.489, CK-104): L의 callback unit을 받는 member(GN-6s)는 예외 O를 다음일 때 변환한다. 그 코어가
+  O를 쥔 `Failure::Raised`를 돌려주었고, O가 L의 category 클래스 여섯 중 하나나 L의 오류 unit의 인스턴스이며(GN-6s처럼 L의
+  package에서 이름으로 찾는다), O의 `kind`가 member가 `raises`에 적은 L 행의 안쪽 kind일 때다. 변환된 오류는 같은 kind를
+  가진 그 행 클래스의 인스턴스다. message, status, errno는 O의 것이고, 행의 unit의 각 property는 `wrapped` 행이 그것으로
+  넘기는 O의 property 값이며(CK-107), cause는 O다: PHP는 `zend_exception_set_previous`로 정한 `previous`, Python은
+  `__cause__`, Node와 WASM은 own property `cause`, Go는 `Cause()`(GN-15d). member가 적지 않은 kind의 L 예외, 다른 모든
+  예외, `Failure::Kind`는 전과 같다. 앞의 둘은 바꾸지 않고 다시 던지고, recognition이 준 L의 kind(GN-6s)는 이미 코어 오류의
+  variant이므로 이 계약의 클래스다. PHP, Python, Node, WASM은 crate에서 변환한다. member의 오류 경로는 `converted_<member>`를
+  부르고, 그것은 member의 표를 쥐고 다른 모든 실패를 `failure_error`에 넘긴다. Node는 실패를 던지는 곳에서 변환한다. 그곳만
+  환경과 대기 중인 예외를 쥔다. Node와 WASM은 L의 클래스를 라이브러리 클래스 뒤에 등록하며, L의 npm package에서 require하거나
+  그 `./wasm` subpath에서 import한다. Go는 member의 입구에서 변환한다. dispatch는 Go 값의 오류를 호출의 표에 두고(GN-6d),
+  입구는 L의 package `errors`의 category 타입과 오류 unit에 대해 `errors.As`로 그것을 찾아, `internal/binding`에서 만든 이
+  계약의 타입을 돌려준다. 행은 클래스와 kind만 준다. 이유: hyper의 코어는 session-store 객체의 예외를 `Failure::Raised`로
+  넘기고 `failure_error`가 그것을 다시 던져서, 계약이 hyper의 `RecordError`를 약속한 곳에서 사용자가 session-store의
+  `RecordError`를 잡았다(H35.38). `Io`의 errno는 OS가 L의 코어에 준 것이고 어떤 행도 줄 수 없다. 한계: member가 적지 않은
+  recognition된 L의 kind는 여기서도 클래스 검사를 받지 않는다.
 - **GN-8a** 실패 주입(G-5, X-1): `faults`를 가진 계약에서 각 바인딩 crate는 `faults[].core`의 상수마다
   `const _: &str = <core>;`를 두어, 코어에 없는 점이면 컴파일되지 않게 한다(I-2). member의 모든 진입점은(hook과 iterate
   포함) 코어 호출을 `with_faults("<member id>", …)` 안에서, 작업 전체를 `shielded(…)` 안에서 실행한다. feature
@@ -2027,7 +2053,14 @@
   그 struct로 만든다. 라이브러리의 callback unit의 member가 recognize하는 오류 unit마다 패키지 `errors`에는
   `internal/binding`의 `Raised<Unit>`을 주는 `Raised<Unit>(kind, message)`도 있으며, 둘 다 `(*<Unit>, error)`를 돌려준다(GN-7a). 그 callback unit을 다른 레포의
   callback unit으로(GN-6s) 구현하는 다른 module의 Go 코드는 `internal/binding`을 import할 수 없으므로, 소유자의 코어가
-  recognize하는 오류를 이 함수로 만든다. 이 함수는 패키지 `errors`의 타입과 같이 라이브러리의 공개 API다.
+  recognize하는 오류를 이 함수로 만든다. 이 함수는 패키지 `errors`의 타입과 같이 라이브러리의 공개 API다. 계약이
+  callback unit을 가진 라이브러리의 패키지 `errors`에는 category 타입과 오류 unit마다 `Make<Type>(kind, message string,
+  status, errno *int, properties ...<Type>Property) (*<Type>, error)`도 있으며, GN-7a처럼 인자를 판정한다. unit과 그
+  parent의 property마다 `<Type><Property>(value)`가 있고, property가 없는 category 타입은 `properties`를 받지 않는다. 다른 Go
+  module의 시험이 불러야 하고, 그런 module이 그 라이브러리의 오류를 값과 함께 만드는 유일한 길이므로 공개 API다(GN-7a).
+  다른 라이브러리의 예외를 변환하는 member(GN-7c)를 가진 계약은 category 타입에 method `Cause() error`를 준다. 변환된 오류가
+  나온 오류이고, 다른 모든 오류에서는 nil이다. `Unwrap`은 계속 category나 parent를 주므로, 다른 target에서 `instanceof`가
+  그렇듯 `errors.As`는 변환된 오류에서 다른 라이브러리의 타입을 찾지 않는다.
 - **GN-15e** Go `source`와 기본값(T-1, U-2, T-4): `source` parameter는 text의 바이트도 담는 `[]byte`이고 그 바이트가 코어로
   간다. 기본값이 있는 parameter나 record field는 포인터 `*T`다: nil이면 빠지고 코어가 값을 정한다. 기본값이 있는
   `optional` 타입은 포인터 `*T` 하나를 그대로 쓴다. nil이 이미 값이 없다는 뜻이기 때문이다(GN-6i). nil이 그 타입의 값이

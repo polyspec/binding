@@ -1672,6 +1672,18 @@ the design ids are those of the binding design.
   unit as GN-15d states, in package `errors` whatever its module. WASM generates an
   error unit as Node does: a class of the ES module that extends its parent, handed to the module after the classes of
   the categories, whose properties the module defines on the instance as read-only own properties (GN-18).
+  A contract that has a callback unit (U-1, origin `callback`) has, for each of its category classes and error
+  units, an internal maker that makes an instance with a message, a kind, a status, an errno and a value for each
+  property, judging the message, the kind, the status and the errno as the constructor does (B2.489): Python
+  `<root>._errors._polyspec_make(cls, kind, message, status, errno, properties)`, a dict of the snake_case property
+  names; PHP the `@internal` static method `polyspec_make($kind, $message, $status, $errno, $properties)` of each
+  class, an array by the same names; Node and WASM the function under `Symbol.for('polyspec.binding.make')` on each
+  class, `(kind, message, status, errno, properties)` with an object of the property names of the language; Go
+  `Make<Type>` (GN-15d). It is no API for users. It is derived from this contract alone (GN-2): a contract of another
+  repository takes an object of this library only through a callback unit of this library, so the binding needs
+  not know which contracts name its rows, and a library without a callback unit gives no exception to another
+  contract. Why: an instance that language code makes has no property value, so a fixture of another repository
+  that raises an error of this library had only null to compare (CK-106).
 - **GN-7b** PHP: the binding stores a property `p` of an error unit in the private property `polyspec_p` of the class
   that declares it, and the method `p()` of the class reads it (I-3). Why: the PHP API of the property is its method,
   and `Exception` has properties of its own (`message`, `code`, `file`, `line`, `trace`, `previous`), whose private
@@ -1703,6 +1715,26 @@ the design ids are those of the binding design.
   variant has no `<outer>/`, and a row without `library` whose variant has one, are refused by name (G-4, CK-10). Why:
   the core error holds the error of the library inside one of its own variants, so only the path down to the inner
   variant gives a pattern that the compiler checks against the core error (E-1b (a)).
+  The conversion of an exception of L's package (B2.489, CK-104): a member that takes a callback unit of L (GN-6s)
+  converts an exception O when its core returned `Failure::Raised` holding O, O is an instance of one of L's six
+  category classes or of an error unit of L, found by name in L's package as GN-6s finds them, and O's `kind` is the
+  inner kind of a row of L that the member names in `raises`. The converted error is an instance of that row's class
+  with the same kind; its message, status and errno are those of O, each property of the row's unit is the value of
+  the property of O that the `wrapped` row forwards to it (CK-107), and its cause is O: `previous` in PHP, set by
+  `zend_exception_set_previous`, `__cause__` in Python, the own property `cause` in Node and WASM, and `Cause()` in
+  Go (GN-15d). An exception of L of a kind that the member does not name, any other exception and a `Failure::Kind`
+  are as before: the first two are thrown again unchanged, and a kind of L that recognition gave (GN-6s) is already
+  a variant of the core error and so of this contract's class. PHP, Python, Node and WASM convert in the crate: the
+  error path of the member calls `converted_<member>`, which holds the table of the member and gives every other
+  failure to `failure_error`; Node converts where the failure is thrown, the one place that holds the environment
+  and the pending exception, and Node and WASM register L's classes after the library classes, required from L's
+  npm package or imported from its `./wasm` subpath. Go converts at the entry of the member: the dispatch keeps the
+  error of the Go value in the table of the call (GN-6d), the entry finds it with `errors.As` against the category
+  types and error units of L's package `errors`, and it returns this contract's type, made in `internal/binding`. The
+  row gives only the class and the kind. Why: hyper's core passes an exception of a session-store object on as
+  `Failure::Raised`, and `failure_error` threw it again, so a user caught session-store's `RecordError` where the
+  contract promises hyper's (H35.38); the errno of `Io` is the one that the OS gave L's core, which no row can give.
+  Limit: a recognized kind of L that the member does not name gets no class check here either.
 - **GN-8a** Fault injection (G-5, X-1): for a contract with `faults`, each binding crate names every constant of
   `faults[].core` as `const _: &str = <core>;`, so a point that the core does not have does not compile (I-2), and
   every entry point of a member, a hook and an iterate too, runs its core call in `with_faults("<member id>", …)`
@@ -2459,7 +2491,15 @@ the design ids are those of the binding design.
   message)`, which gives `Raised<Unit>` of `internal/binding`, both returning `(*<Unit>, error)` (GN-7a), because Go code of another module, which implements
   that callback unit as a callback unit of another repository (GN-6s), cannot import `internal/binding` and makes the
   error that the owner's core recognizes through this function. The function is public API of the library, as the
-  types of package `errors` are.
+  types of package `errors` are. For each category type and error unit, the package `errors` of a library whose
+  contract has a callback unit also has `Make<Type>(kind, message string, status, errno *int, properties
+  ...<Type>Property) (*<Type>, error)`, which judges its arguments as GN-7a does, with `<Type><Property>(value)` for
+  each property of the unit and its parents; a category type, which has no property, takes no `properties`. It is
+  public API because a test of another Go module must call it, and it is the only way such a module makes an error
+  of that library with values (GN-7a). A contract with a member that converts an exception of another library
+  (GN-7c) gives its category types the method `Cause() error`, the error that the converted error came from, nil for
+  every other error; `Unwrap` keeps giving the category or the parent, so `errors.As` does not find the type of the
+  other library in a converted error, as `instanceof` does not in the other targets.
 - **GN-15e** Go `source` and defaults (T-1, U-2, T-4): a `source` parameter is a `[]byte`, which holds the bytes of a
   text too, and its bytes go to the core. A parameter or record field with a default is a pointer `*T`: nil leaves
   it out, and the core decides its value. An `optional` type with a default keeps its one pointer `*T`, because nil

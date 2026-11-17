@@ -1,5 +1,5 @@
 <!-- doc-id: contract-check -->
-<!-- source-sha256: d493c634ebfcfd60735ef3d66a5b99d4f42cd24cae9a7966d2189b87f5afe69b -->
+<!-- source-sha256: 46bf91ca1330cf3aff2bd750c3d32f637bbfafd32ccc3b428043ee3ed05c3317 -->
 # 계약 검사
 
 [English](contract-check.md)
@@ -111,6 +111,30 @@ CK-70을 실행하지 않는다. 옵션은 release를 내지 않는 tree, 곧 bi
 - **CK-11** 감싼 의존 오류(E-1b, P-4): 계약이 그대로 전달하거나(`library`, E-1b (a)) 자기 kind의 source로 담는(`source`,
   E-1b (b)) 라이브러리의 모든 오류 unit의 모든 property는 `wrapped` 행 하나를 갖는다.
   `forward`는 같은 이름과 타입의 property를 가진 오류 unit을 가리킨다. 어느 property와도 맞지 않는 행은 거부한다.
+- **CK-104** 다른 라이브러리 package의 오류 변환(생성기 GN-7c; B2.489, 아직 돌지 않음): parameter의 어느 깊이에서든
+  라이브러리 L의 callback unit을 받는 member(GN-6s)에서, 그 member가 `raises`에 적은 `library: L` 행들이 L에 대한 그
+  member의 변환표이고, 생성 코드는 L package의 예외를 안쪽 kind의 동일성으로 변환한다. L의 행을 적지만 L의 callback unit을
+  받지 않는 member는 표가 없다. 거부: (a) 한 member의 두 행이 같은 `library`와 같은 안쪽 variant를 서로 다른 바깥 variant
+  아래에 적은 것. 예외의 kind가 클래스 둘을 고르기 때문이다. (b) `class`가 L 계약에서 그 안쪽 variant의 category와 다른
+  category의 오류 unit을 적은 행. CK-10이 모든 행에 대해 거부하는 것과 같다. (c) 이 계약의 unit에서의 변환. `library`가 없는
+  행은 표가 없고, 이 계약의 callback unit은 자기 kind를 recognition으로 내므로(U-3), 이 계약 자신의 클래스의 예외는 바꾸지
+  않고 다시 던진다. 메시지는 member, 행, 라이브러리, kind를 적는다: `the member <id> names <variant> and <variant> of
+  <library>, whose inner kind <kind> converts to two classes (CK-104)`. 이유: 변환을 `raises`에서 끌어내므로, L의 예외로도
+  코어의 kind로도 오는 kind(hyper의 session-store `Random`, `store.renew`와 `random_hex`를 거쳐)가 규칙 하나로 클래스
+  하나를 받고, 계약은 새로 적는 것이 없다. 이름 바꾸기는 형식이 없다. kind가 바뀌지 않으므로 category도 바뀌지 않는다.
+  한계: member가 적지 않은 L의 kind는 바꾸지 않고 L의 클래스로 다시 던지므로, member의 `raises`가 밝힌 클래스 밖에 있다.
+  실행 중에 이를 검사하는 것은 없고, callback 객체가 던지는 kind를 member가 밝히지 않으므로 검사도 볼 수 없다.
+- **CK-106** case가 변환된 행마다 값으로 증명한다(생성기 GN-7c, GN-13; B2.489, 아직 돌지 않음): CK-104 변환표의 각 행은
+  그 member의 case를 행마다 하나 가진다. 그 case에서 L의 unit의 callback fixture는 행의 안쪽 kind를 값과 함께 던진다:
+  `{"library": L, "kind": <kind>, "message": <text>, "status": <int>, "errno": <int>, "properties": {<property>:
+  <value>}}`(CK-22). 그 case의 `raises`는 그 kind를 적는다. fixture는 `status`, `errno`, 행의 클래스가 가진 CK-107의 각
+  property를 null이 아니고 행이 기본으로 줄 값과 다른 값으로 준다. 이유: 각 행은 생성된 match의 갈래 하나이므로, 빠진
+  갈래는 형제 행의 case를 통과하고, 양쪽이 null인 값은 아무것도 비교하지 않는다.
+- **CK-107** 변환된 행의 property(생성기 GN-7c; B2.489, 아직 돌지 않음): 변환표 행의 클래스가 property를 가진 오류
+  unit이면, (a) 같은 안쪽 variant의 L 행이 `class`에 L의 오류 unit U를 적고, (b) `errors.wrapped`가 행의 unit의 모든
+  property에 대해 CK-11이 요구하는 대로 `{"library": L, "unit": U, "property": [...], "forward": <행의 unit>}` 행을 가진다.
+  클래스가 property를 가지는데 L의 행이 unit을 적지 않은 행은 복사할 값이 없으므로 거부한다: `the row <variant> names
+  <unit> with the property <p>, which the class of <library> for <kind> does not have (CK-107)`.
 - **CK-12** record parameter(T-4): member는 record를 많아야 하나, 마지막 parameter로 받는다. PHP와 Python에서 record field
   이름(변환과 예외 뒤)은 member의 다른 parameter 이름과 다르다.
 - **CK-13** Go 이름(E-7, P-2): 오류 unit의 Go 이름은 category 오류 타입(`ValueError`, `TypeError`, `IoError`, `StoreError`,
@@ -369,7 +393,10 @@ CK-70을 실행하지 않는다. 옵션은 release를 내지 않는 tree, 곧 bi
   callback interface를 parameter로 받는 member의 case는 그것을 callback fixture로 준다(G-5, GN-13):
   `{"callback": {<member id>: [<행>]}}`의 member id는 그 interface의 member이고, 행과 `calls`는 `args`에 코어가 그 member에
   넘기는 인자를 주며(CK-101), 행의 키는 `args`, `result`, `raise`, `once`, `async`뿐이다. `raise`는 `{"error": <오류 unit>,
-  "kind": <kind>}`이거나 `"exception"`이다. `result`와 `raise`를 함께 가진 행, member가 recognize하지 않는 오류 unit의
+  "kind": <kind>}`이거나 `"exception"`이고, 다른 라이브러리 L의 callback unit에서는 `{"library": L, "kind": <kind>,
+  "message": <text>}`도 된다. 선택 키 `status`와 `errno`는 각각 정수이고, `properties`는 그 kind의 L 클래스가 가진
+  property의 snake_case 이름으로 된 객체다(B2.489, CK-106). kind는 L의 `errors.kinds` 행의 kind이고, fixture가 L의 내부
+  maker가 만든 인스턴스를 던지므로(generator GN-7a) 그 행은 recognition이 필요 없다. `result`와 `raise`를 함께 가진 행, member가 recognize하지 않는 오류 unit의
   `raise`(U-3), kind가 그 오류 unit의 kind가 아닌, 곧 `class`가 그 unit인 `errors.kinds` 행의 kind가 아니어서 unit의
   생성자가 거부하는 함수 fixture나 행의 `raise`(generator GN-7a), `async_allowed`가 없는 member의 `async` 행, 행이 줄 수 없는 언어
   객체(class, callback, 함수, host value)를 받는 member의 행은 지적된다. callback interface의 다른 자리, 곧 record의
