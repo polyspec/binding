@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: e10f74f092e2036731af033b0c6f10de8ae7251342b46a6143482d4256d031b2 -->
+<!-- source-sha256: 73acd02b99399d8570049fe18ba9db9637fee508f0611b31b9478e9bd05360fd -->
 # 생성기
 
 [English](generator.md)
@@ -3197,7 +3197,8 @@
   명령(`$(NODE) $(BINDING)`이나 설치된 패키지의 bin link 같은 것)이고, `CARGO`는 저장소의 cargo 명령, `CARGOFLAGS`는 그 build의
   인자로 비어 있을 수 있으며(GN-1d), `NODE`, `NPM`, `UV`는 절대 경로로 적은 checkout의
   도구이며, `BINDING_DEP`는 binding을 설치하는 target이 있으면 그 target이다. 빈 변수를 읽는 recipe는 실패하고 그 변수를
-  적는다. `GO`는 binding이 시작하는 go 명령이고 기본값은 `PATH`의 go인 `go`다. recipe는 Go를 시작할 수 있는 binding의 각
+  적는다. `release-binding-check`는 계약의 release recipe가 읽는 변수를 모두 요구하므로, tag 뒤의 recipe만 읽는 변수가 빠진 것도
+  tag 전에 실패한다(docs/spec/contract-check.md CK-102, B2.471). `GO`는 binding이 시작하는 go 명령이고 기본값은 `PATH`의 go인 `go`다. recipe는 Go를 시작할 수 있는 binding의 각
   명령, 곧 `release-binding-check`의 `binding check --release`(GN-15l)와 `release-go-module`의 `binding
   release-go-module`(GN-19f)에 `--go "$(GO)"`를 넘기고 스스로는 Go를 시작하지 않는다. 그래서 Makefile은 자기 go가 `PATH`의
   `go`가 아닐 때만 `GO`를 정의하고, 두 recipe 중 하나를 실행하는 job에는 Go가 있다. `release-assets-<job>`을 실행하는

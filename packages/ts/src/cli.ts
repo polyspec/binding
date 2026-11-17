@@ -35,7 +35,7 @@ import { Unsupported } from './generate/model.ts';
 import { bindingCoreFinding, casePointLibraries, componentBase, extensionName, goSumModule, goSumOf, hostRequirements, inheritedLines, manifestReleaseFindings, releaseFindings, releaseJudged, sumRequires, type GoDownload, type Tracked, trackedResult } from './generate/packages.ts';
 import { goCommand } from './go-command.ts';
 import { goStaticBuildArgs, nativeStaticLibs, Refused, releaseGoModule } from './release/go-module.ts';
-import { cargoFindings, releaseRecipes } from './release/recipes.ts';
+import { cargoFindings, releaseRecipes, releaseSettingFindings } from './release/recipes.ts';
 
 function libraries(contract: unknown): Set<string> {
   const found = new Set<string>();
@@ -622,6 +622,14 @@ if (command === 'check') {
         differs = true;
         process.stderr.write(`${join(root, path)}: CK-70 ${message}\n`);
       }
+    }
+  }
+  // CK-102 (B2.471): the check of a release reads the settings that the release recipes of the contract read, with the
+  // readers of the recipes, so a setting that only a recipe after the tag reads is missed before the tag.
+  if (options.has('--release')) {
+    for (const { path, message } of releaseSettingFindings(checked, root)) {
+      differs = true;
+      process.stderr.write(`${join(root, path)}: CK-102 ${message}\n`);
     }
   }
   const names = failedChecks.has('CK-18');

@@ -22,7 +22,7 @@ contract that passes the schema and the package names (CK-1, CK-18). A check tha
 that stopped it. Why: a run that stops at the first failed check hides the findings of the others, such as a pin of
 another binding behind a finding of the contract.
 
-`binding check <interface.json> --release` also runs the check of a release, CK-70. The recipe `release-binding-check`
+`binding check <interface.json> --release` also runs the checks of a release, CK-70 and CK-102. The recipe `release-binding-check`
 (generator GN-19g) passes the option, and each build recipe of the assets runs that recipe as its first step, in CI as in
 a release (generator GN-19i). The rule that it checks: a committed tree of a repository, on any branch, holds release
 forms only. A tracked file names another polyspec repository by a tag or by a version of a release, never by a branch, a
@@ -233,6 +233,28 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   GN-19i), these fail in CI. It is a check of its own and no
   part of CK-19: the tracked files of a development checkout are what `scaffold` writes, so CK-19 passes them, and the
   question of CK-70 is what a release may hold.
+- **CK-102** The settings of the release recipes (generator GN-19h), run by `binding check --release` alone: the check
+  of a release reads each setting of the repository that a release recipe of the contract reads, with the reader of
+  the recipe itself, and reports each that is missing with its file, its key, the recipe that reads it and the id of
+  its rule. Only the settings of the targets of the contract are read. For the target `php`: `phpExtension.minors` of
+  `config/toolchain.json`, a list of `<major>.<minor>` that is not empty, which `release-platform-assets` reads to
+  require the extension of each PHP minor (generator GN-19a), read by the script of Node.js of that recipe
+  (``release-platform-assets: config/toolchain.json names no PHP minor of the extension in phpExtension.minors``); and
+  `llvm.version` of the same file, which `release-php-ext` reads (generator GN-19d), read by the script of `sed` of
+  the recipes, which takes the value of a line `"version": "<major>"` under a line `"llvm": {`, so a file on one line
+  pins none. For the target `go`: the module path of `packages.go`, which is
+  `github.com/<owner>/<repository>/<directory of the Go module>` (generator GN-15, GN-19f), read by the function with
+  which `binding release-go-module` refuses another path. The recipe `release-binding-check` itself first requires
+  every variable of the Makefile that a release recipe of the contract reads (`BINDING_RUN`, `CARGO`, and `UV`, `NPM`
+  and `NODE` by its targets), which the check, a command, cannot read. Why: the release of session-store passed
+  `binding check --release` and would then have stopped in `release-platform-assets`, after the tag, on a
+  `config/toolchain.json` without `phpExtension.minors`, which a rehearsal found; with the check as the first step of
+  each build recipe of CI (generator GN-19i) such a setting fails before a tag. One reader for the recipe and the
+  check, because a second reader would pass a file that the recipe refuses. What the check does not read: the tools
+  that a recipe starts and the files that those tools read themselves (the napi CLI of the devDependency
+  `@napi-rs/cli`, the wasm-bindgen of `mise.toml`, the targets and components of `rust-toolchain.toml`, the LLVM of
+  `LLVM_ROOT`), which the build recipes of CI start and so fail on before a tag, and the inputs of one run (`TAG`,
+  `EXPECTED_PHP_MINOR`, the assets, `gh`, the Git remote), which no tree holds.
 - **CK-71** The licence of the core (generator GN-3f): the manifest of the core names `package.license`, by itself or
   from `workspace.package.license` of the root manifest; a core without it is a finding that names the core manifest,
   because every manifest of its binding packages carries that licence.

@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: d287b8497f5e98ef1d1fc52da87224768a9a06126c472b0dede04c03dd4eba6e -->
+<!-- source-sha256: dc75aefac76afd60ac6d26b0b51f107d6fd71a27774e495210729f0c69eacd05 -->
 <!-- source-sha256: c3989a5d99419e7579c257705d450c317965f558caec34e7944e874416df3e38 -->
 <!-- source-sha256: 3ddf2dc3f98a310b3fe868538c63ca80d2592024713d621b735ce6e290fb1c0b -->
 <!-- source-sha256: af39c2057c369878bbe45717f4c37a928f4d473b67aa37090bb0916dd6cd5e5f -->
@@ -16,6 +16,7 @@
 
 ## Unreleased
 
+- `binding check --release`는 계약의 release recipe가 읽는 레포의 설정을 recipe의 reader 그대로 읽고 빠진 것을 하나씩 이름한다(CK-102, B2.471): target `php`는 `config/toolchain.json`의 `phpExtension.minors`와 `llvm.version`, target `go`는 Go module의 디렉터리를 이름하는 `packages.go`의 module path. 그리고 recipe `release-binding-check`는 계약의 release recipe가 읽는 Makefile의 변수(`BINDING_RUN`, `CARGO`, target에 따라 `UV`, `NPM`, `NODE`)를 모두 먼저 요구한다. session-store의 release는 검사를 통과한 뒤 tag 뒤의 `release-platform-assets`에서 `names no PHP minor of the extension in phpExtension.minors (GN-19a)`로 멈췄을 것이다. 이 버전으로 옮기는 레포가 할 일: target `php`가 있는 레포는 `config/toolchain.json`에 `phpExtension.minors`(예: `["8.4", "8.5"]`)와 `llvm.version`을 적는다. 뒤의 것은 recipe가 읽는 대로 `"llvm": {` 줄 아래 `"version": "<major>"` 줄에 적는다. Makefile이 recipe의 변수를 일부 goal에서만 정의하는 레포는 `release-binding-check`에서도 include 앞에 그것을 정의한다.
 - 레포의 commit된 tree는 어느 branch에서든 release 꼴만 담고, CI가 release의 검사를 실행한다(CK-70, GN-19i, B2.457): `packages/release.mk`의 생성된 `release-assets-<job>` recipe는 저마다 `release-binding-check`를 첫 단계로 실행한다. 그래서 CI의 실행과 release의 실행이 한 recipe이고, GN-19i의 입력 `release`는 없어졌다. 전에는 레포마다 자기 Makefile의 조건으로 release에서만 검사를 돌렸고, template, http-negotiation, session-store가 저마다 tag 뒤에 처음 돈 검사에 tag를 잃었다. `binding check --release`는 이제 코어, 추적하는 바인딩 crate 각각, root의 manifest에서 `[dev-dependencies]`, `[build-dependencies]`, `[target.<target>]`의 table, `[patch.<source>]`에 있는 crate `polyspec-<name>`의 줄도 모두 읽는다. `workspace = true`인 줄은 검사에서도 `scaffold`가 쓰는 manifest에서도 그것이 물려받는 `[workspace.dependencies]`의 줄의 꼴을 갖고, 바인딩 crate는 코어가 물려받는 `polyspec-binding-core` 줄을 물려받는다. 이 버전으로 옮기는 레포가 할 일:
   - Makefile에서 조건 `$(if $(filter true,$(RELEASE)),…release-binding-check…)`를 지우고, `assets.yml`과 그것을 부르는 workflow에서 입력 `release`를 지우고, `make release-recipes`를 다시 실행한다. `release-assets-<job>` 앞에서 `release-binding-check`를 아직 실행하는 자기 recipe는 검사를 두 번 돌릴 뿐이다.
   - `release-assets-<job>` recipe를 실행하는 모든 job(`platform`, `php`, `npm`)에 CI에서도 Go를 설치한다. 검사가 Go를 시작할 수 있기 때문이다(GN-15l). 자기 go가 `PATH`의 `go`가 아니면 `GO`를 정의한다.

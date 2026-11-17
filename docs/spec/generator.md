@@ -3903,7 +3903,9 @@ the design ids are those of the binding design.
   recipes read: `BINDING_RUN`, the command that starts binding (such as `$(NODE) $(BINDING)` or the bin link of the
   installed package), `CARGO`, the cargo command of the repository, and `CARGOFLAGS`, the arguments of its builds, which
   may be empty (GN-1d), `NODE`, `NPM` and `UV`, the tools of the checkout by their absolute paths, and `BINDING_DEP`, the
-  target that installs binding, when it has one; a recipe that reads one that is empty fails and names it. `GO`, the
+  target that installs binding, when it has one; a recipe that reads one that is empty fails and names it, and
+  `release-binding-check` requires each one that a release recipe of the contract reads, so a variable that only a
+  recipe after the tag reads is missed before the tag (docs/spec/contract-check.md CK-102, B2.471). `GO`, the
   go command that binding starts, has the default `go`, the go of `PATH`: the recipes pass `--go "$(GO)"` to each
   command of binding that may start Go, `binding check --release` of `release-binding-check` (GN-15l) and `binding
   release-go-module` of `release-go-module` (GN-19f), and start no Go themselves, so a Makefile defines `GO` only when

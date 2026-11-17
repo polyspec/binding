@@ -1,5 +1,5 @@
 <!-- doc-id: contract-check -->
-<!-- source-sha256: c12948b6f27bc8b7fbec0bff172d87230e524775272f0251f1f00b1bdda500f6 -->
+<!-- source-sha256: 77d3122f2ec1d5471e17821b3fe15d3e3f9866b03f60d5968792eefdaa925523 -->
 # 계약 검사
 
 [English](contract-check.md)
@@ -19,7 +19,7 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
 이유: 처음 실패한 검사에서 멈추는 실행은 다른 검사의 finding을 가린다. 예를 들어 계약의 finding 뒤에 다른 binding의 pin이
 숨는다.
 
-`binding check <interface.json> --release`는 release의 검사 CK-70도 실행한다. recipe `release-binding-check`(생성기 GN-19g)가 이
+`binding check <interface.json> --release`는 release의 검사 CK-70과 CK-102도 실행한다. recipe `release-binding-check`(생성기 GN-19g)가 이
 옵션을 주고, asset의 빌드 recipe는 CI에서도 release에서도 그 recipe를 첫 단계로 실행한다(생성기 GN-19i). 이 검사가 보는 규칙:
 레포의 commit된 tree는 어느 branch에서든 release 꼴만 담는다. 추적하는 파일은 다른 polyspec 레포를 tag나 release의 버전으로
 이름하고, branch나 commit이나 레포 옆의 checkout으로 이름하지 않으며, checkout을 다른 레포의 checkout에 맞대어 개발하는 일은
@@ -195,6 +195,24 @@ CK-70을 실행하지 않는다. 옵션은 release를 내지 않는 tree, 곧 bi
   끝난다. Go module은 `go mod download`가 알 수 없는 revision을 이름하며, 그것이 `go.sum`에 대한 CK-19의 finding이다(generator
   GN-15l). CI가 release의 빌드 recipe를 실행하므로(generator GN-19i) 이것들은 CI에서 실패한다. 이것은 CK-19의 일부가 아닌 별도의 검사다. 개발 checkout의
   추적 파일은 `scaffold`가 쓰는 그대로여서 CK-19는 통과시키고, CK-70의 질문은 release가 무엇을 담아도 되는가이기 때문이다.
+- **CK-102** release recipe의 설정(generator GN-19h), `binding check --release`만 실행한다: release의 검사는 계약의 release
+  recipe가 읽는 레포의 설정을 그 recipe의 reader 그대로 읽고, 빠진 것마다 그 파일, key, 그것을 읽는 recipe, 규칙의 id와 함께
+  보고한다. 계약의 target에 필요한 설정만 읽는다. target `php`: `config/toolchain.json`의 `phpExtension.minors`, 곧 비어 있지 않은
+  `<major>.<minor>`의 목록. `release-platform-assets`가 PHP minor마다 확장을 요구하려고 읽으며(generator GN-19a), 그 recipe의
+  Node.js script로 읽는다(``release-platform-assets: config/toolchain.json names no PHP minor of the extension in
+  phpExtension.minors``). 그리고 같은 파일의 `llvm.version`. `release-php-ext`가 읽으며(generator GN-19d), recipe의 `sed`
+  script로 읽는다. 그 script는 `"llvm": {` 줄 아래 `"version": "<major>"` 줄의 값을 가져오므로 한 줄로 쓴 파일은 아무것도
+  고정하지 않는다. target `go`: `packages.go`의 module path, 곧
+  `github.com/<owner>/<repository>/<Go module의 디렉터리>`(generator GN-15, GN-19f). `binding release-go-module`이 다른 path를
+  거부할 때 쓰는 함수로 읽는다. recipe `release-binding-check` 자신은 계약의 release recipe가 읽는 Makefile의 변수를
+  모두(`BINDING_RUN`, `CARGO`, target에 따라 `UV`, `NPM`, `NODE`) 먼저 요구한다. 명령인 검사는 그것을 읽을 수 없기 때문이다.
+  이유: session-store의 release는 `binding check --release`를 통과한 뒤 tag 뒤의 `release-platform-assets`에서
+  `phpExtension.minors`가 없는 `config/toolchain.json` 때문에 멈췄을 것이고, 예행연습이 그것을 찾았다. 검사가 CI의 빌드 recipe의
+  첫 단계이므로(generator GN-19i) 그런 설정은 tag 전에 실패한다. recipe와 검사의 reader가 하나인 것은, 두 번째 reader는 recipe가
+  거부하는 파일을 통과시킬 것이기 때문이다. 검사가 읽지 않는 것: recipe가 시작하는 도구와 그 도구가 스스로 읽는
+  파일(devDependency `@napi-rs/cli`의 napi CLI, `mise.toml`의 wasm-bindgen, `rust-toolchain.toml`의 target과 component,
+  `LLVM_ROOT`의 LLVM). CI의 빌드 recipe가 그것을 시작하므로 tag 전에 실패한다. 그리고 한 실행의 입력(`TAG`,
+  `EXPECTED_PHP_MINOR`, asset, `gh`, Git remote). 어떤 tree도 그것을 담지 않는다.
 - **CK-71** 코어의 licence(generator GN-3f): 코어 manifest는 `package.license`를 스스로, 또는 root manifest의
   `workspace.package.license`에서 받아 적는다. 그것이 없는 코어는 코어 manifest를 이름하는 finding이다. 그 바인딩 package의
   모든 manifest가 그 licence를 담기 때문이다.
