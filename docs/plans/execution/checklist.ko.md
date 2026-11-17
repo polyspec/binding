@@ -1,5 +1,5 @@
 <!-- doc-id: checklist-execution -->
-<!-- source-sha256: bc51e1d2ee34a0ff4db8ddc59c3df2b53e0e23621f66f28b5a1dbe5f076f108f -->
+<!-- source-sha256: 0fb35c4c5fbf8565940d82d5a2759cf28189e911f9e29a5cbddbbe8e43a20b19 -->
 # 실행 체크리스트
 
 ## Wave 1 — polyspec 저장소의 문서 구조
@@ -375,3 +375,4 @@
 | B2.519 | duplication-check의 첫 run(B2.515)이 alias 생성기 alias_* 에서 중복을 찾았다. 각각을 한 곳으로 모은다. 두 생성기가 같이 쓰는 대상 언어 code의 template도 그렇다. 남기는 것은 duplication-check가 받는 꼴의 이유와 함께만 둔다. 0.0.23에 해당한다. | `packages/ts/src/generate`; `scripts`; `packages/ts/tests` | make duplication-check가 alias 생성기 alias_* 에서 이유와 함께 남긴 것 말고는 중복을 찾지 않는다. e2e REPO의 생성 결과가 앞뒤로 같다. make typecheck-ts; make test-ts | [ ] |
 | B2.520 | duplication-check의 첫 run(B2.515)이 model.ts, samples.ts, go_rust 에서 중복을 찾았다. 각각을 한 곳으로 모은다. 두 생성기가 같이 쓰는 대상 언어 code의 template도 그렇다. 남기는 것은 duplication-check가 받는 꼴의 이유와 함께만 둔다. 0.0.23에 해당한다. | `packages/ts/src/generate`; `scripts`; `packages/ts/tests` | make duplication-check가 model.ts, samples.ts, go_rust 에서 이유와 함께 남긴 것 말고는 중복을 찾지 않는다. e2e REPO의 생성 결과가 앞뒤로 같다. make typecheck-ts; make test-ts | [ ] |
 | B2.521 | duplication-check의 첫 run(B2.515)이 scripts 에서 중복을 찾았다. 각각을 한 곳으로 모은다. 두 생성기가 같이 쓰는 대상 언어 code의 template도 그렇다. 남기는 것은 duplication-check가 받는 꼴의 이유와 함께만 둔다. 0.0.23에 해당한다. | `packages/ts/src/generate`; `scripts`; `packages/ts/tests` | make duplication-check가 scripts 에서 이유와 함께 남긴 것 말고는 중복을 찾지 않는다. e2e REPO의 생성 결과가 앞뒤로 같다. make typecheck-ts; make test-ts | [ ] |
+| B2.524 | make e2e의 log는 node --test와 go test에서만 통과한 생성 시험의 이름을 댄다. unittest와 PHPUnit은 개수만 준다. 그래서 run은 무엇이 돌았는지 보이지 않고, B2.509 같은 거짓 통과를 다시 찾기 어렵다. 생성 시험의 각 단계는 모든 target에서 자기가 돌린 시험마다 그 이름과 결과를 log나 run의 남긴 보고에 둔다. 0.0.23에 해당한다. | `scripts/e2e.mts`; `packages/ts/tests`; `docs/spec/generator.md`(.ko); `CHANGELOG.md`(.ko) | e2e 단계의 단위 시험이 Python, PHP, Node, WASM, Go의 각 runner가 돌린 시험마다 이름과 결과를 한 줄로 남기는 것을 보인다. sample의 make e2e가 모든 target에서 생성 시험의 이름을 남긴다. Red: 고치기 전 unittest와 PHPUnit 단계는 개수만 준다. make typecheck-ts; make docs-check; make test-ts | [ ] |
