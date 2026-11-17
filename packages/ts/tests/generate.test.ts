@@ -30,23 +30,11 @@ import { parse } from 'smol-toml';
 // other rules read the sample without those classes and rows, which plainSample gives, so that each of them reads the
 // rule that it names alone; the test of GN-6ar reads the sample as it is.
 const CLASS_ROWS: ReadonlySet<string> = new Set(['box', 'cell', 'ratio']);
-// B2.492: the alias amount of the sample makes an integral float as an instance of ratio in PHP and reads it back; a
-// test that removes ratio or changes its constructor reads amount as a float alone.
-const amountWithoutRatio = (owner: any): void => {
-  const amount = owner.units.find((u: any) => u.id === 'amount');
-  amount.out = amount.out.filter((row: any) => row.when?.is !== false);
-  for (const row of amount.out) {
-    delete row.when;
-    row.make.php = 'float';
-  }
-  amount.in = amount.in.filter((row: any) => row.php !== 'ratio');
-};
 const plainSample = (owner: any): any => {
   owner.units = owner.units.filter((u: any) => !CLASS_ROWS.has(u.id));
   owner.cases = owner.cases.filter((row: any) => !CLASS_ROWS.has(String(row.member).split('.')[0] ?? ''));
   const data = owner.units.find((u: any) => u.id === 'data');
   data.out = data.out.filter((row: any) => row.kind !== 'reference');
-  amountWithoutRatio(owner);
   for (const row of data.out) for (const lang of Object.keys(row.make)) if (row.make[lang] === 'box.constructor') row.make[lang] = 'map';
   data.in = data.in.filter((row: any) => !Object.values(row).some((named) => typeof named === 'string' && (CLASS_ROWS.has(named) || named === 'reference')));
   return owner;
@@ -238,9 +226,9 @@ test('host containers keep their identity during one walk, with and without valu
   }
 });
 
-// B2.492 (GN-6af, GN-13): the alias amount of the sample makes an integral float as an instance of ratio in PHP, and its
-// PHP in row names ratio, so the case value of weigh is that instance, and the PHP host describes it as
-// HostValue::Value of the kind float, whose read gives the float of ratio.value. Before B2.492 the PHP host had no arm
+// B2.492 (GN-6af, GN-13): the alias amount of the sample makes an integral float as an instance of weight in PHP, and
+// its PHP in row names weight, a class that amount alone gathers (CK-8), so the case value of weigh is that instance,
+// and the PHP host describes it as HostValue::Value of the kind float, whose read gives the float of weight.value. Before B2.492 the PHP host had no arm
 // for a class of the contract, so the instance entered as HostValue::Object, which the core of the sample refuses as
 // kind unsupported, as orm's core refuses it with "an object of the language".
 test('an instance of a value class of the contract that a case value makes enters the PHP host as a value of its in row (B2.492, GN-6af, GN-13)', () => {
@@ -248,14 +236,14 @@ test('an instance of a value class of the contract that a case value makes enter
   const cases = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/contracts/cases.json', import.meta.url), 'utf8'));
   const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: new Map([['contracts/cases.json', cases]]), targets: ['php'] });
   const tests = text(out, 'packages/php-ext/generated/tests/GeneratedTest.php');
-  assert.match(tests, /\\Polyspec\\Sample\\weigh\(new \\Polyspec\\Sample\\Ratio\(\(float\) 2\.0\)\)/);
+  assert.match(tests, /\\Polyspec\\Sample\\weigh\(new \\Polyspec\\Sample\\Weight\(\(float\) 2\.0\)\)/);
   const lib = text(out, 'packages/php-ext/generated/lib.rs');
   const describe = lib.slice(lib.indexOf('    fn describe(&mut self, value: &\'a Zval)'));
-  const ratio = lib.search(/php_instance\(value, "Polyspec\\\\Sample\\\\Ratio"\)/);
-  assert.ok(ratio >= 0, 'the PHP host tells an instance of ratio');
-  assert.match(lib.slice(ratio), /^php_instance\(value, "Polyspec\\\\Sample\\\\Ratio"\) \{[\s\S]*?Some\(\("value", ReadAs::Content\)\)[\s\S]*?HostValue::Value \{ kind: ValueKind::Float, /);
+  const weight = lib.search(/php_instance\(value, "Polyspec\\\\Sample\\\\Weight"\)/);
+  assert.ok(weight >= 0, 'the PHP host tells an instance of weight');
+  assert.match(lib.slice(weight), /^php_instance\(value, "Polyspec\\\\Sample\\\\Weight"\) \{[\s\S]*?Some\(\("value", ReadAs::Content\)\)[\s\S]*?HostValue::Value \{ kind: ValueKind::Float, /);
   const classes = describe.indexOf('php_value_class(value,');
-  assert.ok(classes >= 0 && classes < describe.indexOf('HostValue::Object {'),'the PHP host describes an instance of ratio before any other object');
+  assert.ok(classes >= 0 && classes < describe.indexOf('HostValue::Object {'),'the PHP host describes an instance of weight before any other object');
 });
 
 test('a record that a function returns has its result form in every language (T-4)', () => {
@@ -4746,7 +4734,8 @@ test('a record parameter whose every field has a default may be left out as a wh
   const wasmOut = generate({ ...shapes(), version: '0.0.0', coreLib: 'polyspec_shapes', targets: ['wasm'] });
   for (const [files, dir] of [[out, 'packages/ts/generated'], [wasmOut, 'packages/ts/wasm/generated']] as const) {
     assert.match(text(files, `${dir}/index.d.ts`), /export declare function wrap\(text: string, options\?: WrapOptions\): string;/);
-    assert.match(text(files, `${dir}/lib.rs`), /let left: Option<String> = default_in\(&?member_or_undefined\(&?options, "left", "options"\)\?/);
+    // GN-4c: the helper is field_or_undefined in WASM, where member_ begins the entries of the members of a class.
+    assert.match(text(files, `${dir}/lib.rs`), dir.includes('wasm') ? /let left: Option<String> = default_in\(&field_or_undefined\(&options, "left", "options"\)\?/ : /let left: Option<String> = default_in\(member_or_undefined\(options, "left", "options"\)\?/);
     const tests = text(files, `${dir}/tests/generated.test.mjs`);
     assert.match(tests, /test\('GN-13e: wrap options_left_out', \(\) => \{\n[^\n]*pkg\.wrap\('a'\)/);
     assert.match(tests, /test\('U-2: wrap without left is the call with its default'/);
@@ -4817,6 +4806,35 @@ test('a default of an optional type is one Option, None when it is left out or n
   // returns is generated, and a None of the core is the null of the language.
   const returned = shaped((c) => { unitOf(c, 'text_measure').fields.push({ name: ['note'], type: { optional: 'text' }, default: { literal: null }, reason: 'SH-3' }); });
   assert.match(text(returned, 'packages/python/generated/python/polyspec/shapes/_types.py'), /class TextMeasure:[\s\S]*?\n    note: str \| None = None\n/);
+});
+
+// B2.436 (crud-ui, Form.addRow): the core makes the value of a {computed} default at each call, so the call without it
+// and the call with null are compared by their outcome alone, in a test whose name states the rule id.
+test('B2.436: the U-2 test of a {computed} default of an optional type compares the outcomes of the two calls and no value (GN-13d)', () => {
+  // The field end of pad_options, an optional text, takes its value from the core by the rule SH-9.
+  const computed = (c: any): void => { unitOf(c, 'pad_options').fields.find((f: any) => f.name.join('_') === 'end').default = { computed: 'SH-9' }; };
+  const out = shaped(computed);
+  const { contract, caseFiles } = shapes();
+  computed(contract);
+  const wasmOut = generate({ contract, caseFiles, version: '0.0.0', coreLib: 'polyspec_shapes', targets: ['wasm'] });
+  // Each target runs the call without the field and the call with null, drops the value of each and compares what is
+  // left: no failure, or the class and kind of the failure.
+  const python = text(out, 'packages/python/generated/tests/test_generated.py');
+  assert.match(python, /\n {4}def test_u2_pad_end_left_out_leaves_its_value_to_the_core_sh_9\(self\) -> None:\n {8}left = _outcome\(lambda: \(pkg\.pad\("ab"\), None\)\[1\]\)\n {8}right = _outcome\(lambda: \(pkg\.pad\("ab", end=None\), None\)\[1\]\)\n {8}self\.assertEqual\(left, right\)\n/);
+  for (const tests of [text(out, 'packages/ts/generated/tests/generated.test.mjs'), text(wasmOut, 'packages/ts/wasm/generated/tests/generated.test.mjs')]) {
+    assert.match(tests, /\ntest\('U-2: pad without end leaves its value to the core \(SH-9\)', \(\) => \{\n {2}assert\.deepStrictEqual\(outcome\(\(\) => void pkg\.pad\('ab'\)\), outcome\(\(\) => void pkg\.pad\('ab', undefined, \{ end: null \}\)\)\);\n\}\);\n/);
+    assert.doesNotMatch(tests, /U-2: pad without end is the call with its default/);
+  }
+  const php = text(out, 'packages/php-ext/generated/tests/GeneratedTest.php');
+  assert.match(php, /\n {4}public function testU2padEndLeftOutLeavesItsValueToTheCoreSh9\(\): void\n {4}\{\n {8}self::assertSame\(\n {12}self::outcome\(static fn \(\): mixed => \[\\Polyspec\\Shapes\\pad\("ab"\), null\]\[1\]\),\n {12}self::outcome\(static fn \(\): mixed => \[\\Polyspec\\Shapes\\pad\("ab", end: null\), null\]\[1\]\),\n {8}\);\n {4}\}\n/);
+  // Go leaves a field out as nil, which is its null too, so its two calls are one call written twice.
+  const go = text(out, 'packages/go/zz_generated_test.go');
+  assert.match(go, /\nfunc TestU2PadWithoutEndLeavesItsValueToTheCoreSH9\(t \*testing\.T\) \{\n\t_, err0 := Pad\("ab", nil, PadOptions\{Side: nil, Width: nil, End: nil\}\)\n\t_, err1 := Pad\("ab", nil, PadOptions\{Side: nil, Width: nil, End: nil\}\)\n\tif !sameFailure\(err0, err1\) \{\n\t\tt\.Fatalf\("U-2: %v is not %v", err0, err1\)\n\t\}\n\}\n/);
+  // No target names the old test of the field, and the field width of the fixture, {computed: SH-2}, has its own.
+  for (const body of [python, php, go]) assert.doesNotMatch(body, /pad_end_left_out_is_its_default|padEndLeftOutIsItsDefault|PadWithoutEndIsTheCallWithItsDefault/);
+  assert.match(python, /def test_u2_pad_width_left_out_leaves_its_value_to_the_core_sh_2\(self\)/);
+  // A {computed} default of a type that is not optional has no second call, so it keeps no test of U-2.
+  for (const body of [python, php, go, text(out, 'packages/ts/generated/tests/generated.test.mjs')]) assert.doesNotMatch(body, /u2_frame_width_left_out|U2frameWidthLeftOut|U2FrameWithoutWidth|U-2: frame without width/);
 });
 
 test('a {literal} default of an enum names its constant in default_core, which matches! asserts (U-2, GN-6i)', () => {
@@ -5101,7 +5119,6 @@ test('B2.277: recursive alias projections refuse composed values and retain genu
 
 test('B2.277: own value-class projections refuse composition and restore the next ordinary case scope (GN-13l)', () => {
   const { contract, caseFiles } = b277TextFixture();
-  amountWithoutRatio(contract);
   const members = contract.units.flatMap((unit: any) => unit.members ?? []);
   members.find((member: any) => member.id === 'ratio.constructor').parameters[0].type = { optional: 'text' };
   contract.units.find((unit: any) => unit.id === 'ratio').out = [{ kind: 'float', make: Object.fromEntries(FIVE.map((target) => [target, 'ratio.constructor'])) }];
@@ -8098,7 +8115,7 @@ test('Node makes a closure of a function that the machine owns, holds its value 
   // The entry passes the function as it is, and the declarations name the passthrough as a type parameter.
   assert.match(text(out, 'packages/ts/generated/index.cjs'), /return drive\(Reflect\.apply\(original, this, \[args\[0\]\]\)\);/);
   const dts = text(out, 'packages/ts/generated/index.d.ts');
-  assert.match(dts, /export declare class Store \{\n {2}constructor\(\);\n {2}get\(key: string\): string \| null;\n {2}getBlob\(key: string\): unknown \| null;\n {2}count\(\): number;\n {2}transaction<T>\(work: \(arg0: Scope\) => T\): Promise<Awaited<T>>;\n {2}static once<T>\(work: \(arg0: Scope\) => T\): Promise<Awaited<T>>;\n {2}audited<T>\(work: \(arg0: Scope\) => T\): Promise<Awaited<T>>;\n {2}attempt<T>\(work: \(arg0: Scope\) => T\): Promise<boolean>;\n\}/);
+  assert.match(dts, /export declare class Store \{\n {2}constructor\(\);\n {2}get\(key: string\): string \| null;\n {2}getBlob\(key: string\): unknown \| null;\n {2}count\(\): number;\n {2}transaction<T>\(work: \(arg0: Scope\) => T\): Promise<Awaited<T>>;\n {2}static once<T>\(work: \(arg0: Scope\) => T\): Promise<Awaited<T>>;\n {2}audited<T>\(work: \(arg0: Scope\) => T\): Promise<Awaited<T>>;\n {2}tagged<T>\(work: \(arg0: Scope\) => T, options\?: TagOptions\): Promise<Awaited<T>>;\n {2}attempt<T>\(work: \(arg0: Scope\) => T\): Promise<boolean>;\n\}/);
   assert.match(dts, /\n {2}nested<T>\(work: \(arg0: Scope\) => T\): Promise<Awaited<T>>;\n/);
   // A contract without a function parameter has no table, and its machine takes no outcome.
   const plain = text(generateTargets({ contract: JSON.parse(readFileSync(new URL('./fixtures/repo/packages/rust/interface.json', import.meta.url), 'utf8')), version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: new Map([['contracts/cases.json', JSON.parse(readFileSync(new URL('./fixtures/repo/contracts/cases.json', import.meta.url), 'utf8'))]]), targets: ['node'] }), 'packages/ts/generated/lib.rs');
@@ -8129,8 +8146,8 @@ test('B2.486: a member with machine takes a parameter with a default, which the 
     // Node and WASM: the options record is a trailing argument that may be missing or undefined, whose fields are then
     // each left out (GN-6i), as for a member without a machine.
     const lib = text(files, `${dir}/lib.rs`);
-    assert.match(lib, /let retry: Option<u64> = default_in\(&?member_or_undefined\(&?options, "retry", "options"\)\?, \|value\| optional_in\(value, \|value\| uint_in\(value, "retry"\)\)\)\.map\(Option::flatten\)\?;/);
-    assert.match(lib, /let label: Option<String> = default_in\(&?member_or_undefined\(&?options, "label", "options"\)\?, \|value\| text_in\(value, "label"\)\)\?;/);
+    assert.match(lib, /let retry: Option<u64> = default_in\(&?(?:member|field)_or_undefined\(&?options, "retry", "options"\)\?, \|value\| optional_in\(value, \|value\| uint_in\(value, "retry"\)\)\)\.map\(Option::flatten\)\?;/);
+    assert.match(lib, /let label: Option<String> = default_in\(&?(?:member|field)_or_undefined\(&?options, "label", "options"\)\?, \|value\| text_in\(value, "label"\)\)\?;/);
     assert.match(lib, record);
     assert.match(lib, new RegExp(String.raw`let mut machine = binding_core::machine::Driving::new\(${taken.source}\);`));
     assert.match(lib, /let label: Option<String> = default_in\(&?label, \|value\| text_in\(value, "label"\)\)\?;/);
@@ -8139,14 +8156,22 @@ test('B2.486: a member with machine takes a parameter with a default, which the 
     assert.match(dts, /\n {2}transaction<T>\(work: \(arg0: Scope\) => T, options\?: TransactionOptions\): Promise<Awaited<T>>;\n/);
     assert.match(dts, /\n {2}nested<T>\(work: \(arg0: Scope\) => T, label\?: string\): Promise<Awaited<T>>;\n/);
     // The generated tests: a case that gives no options calls the member without them, and the tests of the fields
-    // give the record. No test compares the call without a field with the call with its default, because the member
-    // takes a function (GN-13a).
+    // give the record. The U-2 test compares the call without each field with the call with its default, with the
+    // function of the first case that does not raise.
     const tests = text(files, `${dir}/tests/generated.test.mjs`);
+    assert.match(tests, /\ntest\('U-2: Store\.transaction without label is the call with its default', async \(\) => \{\n {2}assert\.deepStrictEqual\(await settled\(async \(\) => \(await new pkg\.Store\(\)\.transaction\(\(arg0\) => \{[^\n]*\}\)\)\), await settled\(async \(\) => \(await new pkg\.Store\(\)\.transaction\(\(arg0\) => \{[^\n]*\}, \{ label: 'plain' \}\)\)\)\);\n\}\);\n/);
     assert.match(tests, /test\('GN-13e: Store\.transaction the_entries_of_a_function_that_returns_are_committed', async \(\) => \{\n[^\n]*\n[^\n]*await receiver\.transaction\(\(arg0\) => \{[^\n]*return 'done'; \}\)\)\)/);
     assert.match(tests, /test\('GN-12a: Store\.transaction refuses a retry of another type than uint'[^\n]*\n[^\n]*\n[^\n]*\.transaction\(\(arg0\) => \{ return null; \}, \{ retry: bad, label: 'a' \}\)/);
     assert.match(tests, /test\('G-7: Store\.transaction counts and names its arguments'/);
-    assert.doesNotMatch(tests, /U-2: Store\.transaction without/);
   }
+  // Python, PHP and Go write the same test of the call without a field and the call with its default.
+  const python = text(scopedSample(['python'], optioned), 'packages/python/generated/tests/test_generated.py');
+  assert.match(python, /\n {4}def test_u2_store_transaction_label_left_out_is_its_default\(self\) -> None:\n {8}left = _outcome\(lambda: pkg\.Store\(\)\.transaction\([^\n]*\)\)\n {8}right = _outcome\(lambda: pkg\.Store\(\)\.transaction\([^\n]*, label="plain"\)\)\n/);
+  assert.match(python, /def test_u2_store_transaction_retry_left_out_is_its_default\(self\)/);
+  const php = text(scopedSample(['php'], optioned), 'packages/php-ext/generated/tests/GeneratedTest.php');
+  assert.match(php, /\n {4}public function testU2StoreTransactionLabelLeftOutIsItsDefault\(\): void\n/);
+  const go = text(scopedSample(['go'], optioned), 'packages/go/zz_generated_test.go');
+  assert.match(go, /\nfunc TestU2StoreTransactionWithoutLabelIsTheCallWithItsDefault\(t \*testing\.T\) \{\n/);
   // The JavaScript entry takes one or two arguments and gives the addon both places, the second undefined when it is
   // left out.
   assert.match(text(node, 'packages/ts/generated/index.cjs'), /async \['transaction'\]\(arg0, arg1\) \{\n\s+const args = arguments;\n\s+if \(args\.length < 1 \|\| args\.length > 2\) \{\n\s+throw new TypeError\(`Store\.transaction\(\) takes 1 to 2 arguments, \$\{args\.length\} given`\);\n\s+\}\n\s+checkRecord\('Store\.transaction\(\)', 'options', args\[1\], \['retry', 'label'\], \[\]\);\n\s+return drive\(Reflect\.apply\(original, this, \[args\[0\], args\[1\]\]\)\);/);
@@ -8502,7 +8527,7 @@ test('Python makes a closure of a callable, holds its value in the passthrough t
   assert.match(stub, / {4}def transaction\(self, work: Callable\[\[Scope\], object\]\) -> object: \.\.\.\n {4}async def atransaction\(self, work: Callable\[\[Scope\], object\]\) -> object: \.\.\./);
   // A member with a function that may return no awaitable settles its value at once and has no entry of a loop.
   const plain = text(scopedSample(['python'], (contract) => {
-    for (const id of ['store.transaction', 'store.once', 'store.audited', 'scope.nested', 'sample.scoped']) member(contract, id).parameters[0].type.function.async_allowed = false;
+    for (const id of ['store.transaction', 'store.once', 'store.audited', 'store.tagged', 'scope.nested', 'sample.scoped']) member(contract, id).parameters[0].type.function.async_allowed = false;
   }), 'packages/python/generated/lib.rs');
   assert.match(plain, /\|io\| driven\(py_\.detach\([^\n]*\)\), \|value\| Ok\(Ok\(value\)\)\)/);
   assert.doesNotMatch(plain, /on_loop|fn settled|fn awaiting/);

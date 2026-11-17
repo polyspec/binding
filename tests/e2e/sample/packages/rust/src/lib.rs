@@ -828,6 +828,26 @@ impl Ratio {
     }
 }
 
+/// A float that a class of PHP holds, which the alias amount gathers (B2.492): the class weight.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Weight {
+    value: f64,
+}
+
+impl Weight {
+    /// The weight of a float.
+    #[must_use]
+    pub fn new(value: f64) -> Self {
+        Self { value }
+    }
+
+    /// The float of the weight.
+    #[must_use]
+    pub fn value(&self) -> f64 {
+        self.value
+    }
+}
+
 /// The language form of data (U-7 `out`): the root and the children of its containers by their handles.
 pub struct DataOut<'a> {
     held: Vec<&'a Data>,
@@ -965,30 +985,30 @@ pub fn blob_to_out(value: &Blob) -> (OutValue, BlobOut) {
     (OutValue::Bytes(BytesOut::new(value.0.clone())), BlobOut)
 }
 
-/// A float whose out rows make an integral float an instance of ratio in PHP, as the `orm_value` of orm makes an int
+/// A float whose out rows make an integral float an instance of weight in PHP, as the `orm_value` of orm makes an int
 /// an instance of `integer_value` (B2.492), so that the case value of a PHP test is that instance.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Amount(pub f64);
 
-/// The float that a float or an instance of ratio of the language holds (U-7 `in`); any other value is kind
+/// The float that a float or an instance of weight of the language holds (U-7 `in`); any other value is kind
 /// `unsupported`, as orm refuses "an object of the language".
 ///
 /// # Errors
 ///
-/// Kind `unsupported` for a value that is no float and no instance of ratio.
+/// Kind `unsupported` for a value that is no float and no instance of weight.
 pub fn amount_from_host(
     host: &mut dyn HostValues,
     value: HostValue,
 ) -> Result<Amount, Failure<Error>> {
     match value {
         HostValue::Float(value) | HostValue::UntypedNumber(value) => Ok(Amount(value)),
-        // B2.492: an instance of ratio gives its float when it is read.
+        // B2.492: an instance of weight gives its float when it is read.
         HostValue::Value {
             kind: ValueKind::Float,
             handle,
         } => match host.read(handle).map_err(Failure::Raised)? {
             HostValue::Float(value) | HostValue::UntypedNumber(value) => Ok(Amount(value)),
-            _other => Err(unsupported("a ratio whose value is no float")),
+            _other => Err(unsupported("a weight whose value is no float")),
         },
         other => Err(Failure::Kind(Error::Unsupported {
             what: format!("{other:?}"),
@@ -1009,7 +1029,7 @@ impl OutValues for AmountOut {
     }
 }
 
-/// The language form of an amount (U-7 `out`): its float, which the out rows of PHP make an instance of ratio when it
+/// The language form of an amount (U-7 `out`): its float, which the out rows of PHP make an instance of weight when it
 /// is integral.
 #[must_use]
 pub fn amount_to_out(value: &Amount) -> (OutValue, AmountOut) {
@@ -1274,6 +1294,17 @@ fn entries_of(
     }
 }
 
+/// The tag of [`Store::tagged`] when its options leave it out (GN-6i).
+pub const DEFAULT_TAG: &str = "plain";
+
+/// The options of [`Store::tagged`], each of which may be left out (GN-6i: the record with the default
+/// `{empty: "object"}`, whose fields are then `None`).
+#[derive(Debug, Clone, Default)]
+pub struct TagOptions {
+    /// The tag that the transaction writes, [`DEFAULT_TAG`] when it is `None`.
+    pub tag: Option<String>,
+}
+
 /// A store of committed entries, a handle whose clones share one state (GN-6ae): a transaction gives language code a
 /// scope of pending entries, which it commits when the code returns and drops when the code raises.
 #[derive(Debug, Clone, Default)]
@@ -1329,6 +1360,20 @@ impl Store {
             .store(true, std::sync::atomic::Ordering::SeqCst);
         let mut scoped = Scoped::new(self.entries, function);
         scoped.running = Some(self.running);
+        scoped
+    }
+
+    /// Runs `function` as [`Store::transaction`] does, with the pending entry `tag` written before the function runs:
+    /// the tag of `options`, or [`DEFAULT_TAG`] when the options leave it out (GN-6ab, GN-6i: a member with machine
+    /// takes a record parameter with a default, which the machine owns).
+    pub fn tagged<F>(self, function: F, options: TagOptions) -> Scoped<F>
+    where
+        F: FnMut(Scope) -> Result<binding_core::Passthrough, Failure<Error>>,
+    {
+        let scoped = self.transaction(function);
+        scoped
+            .scope
+            .put("tag", options.tag.as_deref().unwrap_or(DEFAULT_TAG));
         scoped
     }
 

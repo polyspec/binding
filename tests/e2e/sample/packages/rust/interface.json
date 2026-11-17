@@ -1913,6 +1913,54 @@
       ]
     },
     {
+      "id": "weight",
+      "name": [
+        "weight"
+      ],
+      "module": "",
+      "kind": "class",
+      "visibility": "public",
+      "origin": "value",
+      "core_type": "polyspec_sample::Weight",
+      "members": [
+        {
+          "id": "weight.constructor",
+          "name": [
+            "constructor"
+          ],
+          "kind": "constructor",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "value"
+              ],
+              "type": "float",
+              "required": true
+            }
+          ],
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_sample::Weight::new"
+        },
+        {
+          "id": "weight.value",
+          "name": [
+            "value"
+          ],
+          "kind": "property",
+          "visibility": "public",
+          "returns": "float",
+          "raises": [],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_sample::Weight::value",
+            "receiver": "&self"
+          }
+        }
+      ]
+    },
+    {
       "id": "amount",
       "name": [
         "amount"
@@ -1937,7 +1985,7 @@
             "is": true
           },
           "make": {
-            "php": "ratio.constructor",
+            "php": "weight.constructor",
             "python": "float",
             "node": "float",
             "go": "float",
@@ -1970,11 +2018,11 @@
           ]
         },
         {
-          "php": "ratio",
+          "php": "weight",
           "cases": [
             {
               "kind": "float",
-              "read": "ratio.value"
+              "read": "weight.value"
             }
           ]
         },
@@ -2279,6 +2327,30 @@
             "path": "polyspec_sample::Ledger::known",
             "receiver": "&self"
           }
+        }
+      ]
+    },
+    {
+      "id": "tag_options",
+      "name": [
+        "tag",
+        "options"
+      ],
+      "module": "",
+      "kind": "record",
+      "visibility": "public",
+      "origin": "generated",
+      "core_type": "polyspec_sample::TagOptions",
+      "fields": [
+        {
+          "name": [
+            "tag"
+          ],
+          "type": "text",
+          "default": {
+            "literal": "plain"
+          },
+          "default_core": "polyspec_sample::DEFAULT_TAG"
         }
       ]
     },
@@ -2643,6 +2715,56 @@
           "wait": "async_driver",
           "core": {
             "path": "polyspec_sample::Store::audited",
+            "receiver": "&self",
+            "machine": true
+          }
+        },
+        {
+          "id": "store.tagged",
+          "name": [
+            "tagged"
+          ],
+          "kind": "method",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "work"
+              ],
+              "type": {
+                "function": {
+                  "parameters": [
+                    {
+                      "unit": "scope"
+                    }
+                  ],
+                  "returns": {
+                    "passthrough": "T"
+                  },
+                  "async_allowed": true
+                }
+              },
+              "required": true
+            },
+            {
+              "name": [
+                "options"
+              ],
+              "type": {
+                "unit": "tag_options"
+              },
+              "default": {
+                "empty": "object"
+              }
+            }
+          ],
+          "returns": {
+            "passthrough": "T"
+          },
+          "raises": [],
+          "wait": "async_driver",
+          "core": {
+            "path": "polyspec_sample::Store::tagged",
             "receiver": "&self",
             "machine": true
           }
@@ -3273,6 +3395,11 @@
       "group": "store_audited"
     },
     {
+      "member": "store.tagged",
+      "file": "contracts/cases.json",
+      "group": "store_tagged"
+    },
+    {
       "member": "store.attempt",
       "file": "contracts/cases.json",
       "group": "store_attempt"
@@ -3306,6 +3433,16 @@
       "member": "ratio.value",
       "file": "contracts/cases.json",
       "group": "ratio_value"
+    },
+    {
+      "member": "weight.constructor",
+      "file": "contracts/cases.json",
+      "group": "weight_constructor"
+    },
+    {
+      "member": "weight.value",
+      "file": "contracts/cases.json",
+      "group": "weight_value"
     },
     {
       "member": "held_source.new",

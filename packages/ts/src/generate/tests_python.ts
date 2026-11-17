@@ -766,11 +766,20 @@ export function pythonTests(model: Model, module: string): string {
     for (const pair of reachable ? samePairs(model, ctx, fn) : []) {
       methodMark = caseTextUses;
       usesOutcome = true;
+      const argName = langName('python', pair.arg.name, 'variable');
+      // GN-13d: the two calls of a {computed} default give the value of each to no comparison, only their outcome.
+      if (pair.computed !== undefined) {
+        append(`
+    def test_u2_${name}_${argName}_left_out_leaves_its_value_to_the_core_${pair.computed.toLowerCase().replaceAll(/[^a-z0-9]+/g, '_')}(self) -> None:
+        left = _outcome(lambda: (${target(callArgs(model, ctx, fn, pair.left))}, None)[1])
+        right = _outcome(lambda: (${target(callArgs(model, ctx, fn, pair.right))}, None)[1])
+        self.assertEqual(left, right)`);
+        continue;
+      }
       usesKept ||= keptClass !== undefined;
       // GN-13z: the outcomes are compared by _same, which reads an instance of a value class of another repository by
       // the members of its in row, because its class need not declare __eq__ (B2.358).
       usesSame = true;
-      const argName = langName('python', pair.arg.name, 'variable');
       append(`
     def test_${pair.rule === 'U-2' ? `u2_${name}_${argName}_left_out_is_its_default` : `t1_${name}_${argName}_takes_a_text_as_its_utf8_bytes`}(self) -> None:
         left = _outcome(lambda: ${observed(target(callArgs(model, ctx, fn, pair.left)))})

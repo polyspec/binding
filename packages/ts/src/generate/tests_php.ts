@@ -721,11 +721,12 @@ export function phpTests(model: Model, layout: PhpLayout): string {
       usesOutcome = true;
       // GN-13bg: a result that holds an instance of a value class of another repository goes through same, which reads
       // the instance by its in row, before outcome writes it: var_export writes two instances by no property.
-      const read = holdsForeign(model, fn.returns);
+      const read = pair.computed === undefined && holdsForeign(model, fn.returns);
       usesSame ||= read;
-      const result = (call: string): string => (read ? `self::same(${call})` : call);
+      // GN-13d: the two calls of a {computed} default give the value of each to no comparison, only their outcome.
+      const result = (call: string): string => (pair.computed !== undefined ? `[${call}, null][1]` : read ? `self::same(${call})` : call);
       append(`
-    public function testU2${name}${langName('php', pair.arg.name, 'class')}LeftOutIsItsDefault(): void
+    public function testU2${name}${langName('php', pair.arg.name, 'class')}${pair.computed === undefined ? 'LeftOutIsItsDefault' : `LeftOutLeavesItsValueToTheCore${pair.computed.split(/[^A-Za-z0-9]+/).map((part) => `${part.slice(0, 1).toUpperCase()}${part.slice(1).toLowerCase()}`).join('')}`}(): void
     {
         self::assertSame(
             self::outcome(static fn (): mixed => ${result(qualified(callArgs(model, ctx, fn, pair.left)))}),
