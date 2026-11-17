@@ -14234,7 +14234,7 @@ test('CK-69: the core call of a machine method lends its receiver by lent_receiv
 // B2.489 (GN-7a): the maker polyspec_make of the PHP crate reads its arguments by Arg::zval of ext-php-rs 0.16.4, which
 // gives Option<&mut &mut Zval>. It gave them to error_arguments, which takes Option<&Zval>, and to Zval::array as a fn
 // of &Zval, so the crate of the sample failed with E0308 and E0631, and the class of the call, read from ex after the parser, with
-E0503. A test of the text compiles nothing, and the tests of
+// E0503. A test of the text compiles nothing, and the tests of
 // the maker asserted its kinds and properties, not its calls; this one pins the calls in the form that compiles.
 test('B2.489: the PHP maker reads its arguments by Arg::zval as ext-php-rs 0.16.4 gives them (GN-7a)', () => {
   const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/sample/${path}`, import.meta.url), 'utf8'));
