@@ -14070,3 +14070,44 @@ test('B2.352: the Python crates of two libraries have libraries of different nam
   assert.match(text(out, 'packages/python/generated/lib.rs'), /\n#\[pymodule\(name = "_native"\)\]\nfn native_module\(module: &Bound<'_, PyModule>\) -> PyResult<\(\)> \{\n/);
   assert.match(text(out, 'packages/python/generated/python/polyspec/sample/_root.py'), /\nfrom \._native import /);
 });
+
+// B2.498 (GN-1, B2.477): a binding crate defines a helper only when a generated line calls it. A private fn at the
+// start of a line of a generated Rust file, without an attribute that exports it, is a helper; the name must stand in
+// that file outside the lines that define it, or dead_code (clippy -D warnings) refuses the crate. armed_future was
+// written for every contract with a member of wait async_driver, also where each such member has a machine, whose
+// waits take armed_waits, so the php, python and node crates of the sample defined it with no call.
+const uncalledHelpers = (out: ReadonlyMap<string, string | Buffer>): string[] => {
+  const found: string[] = [];
+  for (const [path, content] of out) {
+    if (!path.endsWith('.rs')) continue;
+    const source = String(content);
+    const lines = source.split('\n');
+    const defined = new Map<string, number[]>();
+    lines.forEach((line, i) => {
+      const name = /^(?:unsafe )?(?:extern "C" )?fn ([A-Za-z_][A-Za-z0-9_]*)/.exec(line)?.[1];
+      if (name === undefined) return;
+      // The attributes above the fn: an exporting attribute (a pyfunction, a napi, no_mangle) calls it from outside.
+      let j = i - 1;
+      while (j >= 0 && /^\s*(?:#\[|\/\/\/)/.test(lines[j] ?? '')) j -= 1;
+      const attributes = lines.slice(j + 1, i).filter((attribute) => attribute.startsWith('#['));
+      if (attributes.some((attribute) => !/^#\[(?:cfg|allow|expect|inline|must_use|track_caller|doc)\b/.test(attribute))) return;
+      defined.set(name, [...(defined.get(name) ?? []), i]);
+    });
+    for (const [name, at] of defined) {
+      const word = new RegExp(`\\b${name}\\b`);
+      if (!lines.some((line, i) => !at.includes(i) && word.test(line))) found.push(`${path}: ${name}`);
+    }
+  }
+  return found;
+};
+test('B2.498: every helper fn of a generated binding crate has a caller in that crate, in each target of the sample and of the consumer copies (GN-1, B2.477)', () => {
+  const targets: Lang[] = ['php', 'python', 'node', 'go', 'wasm'];
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/sample/${path}`, import.meta.url), 'utf8'));
+  const sample = generateTargets({ contract: read('packages/rust/interface.json'), version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: new Map([['contracts/cases.json', read('contracts/cases.json')]]), targets });
+  // The helper of the defect: the sample has no member of wait async_driver without a machine.
+  assert.deepEqual(uncalledHelpers(sample), [], 'sample');
+  for (const consumer of WHOLE_CONSUMERS) {
+    const inputs = wholeConsumer(consumer);
+    for (const target of targets) assert.deepEqual(uncalledHelpers(wholeConsumerTarget(consumer.name, inputs, target)), [], `${consumer.name} ${target}`);
+  }
+});
