@@ -2548,12 +2548,22 @@ the design ids are those of the binding design.
   command writes those lines: a module builds alone inside the commit of its tag (GN-15l), and `go build` in the
   generator module of crud-ui at its tag failed with `missing go.sum entry for module providing package` of the
   validator module that it requires. Why no tracked file holds them: they are the hashes of the commit that the
-  release of the required module makes, with its static libraries, so they exist only after that run (GN-19f). A
-  requirement that only a left-out test or program used stays in that
-  `go.mod`: it takes part in the version selection of a consumer, and no package of the form imports it, so the
-  build of a consumer compiles none of its source. The command names no such requirement, which only `go mod tidy`
-  over the released form finds, and it writes no `go.mod`, because the result would be a file that no commit of
-  the repository holds and no check of the repository read. Why the generated files are left out: the released form carries only what can be built in it. A file behind a tag of a test feature
+  release of the required module makes, with its static libraries, so they exist only after that run (GN-19f). The
+  `go.mod` of a release requires only what the released form uses (B2.473): each requirement, a line that is not
+  `// indirect`, is of a module of which a carried Go file imports a package, the module path or a path below it,
+  where an import belongs to the required module with the longest path that holds it. A carried Go file is a
+  hand-written file of a package or a generated file that the form carries, a generated test without a tag of a
+  test feature among them; a requirement of a module of the same repository is used in the same way. A requirement
+  that only files that the form leaves out import, a test of the repository, a program or a generated file behind
+  a tag of a test feature, is refused with those files, and one that no Go file imports is refused; a line
+  `// indirect` is not judged, and the command says so. The check reads the import declarations of the files and
+  starts no Go; `binding release-go-module` runs it (GN-19f), and `binding check --release` runs it before a tag
+  (docs/spec/contract-check.md CK-102). A dependency of tests or programs alone lives in a Go module of its own,
+  with its own `go.mod`, in the same repository or not, as a command for `go install` does. Why it is refused:
+  such a requirement takes part in the version selection of every consumer of the tag, which fetches its
+  `go.mod`, while no package of the form imports it. Why the command writes no `go.mod` without it: the result
+  would be a file that no commit of the repository holds and no check of the repository read. Before B2.473 the
+  requirement stayed in the `go.mod` of the tag and no command named it. Why the generated files are left out: the released form carries only what can be built in it. A file behind a tag of a test feature
   calls test entry points, which the library of a release may not hold (GN-19f), so no build of the released form
   can compile it with its tag, and the guard would ask a run for tags that the form does not carry, so the untagged
   `go test` of a fetched module, the right run of that form, would fail on it. The releases before B2.446 carried
@@ -4111,7 +4121,7 @@ the design ids are those of the binding design.
   that does not hold the package by name: the release of npm is fixed by the repository, so a second form would be a
   path that no run takes.
 - **GN-19f** `binding release-go-module (--root <repository> | --contract <interface.json>) --tag vX.Y.Z --libraries
-  <directory> --work <directory> [--remote <name>] [--go <command>]` makes the commit and the tag of GN-15g in the
+  <directory> --work <directory> [--remote <name>] [--go <command>] [--rehearsal]` makes the commit and the tag of GN-15g in the
   repository of the contract. Its inputs: the checkout is at the commit of the tag `vX.Y.Z`; `binding generate --target
   go` wrote the files `zz_generated_*.go` of the Go module into the work tree; `--libraries` holds
   `<Go directory>/libpolyspec_<repository>_go.a` of each platform (GN-19b); `--work` is a directory of the run, in
@@ -4136,6 +4146,11 @@ the design ids are those of the binding design.
     names each module whose tag is missing and the `go.mod` that requires it, and says to run `binding
     release-go-module` of that module first. So the modules of one repository are released in the order of their
     requirements: the required module first.
+  - Each requirement of that `go.mod` that is not `// indirect` is imported by a Go file that the released form
+    carries (GN-15g, B2.473). The command names a requirement that only files that the form leaves out import,
+    with those files, and one that no Go file imports, and it tells the reader of the run each line `// indirect`,
+    which it does not judge. It reads a tracked file from the commit of the tag and a generated one from the work
+    tree, and the files that the form leaves out only when a requirement is not used.
   - The work tree holds, for each platform, `internal/binding/zz_generated_link_<platform>.go` and
     `internal/ffi/lib/<platform>/zz_generated_lib.go`: without them the generation did not run, and no file names
     the directory of a library.
@@ -4197,6 +4212,33 @@ the design ids are those of the binding design.
   pushes to the remote, or nothing when the remote holds the tag already. The command pushes nothing to the remote.
   Why: what a run publishes is the decision of the recipe that started it, and a command that is run again after a
   failed push gives the same reference.
+  The rehearsal (B2.479): with `--rehearsal`, an option without a value, the command runs the checks and the proof
+  before a release has a tag, and makes no commit and no tag: it writes no object and no reference into the
+  repository, asks the remote nothing and pushes nothing. `--tag vX.Y.Z` is then the tag that the release will
+  make, which need not exist: the rehearsal reads `HEAD` in place of the commit of the tag, and the generated
+  files of the work tree. A platform is absent when its library, its `native-static-libs` or one of its two
+  generated files is not there; the rehearsal names each absent platform with what is missing and checks the
+  others as a release does, so a library that is there and fails a check fails the rehearsal. The proof links the
+  library of the platform of the run, `<GOOS>_<GOARCH>` of `go env`, so the rehearsal is refused when that platform
+  is absent or is no platform of a Go module. The commit of the proof is made in a bare repository of `--work`,
+  `rehearsal.git`, whose alternates are the objects of the repository (`objects/info/alternates`): every command
+  that writes an object or the index runs with `git --git-dir` of that repository, the commit has the identity
+  `binding rehearsal` and the message `chore(release): Rehearse the Go module of vX.Y.Z`, and `git update-ref`
+  sets the tag `<directory>/vX.Y.Z` there. That repository is kept between runs, and `git prune` removes the
+  objects of the earlier rehearsals from it. A sibling module of the check above is taken from its tag of the
+  repository when it has one, which the rehearsal pushes into that repository over a rehearsal of an earlier run;
+  a sibling without a tag, which is every sibling before the first release of a version, is taken from the
+  rehearsal of that module in the same `--work`, when the parent of its commit is the `HEAD` of this run. So the
+  modules of one repository are rehearsed in the order of their requirements with one `--work`; a sibling with
+  neither, or one rehearsed from another commit, is refused with the name of the module and the run that makes
+  it. A rehearsal writes nothing to its standard output, so no recipe pushes a reference, and the last lines of
+  its error output are the list of what it did not see: that it read `HEAD` and not a tag, each sibling that it
+  took from a rehearsal, each absent platform, that it compared no earlier tag of the repository or of the remote,
+  and last that it made no commit and no tag. Why the list ends the output: a rehearsal that passed on one
+  platform reads like a release that passed unless its last lines say what is still unproved. Why a form of the
+  command and not a script of a repository: crud-ui could not rehearse its release, because the command asked for
+  the libraries of the five platforms and their generated files before it reached the proof, and the defect of
+  B2.479 was found by a release that had already pushed a tag.
 - **GN-19g** Before a recipe of a release builds an archive, it runs `binding check <interface.json> --release` for
   each contract of the repository, every one to its end, and stops when one fails (CK-70). The recipe
   `release-binding-check` is that call, and each build recipe of the assets runs it first, in CI as in a release
@@ -4232,7 +4274,14 @@ the design ids are those of the binding design.
   | `release-assets-npm` | `node` or `wasm` | GN-19i, the build of the job `npm` |
   | `install-wasm-bindgen` | `wasm` | installs the wasm-bindgen CLI of `mise.toml` alone |
   | `checkout-node-addon` | `node` | GN-3c, the addon of the checkout beside the generated entry |
+  | `rehearse-go-module` | `go` | GN-19f, the rehearsal for the tag of `TAG`, with no commit and no tag |
 
+  `rehearse-go-module` is no step of a release: a repository runs it before it makes the tag `TAG`. Its
+  prerequisite is `release-go-static`, which builds the library of the host, and it runs `binding
+  release-go-module --rehearsal` with `--work $(RELEASE_TARGET)/go-module-rehearsal`, a folder without the name of
+  a component, which the contracts of one repository share, so the rehearsal of a module finds the one of the
+  module that it requires (GN-19f, B2.479); the required module is rehearsed first, and two rehearsals do not run
+  at once.
   A repository with two contracts of which the Go module of one requires the Go module of the other at a release
   version (crud-ui: the generator requires the validator) runs `release-go-module-<component>` of the required
   module before that of the module that requires it (GN-19f, B2.479): the second run reads the tag of the first in

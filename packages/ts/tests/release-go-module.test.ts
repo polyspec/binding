@@ -11,7 +11,7 @@ import { dirname, join } from 'node:path';
 import { test } from 'node:test';
 import { GO_PLATFORMS, goLinkFile } from '../src/generate/go.ts';
 import { generate } from '../src/generate/index.ts';
-import { carriedLibraries, goModFindings, goModRequires, goPackageOf, goReleaseFiles, goSumWith, libraryFindings, publicPackages, Refused, releaseGoModule, siblingRequires, type GoModuleRelease } from '../src/release/go-module.ts';
+import { carriedLibraries, goImports, goModFindings, goModRequires, goModUnused, goPackageOf, goReleaseFiles, goSumWith, libraryFindings, publicPackages, Refused, rehearsalReport, releaseGoModule, siblingRequires, type GoModuleRelease } from '../src/release/go-module.ts';
 
 // ---- The form of a library ------------------------------------------------------------------------------------------
 
@@ -186,7 +186,8 @@ function scene(t: { after: (fn: () => void) => void }, answers: Answer[] = []): 
   };
   const module = join(root, 'packages/go');
   write(join(module, 'go.mod'), GO_MOD);
-  write(join(module, 'zz_generated_sample.go'), 'package sample\n');
+  // B2.473: the generated package imports the modules that the go.mod of a case requires.
+  write(join(module, 'zz_generated_sample.go'), 'package sample\n\nimport (\n\t_ "github.com/polyspec/points/packages/go"\n\tvalidator "github.com/polyspec/sample/packages/validator/go/errors"\n)\n');
   write(join(module, 'internal/binding/zz_generated_binding.go'), 'package binding\n');
   for (const platform of PLATFORMS) {
     write(join(module, `internal/binding/zz_generated_link_${goLinkFile(platform)}.go`), linkFile(platform));
@@ -592,6 +593,185 @@ test('B2.479: a run after a release that stopped between two modules goes on: th
   assert.deepEqual(failed.lines().filter((line) => line.startsWith('git tag ')), [`git tag -a packages/go/v0.0.1 -m packages/go/v0.0.1 ${RELEASE_COMMIT}`]);
 });
 
+// ---- The requirements that the released form uses -------------------------------------------------------------------
+
+const UNUSED_BY_ALL = (requirement: string): string => `go.mod requires ${requirement}, and no Go file of the module imports it: remove the requirement, which would enter the module graph of every consumer of the tag (GN-15g)`;
+const UNUSED_BY_CARRIED = (requirement: string, files: string): string => `go.mod requires ${requirement}, and only files that the released form leaves out import it (${files}): a dependency of tests or programs alone lives in a Go module of its own, with its own go.mod, so that it does not enter the module graph of a consumer of the tag (GN-15g)`;
+
+test('B2.473: the import paths of a Go file are read from its import declarations, of one path and of a block, with a name or without (GN-19f)', () => {
+  assert.deepEqual(goImports('// Code generated.\n\n//go:build !musl\n\npackage sample\n\n/* #include <x.h> */\nimport "C"\nimport (\n\t"fmt" // the standard library\n\n\t_ "a.example/x"\n\t. "b.example/y/z"\n\tnamed "c.example/w"\n)\nimport other `d.example/v`\n\nvar text = "import \\"e.example/not\\""\n\nimport "f.example/late"\n'), ['C', 'fmt', 'a.example/x', 'b.example/y/z', 'c.example/w', 'd.example/v']);
+  assert.deepEqual(goImports('package sample\n'), []);
+  assert.deepEqual(goImports('// import "a.example/x"\n'), []);
+});
+
+test('B2.473: a requirement of the go.mod of a release is imported by a file that the released form carries, and one that only left-out files import, or none, is named (GN-15g, GN-19f)', () => {
+  const texts = new Map([
+    // Carried: a hand-written package, a generated file and a generated test without a tag of a test feature.
+    ['host/host.go', 'package host\n\nimport "a.example/carried"\n'],
+    ['zz_generated_sample.go', 'package sample\n\nimport (\n\t"fmt"\n\n\tpoints "a.example/sub/geometry/shapes"\n\tsibling "github.com/polyspec/sample/packages/validator/go"\n)\n'],
+    ['zz_generated_test.go', 'package sample\n\nimport _ "a.example/generated-test"\n'],
+    // Left out: a test of the repository, a program and a generated file behind a tag of a test feature.
+    ['tests/cases_test.go', 'package tests\n\nimport (\n\t"a.example/carried"\n\t"a.example/test-only/assert"\n)\n'],
+    ['host/host_test.go', 'package host\n\nimport "a.example/test-only"\n'],
+    ['tests/probe/main.go', 'package main\n\nimport "a.example/program-only"\n'],
+    ['zz_generated_fault_test.go', '//go:build polyspec_sample_fault_test\n\npackage sample\n\nimport "a.example/tagged-only"\n'],
+  ]);
+  const form = formOf(texts);
+  const read: string[] = [];
+  const judge = (goMod: string) => goModUnused(goMod, form.carried, [...form.leftOut.keys()], (path) => {
+    read.push(path);
+    return texts.get(path) ?? assert.fail(`${path} is no file of the case`);
+  });
+  const module = 'module github.com/polyspec/sample/packages/go\n\ngo 1.27.3\n';
+  // Imported by a carried file: a hand-written package, a sub-package path, a sibling of the repository, a
+  // generated test. Both forms of the directive are read, and the files that the form leaves out are not.
+  assert.deepEqual(judge(`${module}\nrequire a.example/carried v1.0.0\n\nrequire (\n\ta.example/sub v0.2.0\n\tgithub.com/polyspec/sample/packages/validator/go v0.0.1\n\ta.example/generated-test v0.0.3\n)\n`), { findings: [], notJudged: [] });
+  assert.deepEqual([...new Set(read)].sort(), ['host/host.go', 'zz_generated_sample.go', 'zz_generated_test.go']);
+  // Only by a left-out test, only by a program, only behind a tag of a test feature, and by nothing.
+  assert.deepEqual(judge(`${module}\nrequire a.example/test-only v1.0.0\nrequire (\n\ta.example/program-only v1.1.0\n\ta.example/tagged-only v1.2.0\n\ta.example/nothing v1.3.0\n\ta.example/carried v1.0.0\n)\n`), {
+    findings: [
+      UNUSED_BY_CARRIED('a.example/test-only v1.0.0', 'host/host_test.go, tests/cases_test.go'),
+      UNUSED_BY_CARRIED('a.example/program-only v1.1.0', 'tests/probe/main.go'),
+      UNUSED_BY_CARRIED('a.example/tagged-only v1.2.0', 'zz_generated_fault_test.go'),
+      UNUSED_BY_ALL('a.example/nothing v1.3.0'),
+    ],
+    notJudged: [],
+  });
+  // A line `// indirect` is not judged and is said so; a module whose path only starts like another is not that one.
+  assert.deepEqual(judge(`${module}\nrequire (\n\ta.example/nothing v1.3.0 // indirect\n\ta.example/carr v0.1.0\n)\n`), {
+    findings: [UNUSED_BY_ALL('a.example/carr v0.1.0')],
+    notJudged: ['go.mod requires a.example/nothing v1.3.0 with `// indirect`, which is not judged: no file of the module imports the module of such a line'],
+  });
+  // An import belongs to the required module with the longest path: a package of a/sub/geometry is none of a/sub.
+  assert.deepEqual(judge(`${module}\nrequire a.example/sub v0.2.0\nrequire a.example/sub/geometry v0.1.0\n`).findings, [UNUSED_BY_ALL('a.example/sub v0.2.0')]);
+  // A go.mod without a requirement reads no file.
+  read.length = 0;
+  assert.deepEqual(judge(module), { findings: [], notJudged: [] });
+  assert.deepEqual(read, []);
+});
+
+test('B2.473: binding release-go-module refuses a go.mod with a requirement that only a left-out test imports, with the test, and makes no commit and no tag (GN-19f)', (t) => {
+  const goMod = `${GO_MOD}\nrequire (\n\tgithub.com/polyspec/points/packages/go v0.0.3\n\ta.example/assert v1.0.0\n\ta.example/old v0.1.0 // indirect\n)\n`;
+  const s = scene(t, [
+    { tool: 'git', match: ' show 1+:packages/go/go\\.mod$', stdout: goMod },
+    ...tracks([['host/host.go', 'package host\n'], ['tests/cases_test.go', 'package tests\n\nimport "a.example/assert"\n']]).filter((a) => !a.match.includes('go\\.mod')),
+  ]);
+  const logged: string[] = [];
+  assert.deepEqual(refusal(() => releaseGoModule({ ...s.release, log: (line) => logged.push(line) })), [UNUSED_BY_CARRIED('a.example/assert v1.0.0', 'tests/cases_test.go')]);
+  assert.deepEqual(s.lines().filter((line) => WRITES.test(line)), []);
+  assert.deepEqual(logged.filter((line) => line.includes('indirect')), ['go.mod requires a.example/old v0.1.0 with `// indirect`, which is not judged: no file of the module imports the module of such a line']);
+  // The go.mod is not rewritten: the checkout holds the file as it was.
+  assert.equal(readFileSync(join(s.release.root, 'packages/go/go.mod'), 'utf8'), GO_MOD);
+});
+
+// ---- The rehearsal --------------------------------------------------------------------------------------------------
+
+// B2.479: the answers of a rehearsal on a machine of darwin_arm64, and the calls that write into the repository, of
+// which a rehearsal makes none: its writes are those of `git --git-dir <repository of the proof>`.
+const rehearsing = (s: Scene, goos = 'darwin', goarch = 'arm64'): Answer[] => [
+  { tool: 'git', match: 'rev-parse --path-format=absolute --git-path objects$', stdout: `${join(s.dir, 'repository/.git/objects')}\n` },
+  { tool: 'go', match: '^env GOOS GOARCH$', stdout: `${goos}\n${goarch}\n` },
+];
+const rehearse = (t: { after: (fn: () => void) => void }, answers: Answer[] = [], goos?: string, goarch?: string): Scene => {
+  const s = scene(t);
+  const passing = JSON.parse(readFileSync(join(s.dir, 'answers.json'), 'utf8')) as Answer[];
+  writeFileSync(join(s.dir, 'answers.json'), JSON.stringify([...answers, ...rehearsing(s, goos, goarch), ...passing]));
+  return { ...s, release: { ...s.release, rehearsal: true } };
+};
+const REPOSITORY_WRITES = /^git (read-tree|hash-object|update-index|write-tree|commit-tree|tag|push|update-ref|prune|ls-remote) /;
+const LINUX = ['linux_amd64', 'linux_arm64', 'linux_amd64_musl', 'linux_arm64_musl'];
+const absentOf = (s: Scene, platform: string): string => `the platform ${platform}: ${join(s.release.libraries, platform, 'libpolyspec_sample_go.a')} is not there, ${join(s.release.libraries, platform, 'native-static-libs')} is not there`;
+
+test('B2.479: a rehearsal makes no commit and no tag in the repository, checks the platforms that are there and ends with what it did not see (GN-19f)', (t) => {
+  const s = rehearse(t);
+  for (const platform of LINUX) rmSync(join(s.release.libraries, platform), { recursive: true });
+  const { work } = s.release;
+  const bare = join(work, 'rehearsal.git');
+  const result = releaseGoModule(s.release);
+  const unseen = [
+    `the tag v0.0.1: the rehearsal read HEAD, the commit ${TAG_COMMIT}, and the generated files of the work tree, whether a tag names that commit or not`,
+    ...LINUX.map((platform) => absentOf(s, platform)),
+    'the tag packages/go/v0.0.1 of the repository and of the remote origin: the rehearsal did not ask whether one of an earlier run names another commit',
+    `a commit and a tag of the Go module: the rehearsal made none in the repository and pushed nothing; its commit ${RELEASE_COMMIT} is in ${bare} alone`,
+  ];
+  assert.deepEqual(result, { commit: RELEASE_COMMIT, reference: undefined, unseen });
+  const lines = s.lines();
+  // No call writes an object or a reference into the repository, and none asks or writes the remote.
+  assert.deepEqual(lines.filter((line) => REPOSITORY_WRITES.test(line)), []);
+  // The tag of the release is not asked for: the rehearsal reads HEAD.
+  assert.deepEqual(lines.filter((line) => line.includes('refs/tags/v0.0.1')), []);
+  // The objects, the commit and the tag are those of the repository of the proof, which reads the objects of the
+  // repository as its alternates; the proof is the one of a release.
+  assert.equal(readFileSync(join(bare, 'objects/info/alternates'), 'utf8'), `${join(s.dir, 'repository/.git/objects')}\n`);
+  const inBare = lines.filter((line) => line.startsWith(`git --git-dir ${bare} `)).map((line) => line.slice(`git --git-dir ${bare} `.length));
+  assert.deepEqual(inBare.filter((line) => !/^(hash-object|update-index|config) /.test(line)), [
+    `read-tree ${TAG_COMMIT}`,
+    'write-tree',
+    `commit-tree the-tree -p ${TAG_COMMIT} -m chore(release): Rehearse the Go module of v0.0.1`,
+    `update-ref refs/tags/packages/go/v0.0.1 ${RELEASE_COMMIT}`,
+    'prune --expire=now',
+  ]);
+  assert.deepEqual(lines.filter((line) => line.startsWith('go ')), ['go env GOOS GOARCH', 'go mod tidy', 'go test -count=1 .', 'go clean -modcache']);
+  const [commitTree] = s.calls().filter((c) => c.argv.includes('commit-tree'));
+  assert.equal(commitTree?.env['GIT_COMMITTER_NAME'], 'binding rehearsal');
+  assert.equal(commitTree?.env['GIT_AUTHOR_EMAIL'], 'rehearsal@example.invalid');
+  // The commit carries the library of the platform that is there, and none of an absent one.
+  assert.deepEqual(inBare.filter((line) => line.startsWith('update-index ') && line.endsWith('.a')).map((line) => line.slice(line.lastIndexOf(',') + 1)), ['packages/go/internal/ffi/lib/darwin_arm64/libpolyspec_sample_go.a']);
+  assert.deepEqual(lines.filter((line) => line.startsWith('llvm-nm ')), [`llvm-nm --defined-only ${join(s.release.libraries, 'darwin_arm64/libpolyspec_sample_go.a')}`]);
+  // The last lines of the output: what the rehearsal did not see, the last of which is the commit and the tag.
+  const report = rehearsalReport(s.release.module, 'v0.0.1', unseen);
+  assert.equal(report[0], 'the rehearsal of github.com/polyspec/sample/packages/go v0.0.1 passed on what is here, and it is no release (GN-19f). It did not see:');
+  assert.deepEqual(report.slice(1), unseen.map((line) => `  - ${line}`));
+  assert.match(report.at(-1) ?? '', /the rehearsal made none in the repository and pushed nothing/);
+  // A second rehearsal keeps the repository of the proof, where the rehearsal of a sibling is.
+  writeFileSync(join(s.dir, 'calls.jsonl'), '');
+  releaseGoModule(s.release);
+  assert.deepEqual(s.lines().filter((line) => line.startsWith('git init ')), []);
+  // A present library that fails a check of a release fails the rehearsal too.
+  const debug = rehearse(t, [{ tool: 'llvm-size', match: 'darwin_arm64', stdout: 'a.o:\nsection   size   addr\n__debug_info   340   0\n' }]);
+  assert.deepEqual(refusal(() => releaseGoModule(debug.release)), [`${join(debug.release.libraries, 'darwin_arm64/libpolyspec_sample_go.a')}: the library of darwin_arm64 holds the debug sections __debug_info`]);
+});
+
+test('B2.479: a rehearsal without the library or the generated files of the platform of the run is refused, and so is one on a platform of no Go module (GN-19f)', (t) => {
+  const s = rehearse(t, [], 'linux', 'amd64');
+  rmSync(join(s.release.libraries, 'linux_amd64/libpolyspec_sample_go.a'));
+  rmSync(join(s.release.root, 'packages/go/internal/ffi/lib/linux_amd64/zz_generated_lib.go'));
+  assert.deepEqual(refusal(() => releaseGoModule(s.release)), [
+    `the proof links the library of linux_amd64, the platform of the run, and packages/go/internal/ffi/lib/linux_amd64/zz_generated_lib.go is not in the work tree, ${join(s.release.libraries, 'linux_amd64/libpolyspec_sample_go.a')} is not there: build the library (the recipe release-go-static) and run binding generate --target go (GN-19f)`,
+  ]);
+  assert.deepEqual(s.lines().filter((line) => REPOSITORY_WRITES.test(line) || / (commit-tree|update-ref) /.test(line)), []);
+  const other = rehearse(t, [], 'darwin', 'amd64');
+  assert.deepEqual(refusal(() => releaseGoModule(other.release)), ['the proof links the library of the platform of the run, and darwin_amd64 is no platform of a Go module (GN-15g)']);
+});
+
+test('B2.479: a rehearsal takes a sibling module without a tag from the rehearsal of that module in the same --work, when it was made from the same commit (GN-19f)', (t) => {
+  const rehearsed = (commit?: string): Answer => ({ tool: 'git', match: '^--git-dir \\S+ rev-parse --verify --quiet refs/tags/packages/validator/go/v0\\.0\\.1\\^\\{commit\\}$', ...(commit === undefined ? { status: 1 } : { stdout: `${commit}\n` }) });
+  const madeFrom = (commit: string): Answer => ({ tool: 'git', match: '^--git-dir \\S+ rev-parse --verify 5+\\^1$', stdout: `${commit}\n` });
+  // The validator has no tag and was rehearsed from HEAD; the base has its tag in the repository.
+  const s = rehearse(t, pair([rehearsed(VALIDATOR_COMMIT), madeFrom(TAG_COMMIT), tagOf('packages/validator/go'), tagOf('packages/base/go', BASE_COMMIT)]));
+  const { work } = s.release;
+  const bare = join(work, 'rehearsal.git');
+  const result = releaseGoModule(s.release);
+  assert.equal(result.unseen?.[1], `the tag packages/validator/go/v0.0.1: the repository has none, and the rehearsal took ${VALIDATOR} from the rehearsal of that module in ${work}`);
+  const lines = s.lines();
+  // The tag of the repository is pushed into the repository of the proof, over a rehearsal of an earlier run; the
+  // rehearsed sibling is there already. The go.sum of the rehearsal commit holds the lines of both.
+  assert.deepEqual(lines.filter((line) => line.startsWith('git push ')), [`git push --quiet --force ${bare} ${BASE_COMMIT}:refs/tags/packages/base/go/v0.0.1`]);
+  assert.deepEqual(lines.filter((line) => line.startsWith('go mod download ')), [`go mod download -json ${VALIDATOR}@v0.0.1`, `go mod download -json ${BASE}@v0.0.1`]);
+  assert.match(readFileSync(join(work, 'go.sum'), 'utf8'), /validator\/go v0\.0\.1 h1:validator=\n/);
+  assert.ok(lines.includes(`git --git-dir ${bare} show ${VALIDATOR_COMMIT}:packages/validator/go/go.mod`));
+  // A rehearsal of the sibling that was made from another commit is refused, and so is a sibling with neither.
+  const stale = rehearse(t, pair([rehearsed(VALIDATOR_COMMIT), madeFrom(OTHER_COMMIT), tagOf('packages/validator/go')]));
+  assert.deepEqual(refusal(() => releaseGoModule(stale.release)), [
+    `go.mod requires ${VALIDATOR} v0.0.1, a Go module of this repository, and its rehearsal in ${stale.release.work} was made from the commit ${OTHER_COMMIT}, not from HEAD, the commit ${TAG_COMMIT}: rehearse that module again first, with the same --work (GN-19f)`,
+  ]);
+  const none = rehearse(t, pair([rehearsed(), tagOf('packages/validator/go')]));
+  assert.deepEqual(refusal(() => releaseGoModule(none.release)), [
+    `go.mod requires ${VALIDATOR} v0.0.1, a Go module of this repository, and the repository has no tag packages/validator/go/v0.0.1 and ${none.release.work} holds no rehearsal of that module: rehearse that module first, with the same --work (binding release-go-module --rehearsal, the recipe rehearse-go-module of its contract), because the proof fetches that module at its tag (GN-19f)`,
+  ]);
+  for (const refused of [stale, none]) assert.deepEqual(refused.lines().filter((line) => REPOSITORY_WRITES.test(line) || / (commit-tree|update-ref) /.test(line)), []);
+});
+
 // ---- The generated files of the released form -----------------------------------------------------------------------
 
 // The Go files that `binding generate --target go` writes for tests/e2e/sample, by their paths in the Go module.
@@ -817,6 +997,29 @@ test('binding release-go-module requires its tag, its libraries and its work dir
     assert.match(run.stderr, /usage: .*binding release-go-module \(--root <repository> \| --contract <interface\.json>\) --tag vX\.Y\.Z --libraries <directory> --work <directory> \[--remote <name>\]/);
     assert.equal(run.stdout, '');
   }
+});
+
+test('B2.479: binding release-go-module --rehearsal prints no reference, and its output ends with what the rehearsal did not see (GN-19f)', (t) => {
+  const s = rehearse(t);
+  for (const platform of LINUX) rmSync(join(s.release.libraries, platform), { recursive: true });
+  mkdirSync(join(s.release.root, 'packages/rust'), { recursive: true });
+  writeFileSync(join(s.release.root, 'packages/rust/interface.json'), JSON.stringify({ library: 'sample', targets: ['go'], core: { crate: 'polyspec-sample', path: 'packages/rust' }, packages: { go: { module: 'github.com/polyspec/sample/packages/go' } } }));
+  const run = spawnSync(process.execPath, [cli, 'release-go-module', '--root', s.release.root, '--tag', 'v0.0.1', '--rehearsal', '--libraries', s.release.libraries, '--work', s.release.work], { encoding: 'utf8', env: { PATH: join(s.dir, 'bin'), STANDIN: s.dir } });
+  assert.equal(run.status, 0, run.stderr);
+  // The recipe of a release pushes what the standard output names: a rehearsal names nothing.
+  assert.equal(run.stdout, '');
+  const last = run.stderr.trimEnd().split('\n').slice(-8);
+  assert.equal(last[0], 'binding: the rehearsal of github.com/polyspec/sample/packages/go v0.0.1 passed on what is here, and it is no release (GN-19f). It did not see:');
+  assert.deepEqual(last.slice(2, 6), LINUX.map((platform) => `binding:   - ${absentOf(s, platform)}`));
+  assert.match(last[7] ?? '', /^binding: {3}- a commit and a tag of the Go module: the rehearsal made none in the repository and pushed nothing; its commit 2+ is in .*rehearsal\.git alone$/);
+  assert.deepEqual(s.lines().filter((line) => REPOSITORY_WRITES.test(line)), []);
+  // A refused rehearsal says that it is one.
+  const refused = rehearse(t, [], 'darwin', 'amd64');
+  mkdirSync(join(refused.release.root, 'packages/rust'), { recursive: true });
+  writeFileSync(join(refused.release.root, 'packages/rust/interface.json'), readFileSync(join(s.release.root, 'packages/rust/interface.json')));
+  const stopped = spawnSync(process.execPath, [cli, 'release-go-module', '--rehearsal', '--root', refused.release.root, '--tag', 'v0.0.1', '--libraries', refused.release.libraries, '--work', refused.release.work], { encoding: 'utf8', env: { PATH: join(refused.dir, 'bin'), STANDIN: refused.dir } });
+  assert.equal(stopped.status, 1);
+  assert.match(stopped.stderr, /binding: the rehearsal of the Go module stopped at these checks, and it made no commit and no tag \(GN-19f\)\n$/);
 });
 
 test('binding release-go-module refuses a contract without the target go by name (GN-19f)', (t) => {

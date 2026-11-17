@@ -12,7 +12,7 @@ import { test, type TestContext } from 'node:test';
 import type { Contract } from '../src/contract.ts';
 import { generate } from '../src/generate/index.ts';
 import { NODE_PLATFORMS, WASM_BINDGEN } from '../src/generate/packages.ts';
-import { ASSET_JOBS, cargoFindings, CHECKOUT_STEPS, releaseRecipes, RELEASE_STEPS } from '../src/release/recipes.ts';
+import { ASSET_JOBS, cargoFindings, CHECKOUT_STEPS, REHEARSAL_STEPS, releaseRecipes, RELEASE_STEPS } from '../src/release/recipes.ts';
 
 const cli = new URL('../src/cli.ts', import.meta.url).pathname;
 const fixture = new URL('./fixtures/repo/', import.meta.url).pathname;
@@ -26,7 +26,7 @@ test('the recipes of a contract name its crates, packages and targets, and a com
   const contract = fixtureContract();
   const recipes = releaseRecipes(contract);
   assert.equal(recipes.path, 'packages/release.mk');
-  assert.deepEqual(recipes.targets, ['release-go-static', 'release-wheel', 'release-php-ext', 'release-npm-platform', 'release-npm', 'release-go-module', 'release-binding-check', 'release-platform-assets', 'release-assets-platform', 'release-assets-php', 'release-assets-npm', 'checkout-node-addon']);
+  assert.deepEqual(recipes.targets, ['release-go-static', 'release-wheel', 'release-php-ext', 'release-npm-platform', 'release-npm', 'release-go-module', 'release-binding-check', 'release-platform-assets', 'release-assets-platform', 'release-assets-php', 'release-assets-npm', 'checkout-node-addon', 'rehearse-go-module']);
   for (const target of recipes.targets) assert.match(recipes.text, new RegExp(`^${target}:`, 'm'), target);
   assert.match(recipes.text, /-p polyspec-sample-go\b/);
   assert.match(recipes.text, /-p polyspec-sample-php-ext\b/);
@@ -50,7 +50,7 @@ test('the recipes of a contract name its crates, packages and targets, and a com
   assert.match(component.text, /--manifest-path packages\/forms\/ts\/Cargo\.toml/);
   assert.match(component.text, /\$\(CURDIR\)\/packages\/forms\/rust\/interface\.json/);
   // Every step of a release that GN-19h names is a target of a contract with every target.
-  assert.deepEqual([...RELEASE_STEPS, ...ASSET_JOBS, ...CHECKOUT_STEPS].sort(), [...recipes.targets].sort());
+  assert.deepEqual([...RELEASE_STEPS, ...ASSET_JOBS, ...CHECKOUT_STEPS, ...REHEARSAL_STEPS].sort(), [...recipes.targets].sort());
 });
 
 /** A copy of the fixture repository with its recipes, a Makefile that includes them and the stand-ins of one case. */
@@ -468,6 +468,29 @@ test('the release check and the Go module run the commands of binding on the con
   assert.ok(callIndex(calls, 'binding', ...generation(box.root, 'go')) < callIndex(calls, 'binding', 'release-go-module', '--contract', join(box.root, 'packages/rust/interface.json'), '--tag', 'v0.0.3'));
 });
 
+test('B2.479: rehearse-go-module builds the library of the host and runs the rehearsal of binding release-go-module for TAG in the folder that the contracts of the repository share, and pushes nothing (GN-19f, GN-19h)', (t) => {
+  const box = sandbox(t, 'aarch64-apple-darwin');
+  const noTag = box.make('rehearse-go-module');
+  assert.equal(noTag.status, 2);
+  assert.match(noTag.output, /rehearse-go-module: TAG is required, the tag that the release will make/);
+  writeFileSync(box.env['CALLS'] as string, '');
+  const run = box.make('rehearse-go-module', 'TAG=v0.0.3');
+  assert.equal(run.status, 0, run.output);
+  const calls = box.calls();
+  const rehearsal = callIndex(calls, 'binding', 'release-go-module');
+  assert.deepEqual(calls[rehearsal]?.args, ['release-go-module', '--contract', join(box.root, 'packages/rust/interface.json'), '--tag', 'v0.0.3', '--libraries', join(box.root, 'var/release/assets/go'), '--work', join(box.root, 'var/release/target/go-module-rehearsal'), '--go', 'go', '--rehearsal']);
+  // The library of the host is built before the rehearsal reads it.
+  assert.ok(callIndex(calls, 'cargo', 'rustc') < rehearsal);
+  assert.equal(existsSync(join(box.root, 'var/release/assets/go/darwin_arm64/libpolyspec_sample_go.a')), true);
+  assert.deepEqual(calls.filter((call) => call.tool === 'git').map((call) => call.args.join(' ')).filter((line) => /\b(push|tag)\b/.test(line)), []);
+  // The folder has no name of a component, so the rehearsals of two contracts of one repository share it.
+  const component = releaseRecipes({ ...fixtureContract(), core: { ...fixtureContract().core, path: 'packages/forms/rust' } });
+  assert.match(component.text, /^rehearse-go-module-forms: \$\(BINDING_DEP\) release-go-static-forms$/m);
+  assert.match(component.text, /--work \$\(abspath \$\(RELEASE_TARGET\)\)\/go-module-rehearsal --go "\$\(GO\)" --rehearsal$/m);
+  // It is no step of a release: no recipe of a release runs it.
+  assert.doesNotMatch(releaseRecipes(fixtureContract()).text, /^release-[a-z-]+:.*rehearse-go-module/m);
+});
+
 // B2.267: the wheel that release-wheel builds on each platform is one that release-platform-assets takes, a manylinux
 // wheel on Linux, because pip and PyPI install a linux_<arch> wheel on no other system.
 test('the wheel that release-wheel builds on each platform is a wheel of that platform for release-platform-assets (GN-19c, GN-19g)', (t) => {
@@ -825,6 +848,30 @@ test('B2.471: binding check --release refuses a Go module whose module path name
   assert.match(refused.stderr, new RegExp(`${join(box.root, 'packages/rust/interface.json')}: CK-102 release-go-module: github\\.com/polyspec/sample/go: the Go module is at packages/go of its repository, not at go, the directory of its module path \\(GN-15\\)\\n`));
   const other = sandbox(t, 'aarch64-unknown-linux-gnu', (contract) => { (contract.packages['go'] as { module: string }).module = 'example.org/sample/packages/go'; });
   assert.match(releaseCheck(other.root).stderr, /interface\.json: CK-102 release-go-module: example\.org\/sample\/packages\/go: the Go module is not github\.com\/<owner>\/<repository>\[\/<directory>\]/);
+});
+
+test('B2.473: binding check --release refuses a go.mod with a requirement that no file of the released form imports, before a tag (CK-102, GN-15g)', (t) => {
+  const box = sandbox(t, 'aarch64-unknown-linux-gnu');
+  const goMod = join(box.root, 'packages/go/go.mod');
+  // The go.mod that scaffold writes has no finding: the generated files are judged as binding writes them, and the
+  // work tree of the case holds none.
+  assert.doesNotMatch(releaseCheck(box.root).stderr, /CK-102 release-go-module/);
+  writeFileSync(goMod, `${readFileSync(goMod, 'utf8')}\nrequire (\n\ta.example/assert v1.0.0\n\ta.example/nothing v0.1.0\n\ta.example/old v0.2.0 // indirect\n)\n`);
+  mkdirSync(join(box.root, 'packages/go/tests/probe'), { recursive: true });
+  writeFileSync(join(box.root, 'packages/go/tests/cases_test.go'), 'package tests\n\nimport "a.example/assert"\n');
+  writeFileSync(join(box.root, 'packages/go/tests/probe/main.go'), 'package main\n\nimport _ "a.example/assert/deep"\n\nfunc main() {}\n');
+  const refused = releaseCheck(box.root);
+  assert.equal(refused.status, 1);
+  const lines = refused.stderr.split('\n').filter((line) => line.includes('CK-102 release-go-module'));
+  assert.deepEqual(lines, [
+    `${goMod}: CK-102 release-go-module: go.mod requires a.example/assert v1.0.0, and only files that the released form leaves out import it (tests/cases_test.go, tests/probe/main.go): a dependency of tests or programs alone lives in a Go module of its own, with its own go.mod, so that it does not enter the module graph of a consumer of the tag (GN-15g)`,
+    `${goMod}: CK-102 release-go-module: go.mod requires a.example/nothing v0.1.0, and no Go file of the module imports it: remove the requirement, which would enter the module graph of every consumer of the tag (GN-15g)`,
+    `${goMod}: CK-102 release-go-module: go.mod requires a.example/old v0.2.0 with \`// indirect\`, which is not judged: no file of the module imports the module of such a line`,
+  ]);
+  // A hand-written package of the module that imports it makes it a requirement of the released form.
+  mkdirSync(join(box.root, 'packages/go/host'));
+  writeFileSync(join(box.root, 'packages/go/host/host.go'), 'package host\n\nimport (\n\t_ "a.example/assert"\n\t_ "a.example/nothing/x"\n)\n');
+  assert.deepEqual(releaseCheck(box.root).stderr.split('\n').filter((line) => line.includes('CK-102 release-go-module') && !line.includes('indirect')), []);
 });
 
 test('B2.471: a repository without the target is not asked for the setting of that target (CK-102)', (t) => {
