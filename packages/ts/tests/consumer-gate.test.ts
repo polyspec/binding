@@ -137,9 +137,9 @@ test('B2.494: a consumer clones its tag, fetches its lock, takes the patch, then
     ['prepare', 'the path patch of polyspec-binding-core to /binding/packages/core/rust'],
     ['prepare', 'cargo update -p polyspec-binding-core'],
     ['prepare', 'the lock changes in polyspec-binding-core alone'],
-    ['prepare', 'binding scaffold of the run'],
     ['prepare', 'make bootstrap of the consumer'],
     ['prepare', 'make install of the consumer'],
+    ['prepare', 'binding scaffold of the run with the GO of the consumer'],
     ['generate', 'make bindings of the consumer'],
     ['test', 'make test-bindings of the consumer'],
     ['rehearsal', 'make release-recipes of the consumer'],
@@ -150,6 +150,12 @@ test('B2.494: a consumer clones its tag, fetches its lock, takes the patch, then
   // have, so the toolchain of the clone is installed first, by rustup in the clone, where it reads that file.
   const toolchain = steps[0]?.step;
   assert.deepEqual(toolchain !== undefined && 'argv' in toolchain ? [toolchain.command, toolchain.argv, toolchain.cwd] : [], ['rustup', ['toolchain', 'install'], '/work/json']);
+  // Scaffold runs go mod download, so it runs after the install, with the Go that the consumer's Makefile names as GO
+  // (its mise.toml Go in var/tools), which make expands in the clone; the Go of the runner is older than its go.mod.
+  const scaffold = steps.find((s) => s.step.what.startsWith('binding scaffold'))?.step;
+  assert.ok(scaffold !== undefined && 'argv' in scaffold && scaffold.command === gate.make, 'binding scaffold does not run through the make of the consumer');
+  assert.deepEqual(scaffold.argv.slice(0, 4), ['-C', '/work/json', '--eval', 'binding-gate-scaffold: ; $(BINDING_RUN) scaffold --root . --cargo cargo --go "$(GO)"']);
+  assert.equal(scaffold.argv[4], 'binding-gate-scaffold');
   const patch = steps[3]?.step;
   if (patch !== undefined && 'write' in patch) patch.write();
   assert.equal(patched, 1);
