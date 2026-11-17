@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 654c8d4033bd2984301078af2ed2aea96448e9ad8c25cbf30f98cbdf40d80262 -->
+<!-- source-sha256: 7f28993c0b6d92015ead768cf56144171de4179b5f45529fb2b5740b72c1d274 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
@@ -13,6 +13,7 @@
 - 계약이 `&self`를 이름하는 곳에서 machine method가 `self`나 `&mut self`를 받는 core는 E0308만이 아니라 CK-69의 문장으로 compile에 실패한다(CK-69, GN-6ae, B2.501). binding check는 core의 Rust 소스가 아니라 계약의 receiver를 읽으므로, `self`를 받던 orm의 machine은 check를 통과했고 lint-bindings가 생성 crate에서 E0308로 멈췄다. 이제 machine method의 core 호출은 receiver를 `lent_receiver`로 빌려 주며, 그 trait가 CK-69를 이름한다(`#[diagnostic::on_unimplemented]`). 다섯 target 모두 그렇다. `&self`를 받는 core는 전처럼 compile된다. 저장소가 할 일: 없다. core가 다른 receiver를 받으면 그것을 `&self`로 바꾸고 `make bindings`를 다시 돌린다. `packages/ts`에서 `node --test --test-name-pattern "CK-69" tests/generate.test.ts`로, 그리고 sample의 `Store::transaction`을 `self`로 둔 `make e2e-lint REPOS=tests/e2e/sample`(변경 전 E0308, 변경 후 CK-69로 실패)로 확인했다.
 - `binding check`가 tag가 실행 중인 binding과 다른 version의 것인 core의 `polyspec-binding-core` 줄을 이름한다(CK-109, GN-3e, B2.503). finding은 그 줄, 그 tag의 version, binding의 version을 이름한다. scaffold는 그 줄을 binding crate마다 옮기므로, 더 오래된 release의 tag에 있는 core는 새 생성기 아래에서 그 core runtime을 그대로 두었고, 아무것도 그것을 이름하지 않았다. tag가 없는 줄과 줄이 없는 core는 finding이 아니다. 생성기는 바뀌지 않는다. 저장소가 할 일: core의 줄을 binding의 version의 tag로 바꾸고 `make bindings`를 다시 돌린다. `packages/ts`에서 `node --test --test-name-pattern "CK-109" tests/contract-check.test.ts`(변경 전 실패)로 확인했다.
 - 생성된 Python 시험의 `_same`은 contract의 value class instance를 그 타입과 property의 값으로 비교하며, list, map, 중첩 value class를 따라 내려간다(GN-13e, B2.507). 전에는 그런 instance가 `actual == expected`로 떨어졌고, `__eq__`가 없는 class는 identity로 비교되어, orm의 `list<map<orm_value>>` 결과 `[{"qty": {"kind": "int", "value": 1}}]`의 case가 Python에서 실패했다. 레포가 할 일: `make bindings`를 다시 돌린다. `packages/ts`에서 `node --test --test-name-pattern "B2.507" tests/generate.test.ts`(변경 전 실패)로 확인했다. 이 시험은 생성된 helper를 `__eq__` 없는 대역 class로 `python3 -I`에서 실행한다.
+- 생성된 Node와 WASM 시험의 `ordered`는 contract의 value class instance를 그 class 이름과 property의 값으로 읽으며, list, map, 중첩 value class를 따라 내려간다(GN-13e, B2.510). 전에는 getter가 prototype에 있고 own property가 없는 napi나 wasm-bindgen class가 그대로 `assert.deepStrictEqual`에 가서, 다른 값을 담은 두 instance가 같게 비교되었고 그런 class의 틀린 결과가 통과했다. 레포가 할 일: `make bindings`를 다시 돌린다. 적은 값이 결과와 다른 case는 이제 실패한다. `packages/ts`에서 `node --test --test-name-pattern "B2.510" tests/generate.test.ts`(변경 전 실패)로 확인했다. 이 시험은 두 target의 생성된 `ordered`를 prototype getter를 가진 대역 class로 실행한다.
 
 ## 0.0.21
 

@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 61ea0744357701d580b2442ffaf5a9d885ea133962f137e5bdac9fccda0b575b -->
+<!-- source-sha256: 9e4b89c24f3fa20ca317a4323b1c68e3337003cba2035a2964c53e8cc5cfd512 -->
 # 생성기
 
 [English](generator.md)
@@ -2619,7 +2619,10 @@
   Python에서 contract의 value class(origin `value`, `core_type`이 있든 없든)의 instance는 둘 다 그 class이고 그
   property의 값들이 이 규칙으로 같을 때 다른 instance와 같다. 그래서 그 안의 list, map, value class도 끝까지 비교한다.
   이유: 그런 class에는 `__eq__`가 없어 `==`가 두 instance를 identity로 비교했고, `list<map<orm_value>>`인 orm의 결과
-  `[{"qty": {"kind": "int", "value": 1}}]`이 Python에서 실패했다(B2.507).
+  `[{"qty": {"kind": "int", "value": 1}}]`이 Python에서 실패했다(B2.507). Node와 WASM에서 `ordered`는
+  `assert.deepStrictEqual`이 비교하기 전에 그런 instance를 그 class 이름과, 각각 다시 ordered한 property의 값들로 바꾼다.
+  이유: napi나 wasm-bindgen class는 getter가 prototype에 있고 own property가 없어, 다른 값을 담은 두 instance가 같게
+  비교되었다(B2.510).
   결과를 담은 case의 키는 그 `cases` 행의 `result`이거나
   `result`다(CK-22). 값은 case가 주는 대로 쓴다. `int64` 결과는 Node `bigint`, tuple은 Python tuple과 Go 배열 또는 Go 함수의
   결과들, `bytes`는 `{"hex": ...}`다. 키가 없는 case는 호출만 실행하며, 실패하면 시험이 실패한다.

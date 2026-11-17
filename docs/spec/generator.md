@@ -3199,7 +3199,9 @@ the design ids are those of the binding design.
   as another when both are of its class and the values of its properties are the same by this rule, so a list, a
   map or a value class inside it is compared as far as it goes. Why: such a class has no `__eq__`, so `==` compared
   two instances by identity, and orm's result `[{"qty": {"kind": "int", "value": 1}}]` of `list<map<orm_value>>`
-  failed in Python (B2.507).
+  failed in Python (B2.507). In Node and WASM `ordered` makes such an instance its class name and the values of its
+  properties, each ordered again, before `assert.deepStrictEqual` compares them. Why: a napi or wasm-bindgen class has
+  its getters on the prototype and no own property, so two instances that hold other values compared equal (B2.510).
   The key of the case that holds the result is the `result` of its `cases` row, or
   `result` (CK-22). A value is written as the case gives it: an `int64` result is a Node `bigint`, a tuple is a Python
   tuple and a Go array or the results of a Go function, `bytes` is `{"hex": ...}`. A case without the key runs the
