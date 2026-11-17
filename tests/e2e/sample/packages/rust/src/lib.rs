@@ -1352,7 +1352,7 @@ impl Store {
     /// future, the function is language code that the driver calls on its thread, and its value, which may be an
     /// awaitable, is settled by the driver. The pending entries of the scope are committed when the function returns,
     /// and dropped when it raises, whose exception the machine returns.
-    pub fn transaction<F>(&self, function: F) -> Scoped<F>
+    pub fn transaction<F>(self, function: F) -> Scoped<F>
     where
         F: FnMut(Scope) -> Result<binding_core::Passthrough, Failure<Error>>,
     {
@@ -1370,7 +1370,7 @@ impl Store {
     where
         F: FnMut(Scope) -> Result<binding_core::Passthrough, Failure<Error>>,
     {
-        let scoped = self.transaction(function);
+        let scoped = self.clone().transaction(function);
         scoped
             .scope
             .put("tag", options.tag.as_deref().unwrap_or(DEFAULT_TAG));
