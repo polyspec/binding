@@ -2439,6 +2439,9 @@ test('B2.376: CK-22 takes a case of a kind on the path of its library, its own o
   const other = 'polyspec_consumer::Error::Sample/polyspec_sample::Error::Missing';
   const reported = (fetch: string, copy: string): string[] => {
     const contract = read('consumer/packages/rust/interface.json');
+    // The consumer names every inner variant of sample through its source (B2.489); this test reads the row of a kind
+    // that a call of the core passes on, without through.
+    contract.errors.kinds = contract.errors.kinds.filter((k: any) => k.variant !== other);
     contract.errors.kinds.push({ variant: own, category: 'value' }, { variant: other, library: 'sample' });
     const member = (id: string): any => contract.units.flatMap((u: any) => u.members ?? []).find((m: any) => m.id === id);
     member('consumer.fetch').raises.push(fetch);
