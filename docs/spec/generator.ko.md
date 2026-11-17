@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 077afedc3bccac40f2613cc945d44b9fc3daa888102f25199f38d4a20e6475d5 -->
+<!-- source-sha256: 84524b44517c34bb4c46394d8e41c585590713326f90b8e93e4468b051962dd0 -->
 # 생성기
 
 [English](generator.md)
@@ -2712,6 +2712,9 @@
   값이다. Python, Node, PHP의 시험은 소유 레포의 value class에 하듯(GN-6x) 소유 패키지를 import해 그 패키지로 그것들을
   부르고, Node는 기다리는 소유 member를 await한다. member는 생성기가 그 target에 대해 소유 계약에서 받는 것이다: 소유 레포가
   `only`로 그 target에서 뺀 member나 생성기가 소유 계약에서 거부하는 member는 그 이유로 실패하는 case 시험이 된다(GN-13e).
+  소유 레포가 `only`로 그 target에서 뺀 parameter(Q-4)는 이 계약의 member와 같은 규칙으로 그 target의 호출 인자가 아니므로,
+  그것을 주는 case의 키는 거기에 쓰지 않는다. 이유: hyper에서 Go 시험이 Python과 Node만 취소를 받는 session-store의
+  `Open(nil, cookie)`를 `Open(cookie)`에 대고 불렀다(B2.512).
   아직 생성하지 않으며 각각 이름을 대고 실패하는 case 시험이 되는 것: 소유 레포의 function, 소유 레포 internal unit의
   member, 소유 레포의 enum·record·variant·callback인 인자, `then` 호출의 faults. Go와 WASM은 그 parameter 자체를
   거부하므로(GN-6s) 그런 instance를 쓰지 않는다. CK-22는 이 계약의 member만 읽으므로 `binding check`는 그런 값을 판정하지

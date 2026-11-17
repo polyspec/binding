@@ -3314,7 +3314,10 @@ the design ids are those of the binding design.
   class of the owner (GN-6x), and Node awaits a member of the owner that waits. The members are those that the generator
   takes from the contract of the owner for the target: a member that the owner leaves out of the target by `only`, or
   that the generator refuses in the contract of the owner, gives a test of the case that fails with that reason
-  (GN-13e). Not generated yet, each a test of the case that fails by name: a function of the owner, a member of an
+  (GN-13e). A parameter that the owner leaves out of the target by `only` (Q-4) is no argument of the call in that
+  target, by the same rule as for a member of this contract, so a key of the case that gives it is not written there.
+  Why: hyper found that the Go test called `Open(nil, cookie)` of session-store, whose cancellation only Python and
+  Node take, against `Open(cookie)` (B2.512). Not generated yet, each a test of the case that fails by name: a function of the owner, a member of an
   internal unit of the owner, an argument that is an enum, a record, a variant or a callback of the owner, and the
   faults of a call of `then`. Go and WASM refuse the parameter itself (GN-6s), so they write no such instance.
   `binding check` does not judge such a value, because CK-22 reads the members of this contract alone. Why: the class
