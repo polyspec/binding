@@ -2664,6 +2664,27 @@ describe('B2.490: CK-104', () => {
 // CK-109: the line of the core on polyspec-binding-core names the tag of the version of the running generator. The
 // fixture repository is scaffolded and its Cargo.lock pins the version of this binding, so CK-19 and CK-20 pass and a
 // finding is the line alone.
+// CK-110 (GN-7, GN-7c): an outer variant that holds the error of a library names every kind of that library, because
+// the core error is matched without a wildcard. tests/e2e/consumer names all seven kinds of sample under Sample.
+describe('CK-110 every inner variant of an outer variant of another library', () => {
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/${path}`, import.meta.url), 'utf8'));
+  const checked = (change: (contract: any) => void): Finding[] => {
+    const contract = read('consumer/packages/rust/interface.json');
+    change(contract);
+    return checkContract(contract, { caseFiles: new Map([['contracts/cases.json', read('consumer/contracts/cases.json')]]), dependencies: new Map([['sample', read('sample/packages/rust/interface.json')]]) });
+  };
+  test('CK-110 a contract that leaves the inner variant Busy of sample unnamed under Sample is refused with the variant', () => {
+    const result = checked((contract) => {
+      contract.errors.kinds = contract.errors.kinds.filter((k: any) => k.variant !== 'polyspec_consumer::Error::Sample/polyspec_sample::Error::Busy');
+    });
+    assert.deepEqual(result.map((f) => f.check), ['CK-110']);
+    assert.match(result[0]?.message ?? '', /^polyspec_consumer::Error::Sample holds the error of sample, whose contract declares polyspec_sample::Error::Busy, and errors\.kinds names no polyspec_consumer::Error::Sample\/polyspec_sample::Error::Busy/);
+  });
+  test('CK-110 a contract that names every inner variant passes', () => {
+    assert.deepEqual(checked(() => {}), []);
+  });
+});
+
 describe('CK-109 the core line on polyspec-binding-core', () => {
   const cli = new URL('../src/cli.ts', import.meta.url).pathname;
   const { version } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version: string };
