@@ -461,7 +461,9 @@ the design ids are those of the binding design.
   the Node crate and hides the helper in the module of the exports of the WASM crate. The entry of a member of a
   class of the WASM crate, which has no `impl` block of the class, is the function `member_<member>` of the module
   `class_<unit>` of that module, which holds `use super::*;`, and the release of a class is the function
-  `free_<unit>` of the module of the exports, whose export is `__free_<Class>`. Why: a name that joins the class and
+  `free_<unit>` of the module of the exports, whose export is `__free_<Class>`. The entry of the constructor is the
+  function `construct` of the module of its class, which is the name of no member, since each has the prefix, and of
+  no helper of the crate, so a class with a constructor and a member `new` has two functions (B2.478). Why: a name that joins the class and
   the member with `_` reads in two ways, so the member `new_x` of the class `a` and the member `x` of the class
   `a_new` were one function `class_a_new_x`, and a member `free` was the release `class_<unit>_free` with its export
   `__<Class>_free`; a separator of two underscores is no snake_case name, which the lints deny. The member keeps a
@@ -676,8 +678,8 @@ the design ids are those of the binding design.
   every instance itself from a result of the core, and a direct construction by language code fails with the kind
   `direct_construction` (category `type`) whose message names the class, as any binding failure of that category does.
   Python's `#[new]` fails so, PHP declares a public `__construct` that fails so, the `Proxy` of the Node entry calls the
-  static `__new`, which fails so, and the WASM constructor calls the export `__<Class>_new`, which fails so, unless the
-  module makes the instance (T-5). Go has no direct construction to refuse: a struct literal or the zero value of
+  static `__binding_new`, which fails so, and the WASM constructor calls the export `__new_<Class>`, which fails so,
+  unless the module makes the instance (T-5). Go has no direct construction to refuse: a struct literal or the zero value of
   `<Class>` runs no code of the binding and holds no value, so a call that takes it fails with kind
   `invalid_argument_type` (GN-15a). Why: the json repository found (T3.25-1) that a direct construction failed without a
   kind, in Node with the plain Error of napi-rs, in Python with the TypeError of pyo3 and in PHP with the Error of the
@@ -689,8 +691,17 @@ the design ids are those of the binding design.
   method with the computed key `<name>`, not as a function expression named `<name>`: a member may take a name that
   JavaScript reserves (`null`, `delete`), which names no function, and the method keeps `<name>` as its `name`. napi-rs keeps the classes it parsed in
   the state of its macro process, which rustc does not keep between the expansions of a struct and its impl, so a
-  Node constructor is the static `__new` and the entry exports the class in a `Proxy` whose `construct` checks the
-  arguments and calls it; `instanceof` reads the class's prototype through the proxy. A parameter of a class takes an
+  Node constructor is the static `__binding_new` and the entry exports the class in a `Proxy` whose `construct` checks the
+  arguments and calls it; `instanceof` reads the class's prototype through the proxy. A hidden name of a class that
+  is no member of it is a name that no member takes. The JavaScript name of a member holds letters and digits alone
+  and starts with a small letter (N-1: a word is `[a-z][a-z0-9]*`), so the addon's name of a member, `__<name>`, has
+  no `_` after its first two: the construction of a Node class is `__binding_new` and its iteration (N-4) is
+  `__binding_iterate`. The export of a member of a WASM class, `__<Class>_<member>`, has the capital letter of its
+  class after `__`: the construction is the export `__new_<Class>` and the iteration `__iterate_<Class>`, as the
+  release is `__free_<Class>` (GN-4c). Why: orm has a static member `new` of a class without a constructor
+  (`query.new`, `step_runner.new`), and the Node addon wrote that member and the refusal of a direct construction as
+  one static `__new`, so `new Query()` ran the member and failed with its argument error in place of the kind
+  `direct_construction`; a method named `iterate` took the place of the iteration in the same way (B2.478). A parameter of a class takes an
   instance of it (another value is kind `invalid_argument_type`) and the core borrows the held value (GN-6h). In Node
   the instance is unwrapped as a `ClassInstance`, which checks the type tag of the class: napi-rs gives a reference
   `&T` only in the argument conversion that it generates and refuses one that the body of a call makes, and the
@@ -2754,7 +2765,7 @@ the design ids are those of the binding design.
   same argument checks (G-7). The WebAssembly module keeps the core values of the instances of a class in a table of
   that class, and an instance keeps the handle of its value in a private field, which no other code reads or forges: a
   value is an instance of the class exactly when it has that field. The module exports each member as
-  `__<Class>_<member>`, which is not part of the API: `__<Class>_new` gives the handle of the new value, and a method, a
+  `__<Class>_<member>`, which is not part of the API: `__new_<Class>` (GN-6b) gives the handle of the new value, and a method, a
   getter or a hook takes the handle of its instance first. When the module loads, the ES module hands over for each
   class a function that makes an instance around a handle, by which a value of the class leaves, and one that reads the
   handle of an instance and answers `undefined` for any other value, which is kind `invalid_argument_type`. A call

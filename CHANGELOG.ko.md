@@ -1,6 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 206355e197ee67e38cd2003278b23c100bb9b47f990bf5a5f6cc71eb816e20c9 -->
-<!-- source-sha256: ad2f6f50abfd88b070786e7eadd3bf83729b1d562d3db3b23408f728cd9e81fc -->
+<!-- source-sha256: 756a2b84e50d1acddc6e0fa5c9e87f8160f32737f320e37e90d5b274dc41179a -->
 <!-- source-sha256: e844d013bda7817a9135936419d93c937c134f87ac03dc8cf1850e1d8a3874f0 -->
 # 변경 기록
 
@@ -8,6 +7,8 @@
 
 ## Unreleased
 
+- Node와 WASM 클래스의 숨은 이름 가운데 member가 아닌 것은 어떤 member도 가질 수 없는 이름이다(GN-6b, GN-4c, B2.478). Node addon은 클래스의 생성을, 직접 생성의 거부도, static `__new`로 썼고 이름이 `new`인 static member도 `__new`로 썼다. 그래서 member가 그 자리를 차지했다. orm의 `new Query()`가 kind `direct_construction` 대신 `schema is not an instance of Schema`로 실패했다. 이름이 `iterate`인 메서드도 같은 식으로 반복 `__iterate`의 자리를 차지했고, WASM의 export `__<Class>_new`와 `__<Class>_iterate`도 그런 member의 export였다. 이제 생성은 Node에서 `__binding_new`, WASM에서 export `__new_<Class>`이고, 반복은 `__binding_iterate`와 `__iterate_<Class>`다. WASM 생성자의 Rust 함수는 `construct`다. 전에는 member `new`의 함수인 `member_new`였다.
+  - 레포는 `make bindings`를 다시 실행한다. 생성된 addon과 진입점은 함께 쓰이고 공개 이름은 바뀌지 않는다. 숨은 export를 이름으로 부르는 레포의 코드는 그것을 바꾼다: WASM glue의 `glue.__<Class>_new(…)`는 `glue.__new_<Class>(…)`다.
 - `machine`이 있는 member가 기본값이 있는 parameter나 field를 받는다(GN-6ab, GN-6i, B2.486). 생성기는 그런 parameter를 모든 target에서 거부했다. orm의 `db.transaction.options: a parameter with a default of a member with machine is not generated yet (GN-6ab)`가 그것이며, orm의 Python과 PHP 바인딩에 `transaction(callback)`이 있었던 것은 두 언어가 record의 field를 keyword와 named argument로 받아 parameter의 기본값이 필요 없었기 때문이다. 이제 그 parameter는 machine이 없는 member와 같이 GN-6i의 규칙대로 생략한다. Node와 WASM은 options record를 없거나 `undefined`일 수 있는 마지막 인자로 받고(`db.transaction(callback)`과 `db.transaction(callback, options)`), machine은 record를, 다른 parameter는 그 `Option<T>`를 값으로 받는다. 소비 저장소가 할 일: `machine`이 있는 member의 코어 함수는 기본값이 있는 parameter를 소유한 `Option<T>`로(`Option<&str>`이 아니라 `Option<String>`), record parameter를 record로 받으며, record를 생략하면 그 field는 `None`이다. orm은 `db.transaction`의 `options`에 기본값 `{empty: "object"}`를, `transaction_options`의 각 field에 기본값을 준다. 생성된 테스트는 그 parameter를 주지 않는 case마다 parameter 없이 member를 부른다. field를 생략한 호출과 기본값을 준 호출을 비교하는 U-2 테스트는 함수를 받는 member에 대해 Python, Node, PHP, WASM에서 생성되지 않으므로(GN-13a), options를 주는 호출은 계약의 case가 맡는다.
 - machine이 있는 member에 case가 건 fault는 그 호출의 모든 wait에서 선다. 전에는 첫 wait에서만 섰다(GN-8a, GN-6ab, B2.477). 생성된 진입이 member의 장전을 한 번 가져오고(`armed_waits`), machine의 각 wait가 그것을 설치한다(새 `binding_core::fault::Armed::wait`). wait마다 take하면 첫 wait에서 장전이 지워져서, 뒤의 wait의 fault, 이를테면 callback이 raise한 뒤의 rollback의 fault는 발화하지 않았다. 저장소가 할 일: 이 버전으로 binding을 다시 생성하고, 생성된 crate가 가리키는 이 `binding_core`를 쓴다.
 - function fixture가 예외를 raise하는 case의 생성된 B-4 시험은 Python, Node, WASM, PHP에서 함수가 던질 값을 정한다. `"callback"`을 raise하는 case의 시험과 Go 시험이 하던 대로다(GN-6ae, B2.476). 전에는 callback이 자기 예외 대신 Python에서 `IndexError`, Node에서 `ReferenceError`로 실패했다.

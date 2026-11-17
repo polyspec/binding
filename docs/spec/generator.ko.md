@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 6d04addbd75520a51544d30e0fb59e396be158d28abdbeaeb981433b3519aee1 -->
+<!-- source-sha256: 6ac291c51419c4eb16ad945bcd9740d6328af35acb20b403f53b3d37cd5adf37 -->
 # 생성기
 
 [English](generator.md)
@@ -380,7 +380,9 @@
   진입은 Node crate에서는 helper의 두 번째 정의이고, WASM crate에서는 export의 module 안에서 helper를 가린다. WASM crate에는
   class의 `impl` 블록이 없어서, class의 member의 진입은 그 module 안의 module `class_<unit>`의 함수
   `member_<member>`다. 그 module은 `use super::*;`를 갖는다. class의 해제는 export의 module의 함수 `free_<unit>`이고, 그
-  export는 `__free_<Class>`다. 이유: class와 member를 `_`로 이은 이름은 두 가지로 읽힌다. 그래서 class `a`의 member
+  export는 `__free_<Class>`다. 생성자의 진입은 그 class의 module의 함수 `construct`다. member는 모두 접두어를 가지므로
+  그것은 어떤 member의 이름도 아니고 crate의 어떤 helper의 이름도 아니다. 그래서 생성자와 member `new`를 가진 class는
+  함수 둘을 갖는다(B2.478). 이유: class와 member를 `_`로 이은 이름은 두 가지로 읽힌다. 그래서 class `a`의 member
   `new_x`와 class `a_new`의 member `x`가 한 함수 `class_a_new_x`였고, member `free`는 해제 `class_<unit>_free`와 그 export
   `__<Class>_free`였다. 밑줄 둘의 구분자는 snake_case 이름이 아니어서 lint가 거부한다. member는 자기 class의 module
   안에서도 접두어를 유지한다. `guard`처럼 helper와 같은 이름의 member가 그 안에서 helper를 가리기 때문이다. class의
@@ -553,8 +555,8 @@
   out_<class>)`)로 적을 때도 그렇다. 그 밖에는 쓰지 않는데, lint가 dead code를 거부하기 때문이다. `constructible: false`면 인스턴스를 만드는 생성자가 없다:
   바인딩이 모든 인스턴스를 코어의 결과에서 스스로 만들고, 언어 코드의 직접 생성은 그 범주의 다른 바인딩 실패와 같이 kind
   `direct_construction`(범주 `type`)으로 실패하며 그 메시지가 클래스를 이름 짓는다. Python의 `#[new]`가 그렇게 실패하고, PHP는
-  그렇게 실패하는 public `__construct`를 선언하며, Node 진입점의 `Proxy`는 그렇게 실패하는 static `__new`를 부르고, WASM
-  생성자는 모듈이 인스턴스를 만드는 때가 아니면 그렇게 실패하는 export `__<Class>_new`를 부른다(T-5). Go에는 거부할 직접 생성이
+  그렇게 실패하는 public `__construct`를 선언하며, Node 진입점의 `Proxy`는 그렇게 실패하는 static `__binding_new`를 부르고, WASM
+  생성자는 모듈이 인스턴스를 만드는 때가 아니면 그렇게 실패하는 export `__new_<Class>`를 부른다(T-5). Go에는 거부할 직접 생성이
   없다: `<Class>`의 struct literal이나 zero value는 바인딩의 코드를 실행하지 않고 값을 담지 않으므로, 그것을 받는 호출이 kind
   `invalid_argument_type`으로 실패한다(GN-15a). Why: json 저장소가 발견했듯이(T3.25-1) 직접 생성은 kind 없이 실패했다. Node에서는
   napi-rs의 일반 Error로, Python에서는 pyo3의 TypeError로, PHP에서는 private 생성자에 대한 엔진의 Error로 실패했는데, 코어는
@@ -565,8 +567,16 @@
   하는 `<name>`을 정의한다. 진입점은 그 함수를 `<name>`이라는 이름의 함수 식이 아니라 계산된 key `<name>`의 메서드로 쓴다.
   member는 JavaScript가 예약한 이름(`null`, `delete`)을 가질 수 있는데 그 이름은 함수 이름이 될 수 없고, 메서드는 `<name>`을
   `name`으로 지닌다. napi-rs는 파싱한 클래스를 macro 프로세스 상태에 두는데 rustc는 struct와 impl의 펼침 사이에 그 상태를
-  유지하지 않으므로, Node 생성자는 static `__new`이고 진입점은 `construct`가 인자를 확인하고 그것을 부르는 `Proxy`로 클래스를
-  내보낸다. `instanceof`는 proxy를 거쳐 클래스의 prototype을 읽는다. 클래스 parameter는 그 인스턴스를 받고(다른 값은 kind
+  유지하지 않으므로, Node 생성자는 static `__binding_new`이고 진입점은 `construct`가 인자를 확인하고 그것을 부르는 `Proxy`로 클래스를
+  내보낸다. `instanceof`는 proxy를 거쳐 클래스의 prototype을 읽는다. 클래스의 숨은 이름 가운데 member가 아닌 것은 어떤
+  member도 가질 수 없는 이름이다. member의 JavaScript 이름은 글자와 숫자만 담고 소문자로 시작한다(N-1: 단어는
+  `[a-z][a-z0-9]*`). 그래서 member의 addon 이름 `__<name>`에는 처음 둘 뒤에 `_`가 없다. Node 클래스의 생성은
+  `__binding_new`이고 반복(N-4)은 `__binding_iterate`다. WASM 클래스의 member의 export `__<Class>_<member>`는 `__` 뒤에
+  클래스의 대문자가 온다. 생성은 export `__new_<Class>`이고 반복은 `__iterate_<Class>`다. 해제가 `__free_<Class>`인 것과
+  같다(GN-4c). 이유: orm에는 생성자 없는 클래스의 static member `new`가 있다(`query.new`, `step_runner.new`). Node addon은
+  그 member와 직접 생성의 거부를 한 static `__new`로 썼다. 그래서 `new Query()`가 member를 실행했고 kind
+  `direct_construction` 대신 그 member의 인자 오류로 실패했다. 이름이 `iterate`인 메서드도 같은 식으로 반복의 자리를
+  차지했다(B2.478). 클래스 parameter는 그 인스턴스를 받고(다른 값은 kind
   `invalid_argument_type`) 코어는 가진 값을 빌린다(GN-6h). Node에서는 인스턴스를 그 class의 type tag를 확인하는
   `ClassInstance`로 꺼낸다: napi-rs는 참조 `&T`를 자기가 생성한 인자 변환에서만 주고 호출 본문이 만든 참조를 거부하며,
   생성 함수는 날 값을 받아 스스로 판정한다(T-8). `in` 행이 클래스 자신만 가리키는 origin `value` 클래스(U-1)는 그런 클래스로
@@ -2260,7 +2270,7 @@
   member, 메서드, getter, `Symbol.iterator`, `toString`, `toJSON`)와 같은 인자 검사(G-7)를 가진다. WebAssembly 모듈은 class마다
   그 인스턴스들의 코어 값을 그 class의 표에 두고, 인스턴스는 자기 값의 handle을 private field에 둔다. 그 field는 다른 코드가
   읽거나 꾸며낼 수 없다: 어떤 값이 그 class의 인스턴스인 것은 그 field를 가질 때뿐이다. 모듈은 member마다
-  `__<Class>_<member>`를 export하며 이것은 API가 아니다: `__<Class>_new`는 새 값의 handle을 주고, 메서드, getter, hook은
+  `__<Class>_<member>`를 export하며 이것은 API가 아니다: `__new_<Class>`(GN-6b)는 새 값의 handle을 주고, 메서드, getter, hook은
   인스턴스의 handle을 첫 인자로 받는다. 모듈을 읽을 때 ES 모듈은 class마다 handle로 인스턴스를 만드는 함수(그 class의 값이
   나갈 때 쓴다)와 인스턴스의 handle을 읽는 함수를 넘긴다. 읽는 함수는 다른 값에 `undefined`를 답하고 그 값은 kind
   `invalid_argument_type`이다. 호출은 읽은 값을 공유하므로 코어가 도는 동안 어떤 표도 빌리지 않으며, class parameter는 그 값의
