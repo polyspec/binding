@@ -10753,6 +10753,34 @@ test('the .d.ts of Node and WASM declares the constructor of each error class as
   }
 });
 
+// E-2, GN-7a, B2.522: the runtime of each error class of Node and WASM gives null to a status and an errno that its
+// caller leaves out, the type that the .d.ts declares (B2.514). The test runs the generated classes alone: the text
+// from the table of kinds to the last registration of kinds, which names no addon.
+test('the Node and WASM runtime of an error class gives null to a status and an errno that are left out (E-2, GN-7a, B2.522)', () => {
+  const contract = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases(), targets: ['node', 'wasm'] });
+  for (const path of ['packages/ts/generated/index.cjs', 'packages/ts/wasm/generated/index.mjs']) {
+    const runtime = text(out, path);
+    const start = runtime.indexOf('const KINDS = new Map();');
+    const end = runtime.lastIndexOf('KINDS.set(');
+    assert.ok(start >= 0 && end > start, path);
+    const body = runtime.slice(start, runtime.indexOf('\n', end)).replace(/^export class /gm, 'class ');
+    const names = [...body.matchAll(/^class (\w+) extends/gm)].map((m) => m[1] ?? '');
+    assert.ok(names.length > 1, path);
+    const classes = new Function(`${body}\nreturn { ${names.join(', ')} };`)() as Record<string, new (...args: unknown[]) => { status: unknown; errno: unknown }>;
+    const kinds = new Function(`${body}\nreturn KINDS;`)() as Map<{ name: string }, Set<string>>;
+    for (const name of names) {
+      const kind = [...([...kinds].find(([cls]) => cls.name === name)?.[1] ?? [])][0];
+      if (kind === undefined) continue;
+      const made = new (classes[name] as new (...args: unknown[]) => { status: unknown; errno: unknown })('m', kind);
+      assert.equal(made.status, null, `${path}: ${name}.status`);
+      assert.equal(made.errno, null, `${path}: ${name}.errno`);
+      const given = new (classes[name] as new (...args: unknown[]) => { status: unknown; errno: unknown })('m', kind, 1, 2);
+      assert.deepEqual([given.status, given.errno], [1, 2], `${path}: ${name}`);
+    }
+  }
+});
+
 // E-1a, GN-6z, B2.475: a value of a function type that is not a function is the one form `<subject> is not a function`
 // of the core, and an entry of a map is named `<map subject>.<key>`, so an entry shout of a map functions that is not a
 // function is "functions.shout is not a function" in every target.
