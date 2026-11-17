@@ -1534,20 +1534,16 @@ fn converted_exception(exception: ZBox<ZendObject>, classes: &[(&str, &str)], ro
             Err(error) => binding_error(BindingError::Internal { detail: error.to_string() }),
         };
     };
-    // ext-php-rs 0.16.4 binds no function of the engine that sets the previous exception, so previous is written as
-    // the private property of the root class of the converted object (Exception or Error), whose scope with_scope gives.
-    let mut root = object.get_class_entry();
-    while let Some(parent) = root.parent() {
-        root = parent;
-    }
-    let previous = match exception.into_zval(false) {
-        Ok(previous) => previous,
-        Err(error) => return binding_error(BindingError::Internal { detail: error.to_string() }),
-    };
-    if let Err(error) = with_scope(root, || object.set_property("previous", previous)) {
-        return binding_error(BindingError::Internal { detail: format!("B2.489: the previous of the converted exception could not be set: {error}") });
-    }
+    // SAFETY: both are live exception objects; zend_exception_set_previous takes over the reference to the previous,
+    // and checks that the chain holds no cycle.
+    unsafe { zend_exception_set_previous(&raw mut *object, exception.into_raw()) };
     error_exception(object, kind)
+}
+
+// B2.489 (GN-7c): ext-php-rs 0.16.4 binds no zend_exception_set_previous, a ZEND_API function of the engine that
+// loads the extension, declared in Zend/zend_exceptions.h of PHP 8.4 and 8.5 alike.
+unsafe extern "C" {
+    fn zend_exception_set_previous(exception: *mut ext_php_rs::ffi::zend_object, add_previous: *mut ext_php_rs::ffi::zend_object);
 }
 
 /// B2.489: the converted object of an exception of one of the classes, each given with its category class, which
