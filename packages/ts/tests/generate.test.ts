@@ -12212,6 +12212,121 @@ test('B2.506: an instance value among the args of a call of after that raises is
   }
 });
 
+test('B2.509: the test of a call of after whose argument a static makes fails when the static fails, even with the kind that the call expects, in Python, PHP, Node and WASM (GN-13f, GN-13o)', () => {
+  // tests/e2e/falsepass: seal.check after a case, with its argument {"new": "seal.parse", "args": {"text": ""}}, whose
+  // static fails with missing, the kind that the call of after expects. The four targets made the argument inside the
+  // outcome of the call, so the failure of the static was taken as that of the call and the test passed.
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/falsepass/${path}`, import.meta.url), 'utf8'));
+  const out = generateTargets({ contract: read('packages/rust/interface.json'), version: '0.0.0', coreLib: 'polyspec_falsepass', caseFiles: new Map([['contracts/cases.json', read('contracts/cases.json')]]), targets: ['python', 'php', 'node', 'wasm'] });
+  const temp = mkdtempSync(join(tmpdir(), 'b2509-'));
+  const slice = (body: string, from: string, to: string): string => {
+    const at = body.indexOf(from);
+    assert.ok(at >= 0, from);
+    const end = body.indexOf(to, at + from.length);
+    assert.ok(end >= 0, to);
+    return body.slice(at, end + to.length);
+  };
+  // Each run executes the generated test with stand-ins for the package: Seal.parse("") fails with missing, as the core
+  // does, and check fails with missing for a seal of the empty name. The test must fail with the failure of the static.
+  const problems: string[] = [];
+  const judged = (target: string, ran: { status: number | null; stdout: string; stderr: string }): void => {
+    const said = `${ran.stdout}${ran.stderr}`;
+    if (/^passed$/m.test(said)) problems.push(`${target}: the test of after passed although its static failed`);
+    else if (!/^failed: .*no value for text/m.test(said)) problems.push(`${target}: ${said}`);
+  };
+  try {
+    // Python
+    const py = text(out, 'packages/python/generated/tests/test_generated.py');
+    const method = slice(py, '    def test_gn13e_seal_check_the_argument_of_a_check_after_it_fails_to_parse(self)', '\n\n');
+    const pyOutcome = slice(py, 'def _outcome(call):', '\n\n');
+    writeFileSync(join(temp, 'run.py'), [
+      'class Missing(ValueError):',
+      '    kind = "missing"',
+      'class Seal:',
+      '    def __init__(self, name):',
+      '        self.name = name',
+      '    @staticmethod',
+      '    def parse(text):',
+      '        if text == "":',
+      '            raise Missing("no value for text")',
+      '        return Seal(text)',
+      '    def check(self, other):',
+      '        if other.name == "":',
+      '            raise Missing("no value for other")',
+      'class pkg:',
+      '    Seal = Seal',
+      pyOutcome,
+      'class Case:',
+      method,
+      'try:',
+      '    Case().test_gn13e_seal_check_the_argument_of_a_check_after_it_fails_to_parse()',
+      '    print("passed")',
+      'except BaseException as error:',
+      '    print(f"failed: {error}")',
+      '',
+    ].join('\n'));
+    judged('python', spawnSync('python3', ['-I', join(temp, 'run.py')], { encoding: 'utf8' }));
+    // PHP
+    const php = text(out, 'packages/php-ext/generated/tests/GeneratedTest.php');
+    const phpMethod = slice(php, '    public function testGn13eSealCheckTheArgumentOfACheckAfterItFailsToParse(): void', '\n    }\n');
+    const phpOutcome = slice(php, '    private static function outcome(\\Closure $call): string', '\n    }\n');
+    writeFileSync(join(temp, 'run.php'), [
+      '<?php',
+      'namespace Polyspec\\Falsepass {',
+      '    final class Missing extends \\Exception { public function kind(): string { return "missing"; } }',
+      '    final class Seal {',
+      '        public function __construct(public string $name) {}',
+      '        public static function parse(string $text): self { if ($text === "") { throw new Missing("no value for text"); } return new self($text); }',
+      '        public function check(Seal $other): void { if ($other->name === "") { throw new Missing("no value for other"); } }',
+      '    }',
+      '}',
+      'namespace {',
+      '    final class Fail extends \\Exception {}',
+      '    final class CaseTest {',
+      '        public static function addToAssertionCount(int $count): void {}',
+      '        public static function assertStringContainsString(string $needle, string $haystack, string $message = ""): void { if (!str_contains($haystack, $needle)) { throw new Fail($message); } }',
+      phpOutcome,
+      phpMethod,
+      '    }',
+      '    try {',
+      '        (new CaseTest())->testGn13eSealCheckTheArgumentOfACheckAfterItFailsToParse();',
+      '        echo "passed\\n";',
+      '    } catch (\\Throwable $error) {',
+      '        echo "failed: ", $error->getMessage(), "\\n";',
+      '    }',
+      '}',
+      '',
+    ].join('\n'));
+    judged('php', spawnSync('php', [join(temp, 'run.php')], { encoding: 'utf8' }));
+    // Node and WASM
+    for (const path of ['packages/ts/generated/tests/generated.test.mjs', 'packages/ts/wasm/generated/tests/generated.test.mjs']) {
+      const js = text(out, path);
+      const body = slice(js, "test('GN-13e: Seal.check the_argument_of_a_check_after_it_fails_to_parse', () => {", '\n});');
+      const jsOutcome = slice(js, 'function outcome(call) {', '\n}');
+      writeFileSync(join(temp, 'run.mjs'), [
+        "import assert from 'node:assert/strict';",
+        'class Missing extends RangeError { kind = "missing"; }',
+        'class Seal {',
+        '  constructor(name) { this.name = name; }',
+        "  static parse(text) { if (text === '') throw new Missing('no value for text'); return new Seal(text); }",
+        "  check(other) { if (other.name === '') throw new Missing('no value for other'); }",
+        '}',
+        'const pkg = { Seal };',
+        jsOutcome,
+        'let ran;',
+        'const test = (name, body) => { ran = body; };',
+        body,
+        "try { ran(); console.log('passed'); } catch (error) { console.log(`failed: ${error.message}`); }",
+        '',
+      ].join('\n'));
+      judged(path, spawnSync(process.execPath, [join(temp, 'run.mjs')], { encoding: 'utf8' }));
+    }
+    assert.deepEqual(problems, []);
+  } finally {
+    rmSync(temp, { recursive: true, force: true });
+  }
+});
+
 test('B2.448: the one function that names the class of a category refuses a text that is no category, for the class table and for Go (GN-13bh)', () => {
   const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/sample/${path}`, import.meta.url), 'utf8'));
   const contract = read('packages/rust/interface.json');
