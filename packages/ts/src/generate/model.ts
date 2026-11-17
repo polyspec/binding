@@ -1834,9 +1834,11 @@ export function coreCallArgs(model: Model, fn: Fn, variable: (parameter: Paramet
     const owned = order.map((p) => (absent(p) ? 'None' : held.some((h) => h.param === p) ? `(*${variable(p)}).clone()` : variable(p)));
     if (fn.receiver === undefined) return owned;
     // GN-6ae, CK-69: the receiver is a clone of the value of the instance, a handle whose clones share one state, which
-    // the call lends to the core, whose receiver is &self as the assertion of GN-6h names it.
+    // the call lends to the core, whose receiver is &self as the assertion of GN-6h names it. lent_receiver states it at
+    // the call: a core path that takes self or &mut self fails to compile with the sentence of CK-69, which binding
+    // check cannot judge, since it reads no Rust source (B2.501).
     // GN-6h: the receiver of a class with a lock is the borrow of the value that its guard holds.
-    return [held.some((h) => h.param === undefined) ? `&Clone::clone(${RECEIVER_GUARD})` : `&Clone::clone(&*${receiver})`, ...owned];
+    return [held.some((h) => h.param === undefined) ? `lent_receiver(&Clone::clone(${RECEIVER_GUARD}))` : `lent_receiver(&Clone::clone(&*${receiver}))`, ...owned];
   }
   const args = order.map((p) => {
     if (absent(p)) return 'None';

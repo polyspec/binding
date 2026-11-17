@@ -14187,7 +14187,8 @@ const machineReceiverFindings = (contract: any, out: ReadonlyMap<string, string 
         }
         return source.slice((c.index ?? 0) + c[0].length, end).trim();
       // A name with no argument is the text of a message, `Store::transaction()`, not a call of the core.
-      }).filter((arg) => arg !== '');
+      // B2.501: the lent receiver is the borrow that lent_receiver states (CK-69).
+      }).filter((arg) => arg !== '').map((arg) => arg.replace(/^lent_receiver\((&.*)\)$/s, '$1'));
       for (const arg of callForms) if (arg.trim().startsWith('&') !== borrowed) found.push(`${path}: ${tail} is called with the receiver ${arg.trim()} for ${m.core.receiver}`);
       for (const [, first] of source.matchAll(new RegExp(`let _: fn\\(([^,)]*)[^=]*= (?:[A-Za-z0-9_]+::)*${tail};`, 'g'))) {
         if ((first ?? '').trim().startsWith('&') !== borrowed) found.push(`${path}: the assertion of ${tail} names the receiver ${first} for ${m.core.receiver}`);
@@ -14211,6 +14212,22 @@ test('GN-6ae: the receiver of the core call of a machine method is the borrow th
   for (const consumer of WHOLE_CONSUMERS) {
     const inputs = wholeConsumer(consumer);
     for (const target of targets) assert.deepEqual(machineReceiverFindings(inputs.contract, wholeConsumerTarget(consumer.name, inputs, target)), [], `${consumer.name} ${target}`);
+  }
+});
+
+// B2.501, GN-6ae: binding check reads no Rust source, so a core whose machine takes self where the contract names
+// &self passed check and failed as E0308 in the generated crate (orm). The call lends the receiver by lent_receiver,
+// whose trait names the sentence of CK-69, so such a core fails to compile with that sentence; in each target.
+test('CK-69: the core call of a machine method lends its receiver by lent_receiver, whose compile error names CK-69, in each target (B2.501)', () => {
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/sample/${path}`, import.meta.url), 'utf8'));
+  const contract = read('packages/rust/interface.json');
+  for (const target of ['php', 'python', 'node', 'go', 'wasm'] as Lang[]) {
+    const out = generateTargets({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: new Map([['contracts/cases.json', read('contracts/cases.json')]]), targets: [target] });
+    const source = [...out.values()].map(String).find((c) => /Store::transaction\(/.test(c)) ?? '';
+    assert.match(source, /Store::transaction\(\s*lent_receiver\(&Clone::clone\(/, target);
+    assert.match(source, /#\[diagnostic::on_unimplemented\(\n {4}message = "CK-69: the core path of a method with machine takes `\{Self\}`, but its receiver is &self, a borrow of `\{T\}` \(GN-6ae\)",/, target);
+    assert.match(source, /\nimpl<'a, T> LentReceiver<'a, T> for &'a T \{\n/, target);
+    assert.match(source, /\nfn lent_receiver<'a, T, R: LentReceiver<'a, T>>\(receiver: &'a T\) -> R \{\n {4}R::lend\(receiver\)\n\}\n/, target);
   }
 });
 

@@ -918,6 +918,24 @@ impl<T: Clone> CoreForm<T> for &&T {
         (*self).clone()
     }
 }
+
+/// GN-6ae, CK-69: the receiver that a method with machine lends to its core, which is \`&self\`. The core path names the
+/// type that it takes, and a core that takes \`self\` or \`&mut self\` fails here with the sentence of CK-69.
+#[diagnostic::on_unimplemented(
+    message = "CK-69: the core path of a method with machine takes \`{Self}\`, but its receiver is &self, a borrow of \`{T}\` (GN-6ae)",
+    label = "CK-69: this core path does not take &self"
+)]
+trait LentReceiver<'a, T> {
+    fn lend(receiver: &'a T) -> Self;
+}
+impl<'a, T> LentReceiver<'a, T> for &'a T {
+    fn lend(receiver: &'a T) -> Self {
+        receiver
+    }
+}
+fn lent_receiver<'a, T, R: LentReceiver<'a, T>>(receiver: &'a T) -> R {
+    R::lend(receiver)
+}
 `;
 
 // A closure that only calls a function with its own parameters is the function itself (clippy redundant_closure); the
