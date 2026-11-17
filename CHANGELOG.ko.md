@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 67f5121407c37238f76372147697b436fdfa12b0655d1b616155bbdcfc3a3490 -->
+<!-- source-sha256: 2be0fd73ff9b1df7a574134fb9474b76a212344aeeca3103d3e6a716d4bd783e -->
 # 변경 기록
 
 [English](CHANGELOG.md)
@@ -7,6 +7,7 @@
 ## Unreleased
 
 - binding의 CI는 release 전에 소비자를 그 release tag에서 실행하고, 실패하면 release를 막는다(GN-14m, B2.494). `config/consumers.json`은 각 소비자를 job과 함께 `{repo, tag}`로 적는다. `ci.yml`의 job `consumers`는 각 tag를 clone하고, `polyspec-binding-core`를 실행의 commit으로 path patch하며(GN-14d), 실행의 CLI로 소비자 자신의 goal을 실행한다: 그 install, `bindings`, offline의 `test-bindings`, 그리고 cache 없는 release 리허설(`release-recipes`, 호스트의 release build, `GOFLAGS=-mod=readonly`의 `rehearse-go-module`). `ci-passed`가 이 job을 요구하므로 소비자가 실패하면 `release.yml`은 시작하지 않는다. 작은 소비자 여덟은 job `small`을 함께 쓰고 template, crud-ui, hyper, orm은 각자 job을 가진다. 지금 목록은 json, http-cookie, http-form, http-media-type, http-negotiation, php-serialization, session-store를 담고, fsm, template, crud-ui, hyper, orm은 binding 배치의 release tag를 `pending`에서 기다린다. 소비자의 사본은 두지 않는다: 소비자의 release가 목록의 tag를 올린다. 소비자는 release의 시험이며 생성기의 입력이 아니다(GN-2). 소비자는 할 일이 없다. `make consumer-gate JOB=<job>`은 한 job을 기계에서 실행한다. 검증: `packages/ts`에서 `node --test tests/consumer-gate.test.ts tests/ci-workflow.test.ts`. 소비자의 실행은 branch의 CI 실행이다.
+- 계약이 `&self`를 이름하는 곳에서 machine method가 `self`나 `&mut self`를 받는 core는 E0308만이 아니라 CK-69의 문장으로 compile에 실패한다(CK-69, GN-6ae, B2.501). binding check는 core의 Rust 소스가 아니라 계약의 receiver를 읽으므로, `self`를 받던 orm의 machine은 check를 통과했고 lint-bindings가 생성 crate에서 E0308로 멈췄다. 이제 machine method의 core 호출은 receiver를 `lent_receiver`로 빌려 주며, 그 trait가 CK-69를 이름한다(`#[diagnostic::on_unimplemented]`). 다섯 target 모두 그렇다. `&self`를 받는 core는 전처럼 compile된다. 저장소가 할 일: 없다. core가 다른 receiver를 받으면 그것을 `&self`로 바꾸고 `make bindings`를 다시 돌린다. `packages/ts`에서 `node --test --test-name-pattern "CK-69" tests/generate.test.ts`로, 그리고 sample의 `Store::transaction`을 `self`로 둔 `make e2e-lint REPOS=tests/e2e/sample`(변경 전 E0308, 변경 후 CK-69로 실패)로 확인했다.
 - `binding check`가 tag가 실행 중인 binding과 다른 version의 것인 core의 `polyspec-binding-core` 줄을 이름한다(CK-109, GN-3e, B2.503). finding은 그 줄, 그 tag의 version, binding의 version을 이름한다. scaffold는 그 줄을 binding crate마다 옮기므로, 더 오래된 release의 tag에 있는 core는 새 생성기 아래에서 그 core runtime을 그대로 두었고, 아무것도 그것을 이름하지 않았다. tag가 없는 줄과 줄이 없는 core는 finding이 아니다. 생성기는 바뀌지 않는다. 저장소가 할 일: core의 줄을 binding의 version의 tag로 바꾸고 `make bindings`를 다시 돌린다. `packages/ts`에서 `node --test --test-name-pattern "CK-109" tests/contract-check.test.ts`(변경 전 실패)로 확인했다.
 
 ## 0.0.21
