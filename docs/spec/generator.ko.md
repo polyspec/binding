@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 22109b687401e851b4e79026b0b5b42675bb098ac557217c9fbf65ec87ee684a -->
+<!-- source-sha256: 9a3527eaca00c49a555b0b3d2cb63ef470b2d1877c7d916329edcc271e9446d1 -->
 # 생성기
 
 [English](generator.md)
@@ -3121,6 +3121,10 @@
   Node, WASM; B2.463). 이유: 상태를 가진 receiver는 한 case 폴더에서 두 번 만들 수 없고, orm `StepRunner.run`의 G-7
   시험은 세 호출이 각각 receiver를 만들어서 둘째가 `table owner already exists`로 실패했다. G-7의 호출은 core가 돌기
   전에 실패하므로 하나뿐인 receiver를 그대로 둔다.
+  G-7 시험의 class나 생성된 interface의 인자도 모두 그렇다. 시험은 그 인자를 receiver 다음에 지역 변수
+  `argument<i>`로 한 번 만들고, 시험의 모든 호출이 그 지역 변수를 받는다(PHP, Python, Node, WASM; B2.508). Go는 모양이
+  틀린 호출이 컴파일되지 않으므로 G-7 시험이 없다. 이유: orm `StepRunner.new`의 G-7 시험은 하나뿐인 case 폴더 위에서
+  호출마다 인자를 만들어서 둘째가 `table owner already exists`로 실패했다.
 - **GN-13z** Python의 U-2와 T-1 시험은 두 결과를 `assertEqual`이 아니라 `_same`으로 비교한다. `_same`은 다른 저장소의 값
   class instance를 in row의 member가 읽는 것으로 비교한다(B2.121). 이유: 소유자의 class는 `__eq__`를 선언하지 않아도
   되고 `polyspec.json.Value`는 선언하지 않아서, 같은 두 결과가 identity로 비교되어 달랐다(crud-ui validator). token으로

@@ -6044,10 +6044,11 @@ test('the placeholder of a class without a factory of its own is made by a funct
   functions.members.push({ id: 'classes.open', name: ['open'], kind: 'function', visibility: 'public', parameters: [{ name: ['name'], type: 'text', required: true }], returns: { unit: 'gate' }, raises: [], wait: 'none', core: 'polyspec_classes::open' });
   (gate.caseFiles.get('contracts/cases.json') as any).show = [];
   const out = generate({ ...gate, version: '0.0.0', coreLib: 'polyspec_classes', targets: ['php', 'python', 'node', 'go', 'wasm'] });
-  assert.match(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /pkg\.show\(pkg\.open\('a'\)/);
-  assert.match(text(out, 'packages/ts/wasm/generated/tests/generated.test.mjs'), /pkg\.show\(pkg\.open\('a'\)/);
-  assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /pkg\.show\(pkg\.open\("a"\)/);
-  assert.match(text(out, 'packages/php-ext/generated/tests/GeneratedTest.php'), /show\(\\[A-Za-z\\]+\\open\("a"\)/);
+  // The G-7 test makes the argument once, as a local, and its calls take that local (B2.508).
+  assert.match(text(out, 'packages/ts/generated/tests/generated.test.mjs'), /const argument0 = pkg\.open\('a'\);\n(?:[^\n]*\n)*?[^\n]*pkg\.show\(argument0/);
+  assert.match(text(out, 'packages/ts/wasm/generated/tests/generated.test.mjs'), /const argument0 = pkg\.open\('a'\);\n(?:[^\n]*\n)*?[^\n]*pkg\.show\(argument0/);
+  assert.match(text(out, 'packages/python/generated/tests/test_generated.py'), /argument0 = pkg\.open\("a"\)\n(?:[^\n]*\n)*?[^\n]*pkg\.show\(argument0/);
+  assert.match(text(out, 'packages/php-ext/generated/tests/GeneratedTest.php'), /\$argument0 = \\[A-Za-z\\]+\\open\("a"\);\n(?:[^\n]*\n)*?[^\n]*show\(\$argument0/);
 });
 
 test('an instance value at an optional place of a generated interface in a call that makes a receiver is an instance of a class that implements it (G-5, GN-13f, GN-6ap)', () => {
@@ -13813,6 +13814,27 @@ test('B2.463: the G-7 test of a method makes its receiver once and gives an argu
     assert.ok(body !== undefined, `${target}: no G-7 test of note`);
     assert.equal(body.match(/Ledger\(['"]a['"]\)/g)?.length, 1, `${target}: ${body}`);
     assert.ok((body.match(/receiver(->|\.)note\(/g)?.length ?? 0) >= 2, `${target}: ${body}`);
+  }
+});
+
+test('B2.508: the G-7 test makes each argument of a class once, as a local of the test, and gives it to every call, in PHP, Python, Node and WASM', () => {
+  // orm: the G-7 test of StepRunner.new made its arguments in each of its calls, over the one case folder, so the
+  // second made the table owner again ("table owner already exists"). Go has no G-7 test: the calls do not compile.
+  const { contract, caseFiles } = statefulSample();
+  const out = generateTargets({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles, targets: ['python', 'node', 'wasm', 'php', 'go'] });
+  const starts = {
+    absorb: { python: /def test_g7_counter_absorb_counts/, node: /test\('G-7: Counter\.absorb /, wasm: /test\('G-7: Counter\.absorb /, php: /function testG7CounterAbsorbCounts/ },
+    seek: { python: /def test_g7_seek_counts/, node: /test\('G-7: seek /, wasm: /test\('G-7: seek /, php: /function testG7seekCounts/ },
+  };
+  for (const [member, start] of Object.entries(starts)) {
+    for (const target of ['python', 'node', 'wasm', 'php'] as const) {
+      const [body] = bodiesOf(text(out, STATEFUL_TESTS[target]), start[target], STATEFUL_END[target]);
+      assert.ok(body !== undefined, `${target}: no G-7 test of ${member}`);
+      // The counter argument is made once, as a local, and the calls take that local.
+      assert.equal(body.match(/Counter\(4\)/g)?.length, 1, `${target} ${member}: ${body}`);
+      assert.match(body, /argument0 = (new )?(pkg\.|\\?Polyspec\\Sample\\)?Counter\(4\)/, `${target} ${member}: ${body}`);
+      assert.ok((body.match(/argument0\b/g)?.length ?? 0) >= 2, `${target} ${member}: ${body}`);
+    }
   }
 });
 

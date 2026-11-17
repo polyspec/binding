@@ -2,7 +2,7 @@
 // against the subpath ./wasm of the installed package after init (P-5). The JavaScript values are those of Node.
 
 import { type Fn, type Model, awaits, categoryClass,cleanupWarning, memberName, errorUnitOfKind, hookCall, langName, unitOf, takesNull, type Arg, nativeRoundTrip, machineFunction, callsCode } from './model.ts';
-import { type CallbackHow, type Context, type MadeForm, type Receiver, raisedLines, aliasCases, aliasRepresentative, bytesKind, callbackArg, callbackReachingArgs, classCaseArgs, otherValue, expectedErrno, numberRefusesNull, fixtureValues, fixturesOf, onceRows, fromJson, isPlain, judgesCallbackResult, madeLines, callArgs, caseRefusal, callables, caseValue, expectedText, nodeTokens, tokenForms, isNumber, resultCases, placeholder, raisingCases, refusedKeyMap, unsafeKeyMap, samePairs, sampleReceiver, primitiveCases, refusesNull, stringCases, textKind, wrapText, functionFixturesOf, type After, FIXTURE_RAISED, callbackCases, stepExpected, jsMade, jsCause, convertedCause } from './samples.ts';
+import { type CallbackHow, type Context, type MadeForm, type Receiver, raisedLines, aliasCases, aliasRepresentative, bytesKind, callbackArg, callbackReachingArgs, classCaseArgs, otherValue, onceArgs,expectedErrno, numberRefusesNull, fixtureValues, fixturesOf, onceRows, fromJson, isPlain, judgesCallbackResult, madeLines, callArgs, caseRefusal, callables, caseValue, expectedText, nodeTokens, tokenForms, isNumber, resultCases, placeholder, raisingCases, refusedKeyMap, unsafeKeyMap, samePairs, sampleReceiver, primitiveCases, refusesNull, stringCases, textKind, wrapText, functionFixturesOf, type After, FIXTURE_RAISED, callbackCases, stepExpected, jsMade, jsCause, convertedCause } from './samples.ts';
 import { header, jsString } from './text.ts';
 import { jsArguments, jsDeclaredMember, placeTests, refusedJs } from './callback_arguments.ts';
 import { wasmGlue } from './wasm.ts';
@@ -503,19 +503,21 @@ test('N-4: ${name} ${kase.id}', () => {${receiverOfCase(kase.receiver).lines}
     const onOnce = (args: string): string => invoke(fn, args, once.expr);
     // GN-13t: an argument of a class of the G-7 test is the case value of a case of the member, where one gives it.
     const values = (arg: Fn['args'][number]): string => otherValue(model, ctx, arg, classGiven);
+    // B2.508: each argument of a class is made once too, as a local, and every call takes it.
+    const given = onceArgs(model, fn, values, (local, expr) => `\n  const ${local} = ${expr};`, (local) => local);
     const record = fn.record;
     const recordTests = record === undefined ? '' : `
   const fields = { ${(record.unit.fields ?? []).map((f) => `${langName('wasm', f.name, 'variable')}: ${placeholder(model, ctx, f.type)}`).join(', ')} };
-  const positional = [${fn.args.filter((a) => !a.field).map(values).join(', ')}];
+  const positional = [${fn.args.filter((a) => !a.field).map(given.value).join(', ')}];
   assert.throws(() => ${onOnce('...positional, { ...fields, notAMember: 1 }')}, (error) => error.constructor === TypeError && /no member notAMember/.test(error.message));
   for (const field of [${(record.unit.fields ?? []).filter((f) => f.default === undefined).map((f) => jsString(langName('wasm', f.name, 'variable'))).join(', ')}]) {
     const lacking = { ...fields, [field]: undefined };
     assert.throws(() => ${onOnce('...positional, lacking')}, (error) => error.constructor === TypeError && /lacks the member/.test(error.message), field);
   }`;
     emit(`
-test('G-7: ${name} counts and names its arguments', () => {${once.lines}${fn.params.every((p) => p.default !== undefined) ? '' : `
+test('G-7: ${name} counts and names its arguments', () => {${once.lines}${given.lines}${fn.params.every((p) => p.default !== undefined) ? '' : `
   assert.throws(() => ${onOnce('')}, (error) => error.constructor === TypeError && /takes/.test(error.message));`}
-  assert.throws(() => ${onOnce([callArgs(model, ctx, fn, values), 'null'].filter((a) => a !== '').join(', '))}, (error) => error.constructor === TypeError && /takes/.test(error.message));${recordTests}
+  assert.throws(() => ${onOnce([callArgs(model, ctx, fn, given.value), 'null'].filter((a) => a !== '').join(', '))}, (error) => error.constructor === TypeError && /takes/.test(error.message));${recordTests}
 });`);
   }
   // GN-6u: an object goes through the native row and back as the same object, and the binding releases its Native.
