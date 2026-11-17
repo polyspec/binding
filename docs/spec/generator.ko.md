@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 4dc6e0315bab0c8ce49c7764e43d59d4b8885191d5f044b09ebecb4d45a2c8b4 -->
+<!-- source-sha256: a7dc763f6a808ad8b78ac02c150ecfa6a1293bf77ebf9dc4a8bace65c015254c -->
 # 생성기
 
 [English](generator.md)
@@ -177,6 +177,26 @@
   Cargo를 어디서 어떻게 시작하느냐에 따라 다르게 링크된다. build script는 host에서 돌므로 대상의 OS는 `cfg!(target_os)`가
   아니라 `CARGO_CFG_TARGET_OS`다. 그 crate의 Rust 시험 실행 파일은 로드된 확장만 가진 PHP 기호가 필요하므로, 생성 시험은
   PHP에서 돈다.
+- **GN-3i** 빌드의 PHP는 PHP 바인딩 crate의 입력이고, ext-php-rs가 다른 PHP로 빌드된 빌드는 실패한다(B2.470). 그 crate의
+  `build.rs`는 ext-php-rs의 build script가 찾는 대로 `php`와 `php-config`를 찾고(`PHP`나 `PHP_CONFIG`가 이름하는 경로, 없으면
+  `PATH`에서 그 이름의 첫 파일), 두 파일과 자신에 `cargo:rerun-if-changed`를, `PHP`, `PHP_CONFIG`, `PATH`,
+  `POLYSPEC_PHP_API`에 `cargo:rerun-if-env-changed`를 내고, `php -n -i`의 `PHP Extension`(module API), `Thread Safety`,
+  `Debug Build` 줄을 읽어 `OUT_DIR`에 `php_build.rs`를 쓴다. 그 파일은 `ext_php_rs::ffi::ZEND_MODULE_API_NO`,
+  `ext_php_rs::PHP_ZTS`, `ext_php_rs::PHP_DEBUG`가 그 세 값이라는 상수 단언이다. 그 crate의 진입 파일 `src/lib.rs`가 그
+  파일을 include한다. 값이 다르면 그 crate의 컴파일이 실패하고, 문장은 그 PHP와 그 module API, 그리고 빌드의 profile과
+  target을 붙인 명령 `cargo clean -p ext-php-rs`를 이름한다. 그 명령은 한 profile의 출력만 지우기 때문이다.
+  `POLYSPEC_PHP_API`는 값을 읽지 않는다. recipe가 자기 PHP를 이름하는 아무 글이나 준다. 예: `php -n -r 'echo PHP_VERSION_ID,
+  PHP_ZTS, PHP_DEBUG;'`의 출력. 이유: ext-php-rs 0.16.4의 build script는 `PHP`, `PHP_CONFIG`, `PATH`와 자기 변수 둘에만
+  `rerun-if-env-changed`를 내고 PHP를 경로로 읽으므로, 한 경로 뒤의 PHP가 바뀌면 Cargo는 앞 PHP의 바인딩을 그대로 둔다.
+  hyper는 도구의 `php` 뒤가 8.5일 때 빌드하고 같은 경로 뒤가 8.4가 된 뒤 다시 빌드했고, PHP는 `Module compiled with module
+  API=20250925`, `PHP compiled with module API=20240924`로 그 확장을 거부했다. 어떤 crate도 Cargo가 의존 crate를 다시
+  빌드하게 할 수 없으므로 이 crate는 ext-php-rs를 새 PHP로 빌드할 수 없다. 로드 전에 명령과 함께 실패할 수는 있다. Cargo는
+  파일을 시각으로, 변수를 값으로 비교한다. checkout 도구의 `php`처럼 PHP가 바뀔 때 다시 쓰이는 wrapper나 다시 설치된
+  실행 파일은 스크립트를 다시 돌리고, 마지막 빌드보다 오래된 파일로 옮겨 간 링크는 돌리지 않는다. 이 경우는 recipe의
+  변수가 맡는다. 매 빌드마다 도는 스크립트(없는 파일의 `rerun-if-changed`)는 변수 없이 모든 변경을 보지만, Cargo는
+  build script가 돌 때마다 그 crate를 다시 컴파일하므로 매 빌드가 확장을 컴파일하게 된다. 손으로 하는 `cargo build`의
+  입력은 그 두 파일과 ext-php-rs의 세 변수다. release recipe는 PHP minor와 빌드마다 자기 target 디렉터리에서 빌드하므로
+  (GN-19d) 낡은 ext-php-rs를 만나지 않는다.
 - **GN-3e** `scaffold`가 쓰는 manifest는 다른 polyspec 라이브러리(T-3)를 코어의 `polyspec-<library>` 의존 줄의 꼴대로 적는다.
   manifest가 적는 라이브러리는 생성된 코드가 그 타입을 이름하는 라이브러리다. 곧 계약이 unit과 types에서 이름하는 라이브러리,
   `errors.kinds`의 행이 그 오류를 그대로 전달하는 라이브러리(그 행의 `library`, E-1b (a)), 계약이 다른 라이브러리의 callback

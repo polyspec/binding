@@ -219,6 +219,29 @@ the design ids are those of the binding design.
   it, so the same tree would link differently by where and how Cargo starts; a build script runs on the host, so the OS
   of the target is `CARGO_CFG_TARGET_OS` and not `cfg!(target_os)`. A Rust test executable of the crate would need the
   symbols of PHP, which only the loaded extension has, so the generated tests run in PHP.
+- **GN-3i** The PHP of the build is an input of the PHP binding crate, and a build whose ext-php-rs is built for another
+  PHP fails (B2.470). The `build.rs` of the crate finds `php` and `php-config` as the build script of ext-php-rs does
+  (the path that `PHP` or `PHP_CONFIG` names, or the first file of that name in `PATH`), emits
+  `cargo:rerun-if-changed` for both files and for itself and `cargo:rerun-if-env-changed` for `PHP`, `PHP_CONFIG`,
+  `PATH` and `POLYSPEC_PHP_API`, reads the lines `PHP Extension` (the module API), `Thread Safety` and `Debug Build` of
+  `php -n -i`, and writes `php_build.rs` in `OUT_DIR`: a constant assertion that `ext_php_rs::ffi::ZEND_MODULE_API_NO`,
+  `ext_php_rs::PHP_ZTS` and `ext_php_rs::PHP_DEBUG` are those three values. The entry `src/lib.rs` of the crate
+  includes that file. When they differ the compilation of the crate fails with a sentence that names the PHP, its
+  module API and the command `cargo clean -p ext-php-rs`, with the profile and the target of the build, since that
+  command removes the output of one profile. `POLYSPEC_PHP_API` is read for no value: a recipe gives it any text that
+  names its PHP, such as the output of `php -n -r 'echo PHP_VERSION_ID, PHP_ZTS, PHP_DEBUG;'`. Why: the build script of
+  ext-php-rs 0.16.4 emits `rerun-if-env-changed` for `PHP`, `PHP_CONFIG`, `PATH` and two variables of its own and reads
+  PHP by its path, so when the PHP behind one path changes Cargo keeps the bindings of the PHP before; hyper built
+  with 8.5 behind the `php` of its tools, built again with 8.4 behind the same path, and PHP refused the extension
+  with `Module compiled with module API=20250925`, `PHP compiled with module API=20240924`. No crate can make Cargo
+  build a dependency again, so the crate cannot build ext-php-rs for the new PHP; it can fail before the load, with
+  the command. Cargo compares a file by its time and a variable by its value: a wrapper that is written again, as the
+  `php` of the tools of a checkout is when its PHP changes, or a binary that is installed again runs the script
+  again, and a link that moves to a file older than the last build does not, which the variable of a recipe covers.
+  A script that runs in every build (`rerun-if-changed` of a file that never exists) would see every change with no
+  variable, and Cargo compiles the crate again after each run of its build script, so every build would compile the
+  extension. A plain `cargo build` has the two files and the three variables of ext-php-rs as its inputs. The release
+  recipe builds each PHP minor and build in a target directory of its own (GN-19d), so it meets no stale ext-php-rs.
 - **GN-3e** A manifest that `scaffold` writes names another polyspec library (T-3) in the form of the dependency line of
   the core on `polyspec-<library>`. The libraries that the manifests name are the libraries whose types the generated
   code names: each library that the contract names in its units and its types, each library whose error a row of
