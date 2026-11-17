@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: a4d1b424a48348516847beb0b5b986b95efd9f20300b24cc957ff7faa982dea6 -->
+<!-- source-sha256: 986b3c020e6226bbe2df611d0dada600afe9f04167963a9564c8d476ca54e022 -->
 <!-- source-sha256: bb28dfd6025b03b96be79ca11dcac3969e000c5324ce6b643123791d04a79f0c -->
 <!-- source-sha256: cfa54c3f8f39682e72777a5567ac382242f1fe10dac5f69c2bc4369cda67435f -->
 <!-- source-sha256: 1ea3f2ff8f567bdef531a277708cacdaa3c87c9aa072ad3ac3094e32ca0caa31 -->
@@ -11,6 +11,10 @@
 [English](CHANGELOG.md)
 
 ## Unreleased
+
+- Python 바인딩 crate의 라이브러리는 그 crate의 이름을 따른다(`[lib] name = "polyspec_<library>_python"`). 전에는 모든 Python crate가 `_native`였다(GN-3i, B2.352). 한 workspace의 두 Python crate(crud-ui의 `packages/validator/python`과 `packages/generator/python`)가 한 파일 `target/<profile>/deps/lib_native.<so|dylib>`를 썼다. 그래서 `cargo build -p … -p …`가 출력 파일 이름 충돌을 경고했고 한 crate의 라이브러리가 다른 crate의 것을 덮어썼다. Python이 import하는 module은 바뀌지 않는다. 그것은 `<module>._native`(host 패키지에서는 `<module>._binding._native`)이고, 생성된 소스가 이제 `#[pymodule(name = "_native")]`로 선언하며 `tool.maturin.module-name`은 전과 같이 그것을 이름한다. 그래서 wheel과 개발 설치는 같은 `_native.abi3.so`를 담는다.
+  - target `python`이 있는 모든 레포는 `binding scaffold`와 `make bindings`를 다시 실행하고 Python crate의 `Cargo.toml`을 commit한다. 그때까지 `binding check`가 그 manifest를 보고한다(CK-19). `pyproject.toml`, Python 코드, import는 바뀌지 않고, host 패키지의 host `pyproject.toml`도 바뀌지 않는다.
+  - Python crate의 라이브러리를 파일 이름(`target/<profile>/lib_native.so`, `lib_native.dylib`)으로 읽는 레포의 recipe나 script는 `libpolyspec_<library>_python.<so|dylib>`를 읽는다. 생성된 recipe 가운데 그런 것은 없고 polyspec 레포의 checkout 가운데에도 없다. 모두 maturin으로 빌드한다.
 
 - none을 돌려주는 member의 결과는 규칙이 하나다(GN-13e, CK-22, B2.466). case가 그것을 적는 어느 자리에서나, 곧 case의 결과 키, `after`의 호출, function fixture의 step, callback fixture의 row에서 그것은 `null`이고, 생성된 시험은 거기서 값 없음을 요구한다(Node와 WASM에서는 `undefined`, Go는 호출만 실행한다). 그런 member의 `"result": null`을 적은 case는 `binding check`가 받아들이는데도 실패하는 시험을 받았고, 이제 통과하는 시험을 받는다. `binding check`는 이 자리들에서 `null`이 아닌 값을 거부한다. 전에는 `after`의 호출만 판정했다. 저장소가 할 일: none을 돌려주는 member의 결과에 `null`이 아닌 값을 적은 case는 `null`을 적거나 키를 생략한다.
 - 생성된 PHP 시험은 case의 가장 작은 int64인 -9223372036854775808을 contract 타입의 인자, 기대 결과, keyed map의 정수 key에서도 `\PHP_INT_MIN`으로 적는다. 전에는 값 alias의 값에서만 그렇게 적었다(B2.464). PHP는 그 literal을 float로 읽고, binding은 그것을 int64가 아니라고 거부했다.

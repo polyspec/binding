@@ -355,6 +355,18 @@ the design ids are those of the binding design.
   `extension-name` of each `composer.json` of the run, and the process fails with the name before a test runs when it
   is not. Why: PIE and a release tool load the binary and ask PHP for the extension by `extension-name`, so an
   extension under another name is installed and reported as not loaded.
+- **GN-3i** The library of the Python binding crate is named after its crate: `[lib] name` of its manifest is
+  `polyspec_<library>_python`, the library with `_` for each `-`, as the libraries of the other binding crates are
+  named after theirs. The name of the library is not the name of the module that Python imports. That module stays
+  `<module>._native` (`<module>._binding._native` of a host package, GN-3b), and two items name it: the generated
+  source declares it with `#[pymodule(name = "_native")]`, which gives the symbol `PyInit__native` that CPython asks
+  the extension file for, and `tool.maturin.module-name` of `pyproject.toml` names the file that maturin copies the
+  library to (`_native.abi3.so`) in a wheel and in a development install. No recipe and no step of the end-to-end
+  check reads the library of the Python crate by its file name: maturin takes it from the build that it runs. Why:
+  Cargo writes the library of every member of a workspace into one directory, `target/<profile>/deps/lib<name>`, so
+  two Python crates of one workspace that are both named `_native` (crud-ui: `packages/validator/python` and
+  `packages/generator/python`) wrote one file, a build of both warned of an output filename collision, which Cargo
+  states may become an error, and the library of one crate replaced that of the other (B2.352).
 - **GN-4** Each binding crate is a member of the repository's workspace (L-2) and takes its lints by
   `lints.workspace = true`, as every package of the repository does, so one table states the lints of R-1 for the core
   and the bindings. That table denies `unsafe_code` rather than forbidding it: the macros of ext-php-rs, napi-rs, PyO3

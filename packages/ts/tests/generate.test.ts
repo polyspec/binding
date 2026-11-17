@@ -13092,3 +13092,26 @@ test('B2.463: a B-5c test makes each instance of its class from the first case o
     assert.doesNotMatch(body, /NewCounter\(0\)/, body);
   }
 });
+
+test('B2.352: the Python crates of two libraries have libraries of different names, and the module that Python imports stays _native (GN-3i)', () => {
+  // crud-ui: packages/validator/python and packages/generator/python are members of one workspace, and both named
+  // their library _native, so both wrote target/debug/deps/lib_native.dylib.
+  const sample = JSON.parse(readFileSync(join(fixture, 'packages/rust/interface.json'), 'utf8'));
+  const other = { ...sample, library: 'crud-ui-generator', packages: { ...sample.packages, python: { package: 'polyspec-crud-ui-generator', module: 'polyspec.crud_ui.generator' } } };
+  const libOf = (manifest: string): string | undefined => /\n\[lib\]\nname = "([^"]+)"\n/.exec(manifest)?.[1];
+  const tracked = [sample, other].map((contract) => trackedPackages(contract, '0.0.0'));
+  const libs = tracked.map((out) => libOf(String(out.get('packages/python/Cargo.toml'))));
+  assert.deepEqual(libs, ['polyspec_sample_python', 'polyspec_crud_ui_generator_python']);
+  // The file that maturin puts into the wheel is named by module-name, whatever the library of the crate is named.
+  assert.match(String(tracked[0]?.get('packages/python/pyproject.toml')), /\nmodule-name = "polyspec\.sample\._native"\n/);
+  assert.match(String(tracked[1]?.get('packages/python/pyproject.toml')), /\nmodule-name = "polyspec\.crud_ui\.generator\._native"\n/);
+  // A host package (L-2a) has the same library name, and check still asks its manifest for the module of the subpackage.
+  const host = { ...sample, packages: { ...sample.packages, python: { ...sample.packages.python, host: true } } };
+  assert.equal(libOf(String(trackedPackages(host, '0.0.0').get('packages/python/native/Cargo.toml'))), 'polyspec_sample_python');
+  // The symbol that CPython asks the extension file for is PyInit__native, which the name of the module gives, not the
+  // name of the library: the import of the generated package does not change.
+  const { contract, caseFiles } = statefulSample();
+  const out = generateTargets({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles, targets: ['python'] });
+  assert.match(text(out, 'packages/python/generated/lib.rs'), /\n#\[pymodule\(name = "_native"\)\]\nfn native_module\(module: &Bound<'_, PyModule>\) -> PyResult<\(\)> \{\n/);
+  assert.match(text(out, 'packages/python/generated/python/polyspec/sample/_root.py'), /\nfrom \._native import /);
+});

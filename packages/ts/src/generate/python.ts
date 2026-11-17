@@ -1526,8 +1526,8 @@ fn _alias_round_${rustField(alias.unit.name)}<'py>(py_: Python<'py>, value: &Bou
     })
 }
 `).join('')}
-${poisonRust(model)}#[pymodule]
-fn _native(module: &Bound<'_, PyModule>) -> PyResult<()> {
+${poisonRust(model)}#[pymodule(name = "_native")]
+fn native_module(module: &Bound<'_, PyModule>) -> PyResult<()> {
     // B-4: the classes are found when the module loads; a missing one fails the import.
 ${classChecks}
 ${register}
