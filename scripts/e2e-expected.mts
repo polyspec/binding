@@ -6,7 +6,7 @@
 
 import { existsSync, readdirSync, readFileSync, realpathSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
-import type { GoTestEvents } from './go-test-events.mts';
+import { goNamelessFailure, goTestName, type GoTestEvents } from './go-test-events.mts';
 
 // The one repository that holds expected-failures.json, a fixture built to fail (AGENTS.md).
 export const EXPECTED_FAILURES_HOME = 'tests/e2e/falsepass/expected-failures.json';
@@ -92,12 +92,11 @@ export function unittestFailures(stderr: string): FailedTest[] {
 
 // The failed tests of a run of go test -json, by the name of the test without its package, with its output.
 export function goFailures(read: GoTestEvents): FailedTest[] {
-  // The name of a Go test starts with Test, and the path of its package may hold dots. A failure whose name holds no
-  // .Test, such as one of an example, has no name that expected-failures.json can hold, so the read fails naming it.
+  // A failure whose name holds no .Test has no name that expected-failures.json can hold, so the read fails naming it.
   return read.counts.fail.map((name) => {
-    const at = name.search(/\.Test/);
-    if (at < 0) throw new Error(`go test reported the failure ${name}, whose name holds no .Test, so it is no test that expected-failures.json can name (GN-14n)`);
-    return { name: name.slice(at + 1), text: read.outputs.get(name) ?? '' };
+    const test = goTestName(name);
+    if (test === undefined) throw new Error(goNamelessFailure(name));
+    return { name: test, text: read.outputs.get(name) ?? '' };
   });
 }
 

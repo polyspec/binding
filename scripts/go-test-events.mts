@@ -56,10 +56,17 @@ export function goPackageFailure(read: GoTestEvents, status: number | null): str
   return `go test failed the packages ${read.packageFailures.join(', ')} (status ${String(status)})${builds}`;
 }
 
-// GN-14n: the name of a Go test without its package, from its name <package>.<test> of counts.
+// GN-14n: the name of a Go test without its package, from its name <package>.<test> of counts, or undefined when the
+// name holds no .Test, such as that of an example. The name of a Go test starts with Test, and the path of its package
+// may hold dots. The reader of expected failures and the guard of the tags read names by this one rule.
 export function goTestName(name: string): string | undefined {
-  return name.slice(name.search(/\.Test/) + 1);
+  const at = name.search(/\.Test/);
+  return at < 0 ? undefined : name.slice(at + 1);
 }
+
+// The failure of a run that reported a failed test without a name of goTestName, which matches no test and is dropped
+// by no reader.
+export const goNamelessFailure = (name: string): string => `go test reported the failure ${name}, whose name holds no .Test, so it names no test (GN-14n)`;
 
 // GN-13bf: the judgement of the run of go test with a wrong build tag (the form before GN-13ba), which must fail on
 // the guard of the tags and name a missing tag: the cause when it does not, or undefined when it does. A run that
@@ -67,7 +74,9 @@ export function goTestName(name: string): string | undefined {
 export const GO_TAG_GUARD = 'TestGN13bfEveryBuildTagOfThePackageIsBuilt';
 export function goTagGuardFailure(read: GoTestEvents, status: number | null): string | undefined {
   if (status === 0 && read.counts.fail.length === 0) return `go test with a wrong build tag passed, so the guard of the tags (${GO_TAG_GUARD}) did not fail`;
-  const others = read.counts.fail.filter((name) => !name.endsWith(`.${GO_TAG_GUARD}`));
+  const nameless = read.counts.fail.find((name) => goTestName(name) === undefined);
+  if (nameless !== undefined) return goNamelessFailure(nameless);
+  const others = read.counts.fail.filter((name) => goTestName(name) !== GO_TAG_GUARD);
   if (others.length > 0) return `go test with a wrong build tag failed other tests than the guard of the tags: ${others.join(', ')}`;
   if (read.counts.fail.length === 0) return goPackageFailure(read, status) ?? `go test with a wrong build tag failed (status ${String(status)}) without a failed test`;
   if (!/GN-13bf: the generated tests of the build tags \[polyspec_\w+/.test(read.printed)) return `the guard of the tags (${GO_TAG_GUARD}) failed without naming a missing tag`;
