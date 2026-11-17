@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 8e6549cd16f925f9c9c9e32115cfed95e1d2e97291fca9b3c616d43f56a93cd1 -->
+<!-- source-sha256: 732aed72f256f871ade73a39a08efee360a35725f43fb271edd115726831e698 -->
 <!-- source-sha256: cfa54c3f8f39682e72777a5567ac382242f1fe10dac5f69c2bc4369cda67435f -->
 <!-- source-sha256: 1ea3f2ff8f567bdef531a277708cacdaa3c87c9aa072ad3ac3094e32ca0caa31 -->
 <!-- source-sha256: b3a9882faef4af19b0b9af0b8d8b2d25f8d9ab9dfe71416a6a6cbd56741f7f26 -->
@@ -11,6 +11,10 @@
 
 ## Unreleased
 
+- `library`가 있는 `errors.kinds` 행은 그 kind가 member에 닿는 통로인 그 라이브러리의 callback unit을 `through`에 적을 수 있고, `binding check`는 그런 행에 X-1의 case도 경로의 case도 묻지 않는다(CK-10, CK-22, GN-5, GN-7c, B2.487). CK-22는 계약이 kind를 전달하는 라이브러리마다 `<library>.internal`을 broken으로 장전하는 case를 요구했는데, 생성된 테스트는 이 계약의 코어가 그 라이브러리의 코어를 부르는 곳에서만 다른 라이브러리의 지점을 장전한다(GN-5). hyper는 session-store의 `store`를 받는다. 그것은 session-store의 package가 자기 `binding_core`로 만든 object이므로, hyper의 session-store 행 17개 중 16개는 그 object가 낸 kind다. 그 case가 있으면 생성된 Node 테스트가 "Missing expected rejection"으로 실패했고, 없으면 검사가 빠진 case와 각 행의 경로의 빠진 case를 보고했다. 이제 `"through": {"unit": "<unit>", "library": "<library>"}` 키가 그것을 적는다. `library`가 있는 행에만 쓸 수 있고, 키가 없는 행의 뜻은 전과 같다. 검사는 라이브러리가 행의 것과 다르거나 unit이 그 라이브러리의 callback unit이 아닌 `through`, 그런 행을 `raises`에 적고 그 unit의 인자를 받지 않는 member(record 안이면 받은 것이다), `through` 행의 kind만 채우는 다른 라이브러리의 지점을 장전하는 case를 거부한다. 생성 코드는 바뀌지 않는다. 검사가 잡지 못하는 것: 코어가 실제로 호출로 닿는 kind의 행에 적은 `through`. 그리고 클래스를 덮어쓰는 `through` 행의 `class`는 어떤 생성 테스트도 증명하지 않는다. hyper가 쓸 것:
+  - kind가 store를 통해 오는 session-store 행 16개, 곧 `Random`을 뺀 모든 행에 `"through": {"unit": "store", "library": "session-store"}`.
+  - `session_store.internal`을 장전하는 `opening_functions.open_page`의 case `a_session_that_waits_after_its_start_is_internal`은 계약이 적은 case 파일에서 빼서 코어의 테스트만 읽는 파일로 옮긴다. 검사는 이제 그 자리의 그 case를 거부한다.
+  - `session_store.random`을 장전하고 `random`을 내는 `opening_functions.open_page`의 case. 코어의 호출이 주는 kind는 이것 하나다. 이 두 변경을 한 계약 사본에 검사를 실행하면 session-store에 대해 다른 것은 묻지 않는다(`no case of opening_functions.open_page raises the kind random`과 `answer_keep_request`의 같은 문장을 보고하며, 둘 중 한 member의 case 하나가 두 member의 경로를 보인다).
 - `{computed}` 기본값에 두 호출을 실행하는 생성 테스트와 그 case를 요구하는 검사가 생겼다(GN-13d, CK-103, B2.436). crud-ui는 코어가 호출마다 임의 키를 만드는 새 row의 키를 null 기본값으로 선언했고, field를 뺀 호출과 기본값을 준 호출을 비교하는 U-2 테스트가 실패했다. 올바른 선언은 `{computed: <규칙 id>}`인데, 그 선언에는 U-2 테스트도 검사도 없어서 선언만으로 테스트가 꺼졌다. 이제 `optional` 타입의 `{computed}` 기본값에 대해 다섯 target이 그 parameter나 field를 뺀 호출과 null을 준 호출을 실행하고 같은 outcome을 요구하는 테스트를 생성한다. 둘 다 실패가 없거나 같은 클래스와 kind의 실패여야 하며, 값은 비교하지 않는다. 테스트 이름에 규칙 id를 적는다(`U-2: Form.addRow without key leaves its value to the core (CURT-004)`). 이 테스트는 지금 U-2 테스트가 있는 member(언어가 결과를 비교하고, callback을 받지 않으며, hook이 아닌 것)에 쓰고, optional이 아닌 타입의 `{computed}` 기본값에는 전과 같이 없다. 그리고 `binding check`는 `{computed}` 기본값이 있는 parameter와, parameter가 받는 record의 그런 field 가운데, 그 member의 어떤 case도 `raises`와 `faults` 없이 그것을 빼거나 null로 주지 않는 것을 CK-103으로 보고한다. 코어가 만드는 값의 증명은 그 규칙의 case다. 소비 저장소가 할 일은 각 계약에 이 검사를 실행해 센 결과다:
   - session-store: `file_sessions.open`은 `{computed: SF-3.8}`인 `cancel`을 받는데, 그 두 case가 모두 실패한다(`openFaults`는 fault를 걸고, `file_sessions.open.cancel`은 이미 발화한 취소를 준다). 그래서 CK-103이 보고한다. `cancel`을 주지 않고 `raises`와 `faults`가 없으며 결과를 적은 `file_sessions.open`의 case를 추가한다.
   - template: 할 일이 없다. `engine_options.loader`, `engine_options.limits`(RT-5), `render_options.env`(FUN-42)는 그 record를 받는 일곱 member(`engine.new`, `render`, `render_json`, `render_bound`, `load`, `prepare`, `prepare_bound`) 각각의 실패하지 않는 case가 뺀다.

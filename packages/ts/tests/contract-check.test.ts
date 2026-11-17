@@ -1162,6 +1162,77 @@ describe('CK-22 every member names its cases (K-1)', () => {
     only(missing, `/errors/kinds/${index}`, /no case arms the point forms_dep\.internal as broken/);
     assert.deepEqual(withFaults([TOO_LARGE, COPY, BROKEN, withDep], passOn).filter((f) => f.check === 'CK-22'), []);
   });
+  // B2.487 (hyper, the store of session-store): forms.parse takes the callback unit dep_reader of forms-dep, whose
+  // object the package of forms-dep makes, and the kinds of forms-dep reach it through that object. The dependency has
+  // the kinds limit (internal, filled by its point internal) and depth (value).
+  const THROUGH = { unit: 'dep_reader', library: 'forms-dep' };
+  const LIMIT = 'sample::Error::Dep/forms_dep::Error::Limit';
+  const DEPTH = 'sample::Error::Dep/forms_dep::Error::Depth';
+  const throughObject = (rows: { limit?: unknown; depth?: unknown }, takes = true) => (c: any, d: any): void => {
+    d.errors.kinds[0] = { variant: 'forms_dep::Error::Limit', category: 'internal' };
+    d.errors.kinds.push({ variant: 'forms_dep::Error::Depth', category: 'value' });
+    d.faults = [{ id: 'internal', core: 'forms_dep::fault::INTERNAL', inject: ['broken'], fills: ['limit'], reason: 'X-1', place: 'forms_dep::limit' }];
+    c.errors.kinds.push({ variant: LIMIT, library: 'forms-dep', ...(rows.limit === undefined ? {} : { through: rows.limit }) });
+    c.errors.kinds.push({ variant: DEPTH, library: 'forms-dep', ...(rows.depth === undefined ? {} : { through: rows.depth }) });
+    member(c, 'forms.parse').raises.push(LIMIT, DEPTH);
+    if (takes) member(c, 'forms.parse').parameters.push({ name: ['reader'], type: { unit: 'dep_reader', library: 'forms-dep' }, required: true });
+  };
+  const DEPTH_CASE = { id: 'too_deep', body: { hex: '00' }, raises: { kind: 'depth' } };
+  const DEP_BROKEN = { id: 'dep_broken', body: { hex: '00' }, faults: [{ point: 'forms_dep.internal', kind: 'broken' }], raises: { kind: 'limit' } };
+  // The findings about the cases of a kind and about an armed point; a finding of the schema, which ends the check
+  // before them, is shown too.
+  const ofKinds = (found: Finding[]): string[] => found.filter((f) => f.check === 'CK-1' || (f.check === 'CK-22' && /no case|arms the point/.test(f.message))).map((f) => `${f.path} ${f.message}`);
+  const limitRow = contract().errors.kinds.length + 1;
+  test('B2.487: no case of the point internal is asked of a library whose internal kind arrives through a callback unit (X-1, GN-5)', () => {
+    // Without through the kind arrives by a call of the core, and the case of the point is asked, as before.
+    assert.deepEqual(ofKinds(withFaults([TOO_LARGE, COPY, BROKEN, DEPTH_CASE], throughObject({}))), [
+      `/errors/kinds/${limitRow} no case arms the point forms_dep.internal as broken and raises a kind of the category internal, the one case that checks the class, kind and status of the error enum of forms-dep (X-1, G-5)`,
+    ]);
+    assert.deepEqual(ofKinds(withFaults([TOO_LARGE, COPY, BROKEN, DEPTH_CASE], throughObject({ limit: THROUGH }))), []);
+  });
+  test('B2.487: the case of the path of a library is asked for its rows without through only (B2.382)', () => {
+    const depth = `${raisesAt(member(contract(), 'forms.parse').raises.length + 3)} no case of forms.parse raises the kind depth (K-1, B-4)`;
+    // Both rows by a call of the core: one case of any kind of the library shows the path for both.
+    assert.deepEqual(ofKinds(withFaults([TOO_LARGE, COPY, BROKEN, DEP_BROKEN], throughObject({}))), []);
+    // The row of limit through the object: its case shows no path of the core, so depth is asked for its own.
+    assert.deepEqual(ofKinds(withFaults([TOO_LARGE, COPY, BROKEN, { ...DEP_BROKEN, faults: undefined }], throughObject({ limit: THROUGH }))), [depth]);
+    assert.deepEqual(ofKinds(withFaults([TOO_LARGE, COPY, BROKEN, DEPTH_CASE], throughObject({ limit: THROUGH }))), []);
+    // Both rows through the object: no case is asked of either.
+    assert.deepEqual(ofKinds(withFaults([TOO_LARGE, COPY, BROKEN], throughObject({ limit: THROUGH, depth: THROUGH }))), []);
+  });
+  test('B2.487: a case that arms a point whose kinds arrive only through the object is refused (GN-5, X-1)', () => {
+    assert.deepEqual(ofKinds(withFaults([TOO_LARGE, COPY, BROKEN, DEPTH_CASE, DEP_BROKEN], throughObject({ limit: THROUGH }))), [
+      `${parseCases()} the case dep_broken of forms.parse arms the point forms_dep.internal, which fills only kinds that the contract states reach it through the unit dep_reader of forms-dep (through): the point fires in the package of forms-dep, whose arming a generated test of this contract does not make, so the case is a test of the core (GN-5, X-1)`,
+    ]);
+    // A point that fills a kind of a row without through is armed for the call of the core.
+    assert.deepEqual(ofKinds(withFaults([TOO_LARGE, COPY, BROKEN, DEP_BROKEN], throughObject({ depth: THROUGH }))), []);
+  });
+  test('B2.487: through names a callback unit of the library of the row, on a row with library (CK-10, CK-1)', () => {
+    const ck10 = (found: Finding[]): string[] => found.filter((f) => f.check === 'CK-10').map((f) => `${f.path} ${f.message}`);
+    assert.deepEqual(ck10(withFaults([TOO_LARGE, COPY, BROKEN, DEPTH_CASE], throughObject({ limit: THROUGH }))), []);
+    assert.deepEqual(ck10(withFaults([TOO_LARGE, COPY, BROKEN, DEPTH_CASE], throughObject({ limit: { unit: 'dep_part', library: 'forms-dep' } }))), [
+      `/errors/kinds/${limitRow}/through/unit through names dep_part, which is no callback unit of forms-dep: a kind reaches a member through an object that the package of forms-dep makes for a callback unit of its contract (GN-7c)`,
+      `${raisesAt(member(contract(), 'forms.parse').raises.length + 2)} forms.parse states ${LIMIT} in its raises, a kind that reaches a member through the unit dep_part of forms-dep (through), and takes no argument of that unit, also not inside a record (GN-7c)`,
+    ]);
+    assert.deepEqual(ck10(withFaults([TOO_LARGE, COPY, BROKEN, DEPTH_CASE], throughObject({ limit: { unit: 'dep_reader' } }))).map((line) => line.split(':')[0]), [
+      `/errors/kinds/${limitRow}/through/library through names a unit of this contract, not a unit of forms-dep, the library of the row`,
+    ]);
+    // The schema allows the key on a row with library only.
+    const own = withFaults([TOO_LARGE, COPY, BROKEN], (c) => { c.errors.kinds[0].through = THROUGH; });
+    assert.deepEqual(own.map((f) => [f.check, f.path]), [['CK-1', '/errors/kinds/0']], JSON.stringify(own));
+  });
+  test('B2.487: a member that states a row with through takes the unit of the row as an argument, also inside a record (CK-10)', () => {
+    const ck10 = (found: Finding[]): string[] => found.filter((f) => f.check === 'CK-10').map((f) => `${f.path} ${f.message}`);
+    assert.deepEqual(ck10(withFaults([TOO_LARGE, COPY, BROKEN, DEPTH_CASE], throughObject({ limit: THROUGH }, false))), [
+      `${raisesAt(member(contract(), 'forms.parse').raises.length + 2)} forms.parse states ${LIMIT} in its raises, a kind that reaches a member through the unit dep_reader of forms-dep (through), and takes no argument of that unit, also not inside a record (GN-7c)`,
+    ]);
+    const inRecord = (c: any, d: any): void => {
+      throughObject({ limit: THROUGH }, false)(c, d);
+      c.units.push({ id: 'parse_options', name: ['parse', 'options'], module: 'forms', kind: 'record', visibility: 'public', origin: 'generated', fields: [{ name: ['reader'], type: { optional: { unit: 'dep_reader', library: 'forms-dep' } }, required: true }] });
+      member(c, 'forms.parse').parameters.push({ name: ['options'], type: { unit: 'parse_options' }, required: true });
+    };
+    assert.deepEqual(ck10(withFaults([TOO_LARGE, COPY, BROKEN, DEPTH_CASE], inRecord)), []);
+  });
   test('a fault case fills no kind that its points do not fill, so an input rule keeps its input case (G-5)', () => {
     const found = withFaults([{ ...COPY, raises: { kind: 'too_large' } }, COPY, BROKEN]);
     assert.deepEqual(found.map((f) => [f.check, f.path]), [['CK-22', parseCases()], ['CK-22', raisesAt(0)]], JSON.stringify(found));

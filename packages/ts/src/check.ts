@@ -1013,8 +1013,36 @@ class Checker {
         const own = dependency?.errors.kinds.find((k) => k.variant === innerVariant(row.variant));
         if (dependency !== null && own === undefined) this.report('CK-10', `${path}/variant`, `${row.library} declares no kind ${innerVariant(row.variant)}`);
         category = own?.category;
+        // GN-7c, CK-22 (B2.487): through names a callback unit of the library of the row, whose object the package of
+        // that library makes; the kind then reaches a member as what that object raised.
+        const through = row.through;
+        if (through !== undefined && through.library !== row.library) {
+          this.report('CK-10', `${path}/through/library`, `through names ${through.library === undefined ? 'a unit of this contract' : `the library ${through.library}`}, not a unit of ${row.library}, the library of the row: a kind of ${row.library} reaches a member through an object of the package of ${row.library} (GN-7c)`);
+        } else if (through !== undefined && dependency !== null && dependency.units.find((u) => u.id === through.unit)?.origin !== 'callback') {
+          this.report('CK-10', `${path}/through/unit`, `through names ${through.unit}, which is no callback unit of ${row.library}: a kind reaches a member through an object that the package of ${row.library} makes for a callback unit of its contract (GN-7c)`);
+        }
       }
       if (row.class !== undefined) this.errorUnit(row.class, `${path}/class`, category);
+    }
+    // GN-7c, CK-22 (B2.487): a member that states a row with through in its raises takes the unit of the row as an
+    // argument, also inside a record, because the kind reaches it only through that object.
+    const throughRows = new Map(errors.kinds.flatMap((row) => (row.through === undefined || row.library === undefined ? [] : [[row.variant, { unit: row.through.unit, library: row.library }] as const])));
+    const takes = (type: Type, wanted: { unit: string; library: string }, seen: Set<string>): boolean => {
+      if (typeof type === 'object' && 'unit' in type) {
+        if (type.library !== undefined) return type.unit === wanted.unit && type.library === wanted.library;
+        if (seen.has(type.unit)) return false;
+        seen.add(type.unit);
+        const own = this.unit(type.unit);
+        return own?.kind === 'record' && (own.fields ?? []).some((field) => takes(field.type, wanted, seen));
+      }
+      return Checker.children(type).some((part) => takes(part, wanted, seen));
+    };
+    for (const { member, path } of this.members.values()) {
+      for (const [r, variant] of (member.raises ?? []).entries()) {
+        const wanted = throughRows.get(variant);
+        if (wanted === undefined || (member.parameters ?? []).some((parameter) => takes(parameter.type, wanted, new Set()))) continue;
+        this.report('CK-10', `${path}/raises/${r}`, `${member.id} states ${variant} in its raises, a kind that reaches a member through the unit ${wanted.unit} of ${wanted.library} (through), and takes no argument of that unit, also not inside a record (GN-7c)`);
+      }
     }
     const kinds = new Set<string>();
     for (const [i, row] of errors.binding.entries()) {
@@ -1585,7 +1613,8 @@ class Checker {
       for (const variant of member.raises ?? []) {
         const row = rows.get(variant);
         const owner = row === undefined ? undefined : ownerRow(row);
-        if (row !== undefined && owner !== undefined) for (const kind of kindsOf(owner)) if (kinds.has(kind)) shown.add(pathOf(member, row, kind));
+        // B2.487: a kind of a row with through takes no path of this contract's core, so it shows none and is asked none.
+        if (row !== undefined && row.through === undefined && owner !== undefined) for (const kind of kindsOf(owner)) if (kinds.has(kind)) shown.add(pathOf(member, row, kind));
       }
     }
     for (const { member, unit, path } of this.members.values()) {
@@ -1595,7 +1624,7 @@ class Checker {
         const row = rows.get(variant);
         const owner = row === undefined ? undefined : ownerRow(row);
         // X-1: a kind of the category internal has the one case of its enum, below.
-        if (row === undefined || owner?.category === undefined || owner.category === 'internal') continue;
+        if (row === undefined || row.through !== undefined || owner?.category === undefined || owner.category === 'internal') continue;
         for (const kind of kindsOf(owner)) {
           if (!shown.has(pathOf(member, row, kind))) {
             this.report('CK-22', `${path}/raises/${r}`, `no case of ${member.id} raises the kind ${kind}${row.category === 'io' ? ', by an input or by a fault injection point of faults that fills it' : ''} (K-1, B-4)`);
@@ -1604,9 +1633,11 @@ class Checker {
       }
     }
     // X-1: one case for each error enum whose kinds the contract gives: its own, and that of each library whose kinds
-    // it passes on (E-1b (a)).
+    // it passes on by a call of its core (E-1b (a)), a row without through (B2.487): the point of a library whose
+    // kinds arrive only through an object of its package fires in that package, where no test of this contract arms it.
     const reported = new Set<string>();
     for (const [i, row] of this.contract.errors.kinds.entries()) {
+      if (row.through !== undefined) continue;
       const library = row.library ?? this.contract.library;
       const category = row.library === undefined ? row.category : this.given(row.library)?.errors.kinds.find((k) => k.variant === innerVariant(row.variant))?.category;
       if (category !== 'internal' || mapped.has(library) || reported.has(library)) continue;
@@ -2071,7 +2102,7 @@ class Checker {
       }
       this.namedThen?.add(step.member.id);
       // The faults that the call arms for itself alone, in the form of the faults of a case.
-      const faults = call['faults'] === undefined ? undefined : this.faultsOf(call['faults'], (message) => report(`the faults of then ${i} of ${what}: ${message}`));
+      const faults = call['faults'] === undefined ? undefined : this.faultsOf(call['faults'], (message) => report(`the faults of then ${i} of ${what}: ${message}`), (refusal) => report(`then ${i} of ${what} ${refusal}`));
       if (faults !== undefined && this.armedThen !== undefined) {
         this.armedThen.any = true;
         for (const filled of faults.fills) this.armedThen.fills.add(filled);
@@ -2098,11 +2129,13 @@ class Checker {
   // of this contract or of the library that the name gives, and takes the injection of its kind. Gives the kinds that
   // the armed points fill and the libraries whose point internal is armed as broken (X-1).
   caseFaults(given: unknown, where: string, path: string): { fills: Set<string>; broken: Set<string> } {
-    return this.faultsOf(given, (message) => this.report('CK-22', path, `${where}: ${message} (G-5)`));
+    return this.faultsOf(given, (message) => this.report('CK-22', path, `${where}: ${message} (G-5)`), (refusal) => this.report('CK-22', path, `${where} ${refusal}`));
   }
 
   // G-5: the faults of a case or of a call of then (GN-13f), each finding given to report.
-  faultsOf(given: unknown, report: (message: string) => void): { fills: Set<string>; broken: Set<string> } {
+  // `through` takes the refusal of a point that fires only in the package of its library, a sentence that begins with
+  // "arms the point" and that the caller puts after the name of its case (B2.487).
+  faultsOf(given: unknown, report: (message: string) => void, through: (refusal: string) => void): { fills: Set<string>; broken: Set<string> } {
     const fills = new Set<string>();
     const broken = new Set<string>();
     if (!Array.isArray(given) || given.length === 0) {
@@ -2138,6 +2171,17 @@ class Checker {
         report(`${what}: errno is the symbol of an errno, such as ENOSPC, and is given with the kind io only`);
       }
       if (fault['nth'] !== undefined && !natural(fault['nth'], 1)) report(`${what}: nth counts from 1`);
+      // GN-5, X-1 (B2.487): a point of another library fires for a member of this contract only where the core of this
+      // contract calls the core of that library. The rows of this contract that pass on a kind that the point fills
+      // say whether it does: when each of them names through, the point fires in the package of that library.
+      const passed = library === this.contract.library ? [] : this.contract.errors.kinds.filter((row) => {
+        const inner = row.library === library ? owner?.errors.kinds.find((k) => k.variant === innerVariant(row.variant)) : undefined;
+        return inner !== undefined && kindsOf(inner).some((filled) => point.fills.includes(filled));
+      });
+      if (passed.length > 0 && passed.every((row) => row.through !== undefined)) {
+        const units = [...new Set(passed.map((row) => row.through?.unit ?? ''))].join(', ');
+        through(`arms the point ${String(fault['point'])}, which fills only kinds that the contract states reach it through the unit ${units} of ${library} (through): the point fires in the package of ${library}, whose arming a generated test of this contract does not make, so the case is a test of the core (GN-5, X-1)`);
+      }
       for (const filled of point.fills) fills.add(filled);
       if (id === 'internal' && kind === 'broken') broken.add(library);
     }

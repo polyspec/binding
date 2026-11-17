@@ -526,7 +526,10 @@ the design ids are those of the binding design.
   and the names of the table above) arms the point for a member of this contract, the entry point of the member
   installs the arming, and the point reads it where the core of this contract calls the core of that library. The
   binding package of that library is not used for it: its crate links a `binding_core` of its own, whose arming the
-  core inside this crate does not read. A point that the call does not reach stays in `_fault_left`, which fails the
+  core inside this crate does not read. So a kind of a row with `through` (GN-7c) is no point of this crate: it is
+  an exception that the object of the package of that library raised, which the core passes on as
+  `Failure::Raised`, the point that gives it fires in that package, and `binding check` refuses a case that arms
+  such a point (CK-22). A point that the call does not reach stays in `_fault_left`, which fails the
   test (GN-13), and `binding check` compares its name with the contract of its library (CK-22). Not generated yet,
   refused by name (G-4): a case that arms a point of another library in a contract without `faults` of its own,
   because the items of GN-8a are written only for a contract with `faults`. A core with
@@ -1627,7 +1630,10 @@ the design ids are those of the binding design.
   class is the class of that category in this repository's table of E-2, or the error unit that the row names in
   `class`, and the kind, status and errno are those that the core error gives (`Kinds`), as for its own rows. The
   generated test of a raising case of such a kind is the test of GN-13 with that class. A row with `library` whose
-  variant has no `<outer>/`, and a row without `library` whose variant has one, are refused by name (G-4, CK-10). Why:
+  variant has no `<outer>/`, and a row without `library` whose variant has one, are refused by name (G-4, CK-10). A
+  row with `library` may name in `through` the callback unit of that library through whose object the kind reaches
+  a member, `{"unit": "<unit>", "library": "<library>"}`; the generated code is the same with and without the key,
+  which `binding check` reads (CK-10, CK-22). Why:
   the core error holds the error of the library inside one of its own variants, so only the path down to the inner
   variant gives a pattern that the compiler checks against the core error (E-1b (a)).
 - **GN-8a** Fault injection (G-5, X-1): for a contract with `faults`, each binding crate names every constant of
