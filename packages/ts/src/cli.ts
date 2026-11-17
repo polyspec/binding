@@ -11,8 +11,10 @@
 //   directory, for the comparison of I-5. --cargo of check, scaffold, generate and go-link is the cargo command of the
 //   repository, the value of $(CARGO), which runs every call of Cargo (GN-1d).
 // binding release-go-module (--root <repository> | --contract <interface.json>) --tag vX.Y.Z --libraries <directory>
-//     --work <directory> [--remote <name>] [--go <command>]
+//     --work <directory> [--remote <name>] [--go <command>] [--rehearsal]
 //   Makes the commit and the tag of the Go module with its static libraries (GN-19f) and prints the reference to push.
+//   --rehearsal makes no commit and no tag: it runs the checks and the proof on HEAD with the platforms that are there
+//   and ends with what it did not see.
 // binding go-link --cargo <command> [--cargo-flags <arguments>] --manifest <Cargo.toml of the Go crate>
 //     --target-dir <directory> [--features <features>]
 //   Builds the static library of the host with the print of rustc and prints the value of CGO_LDFLAGS for the Go tests
@@ -34,7 +36,7 @@ import { generateOnStack } from './generate/stack.ts';
 import { Unsupported } from './generate/model.ts';
 import { bindingCoreFinding, casePointLibraries, componentBase, extensionName, goSumModule, goSumOf, hostRequirements, inheritedLines, manifestReleaseFindings, releaseFindings, releaseJudged, sumRequires, type GoDownload, type Tracked, trackedResult } from './generate/packages.ts';
 import { goCommand } from './go-command.ts';
-import { goStaticBuildArgs, nativeStaticLibs, Refused, releaseGoModule } from './release/go-module.ts';
+import { goStaticBuildArgs, nativeStaticLibs, Refused, rehearsalReport, releaseGoModule } from './release/go-module.ts';
 import { cargoFindings, releaseRecipes, releaseSettingFindings } from './release/recipes.ts';
 
 function libraries(contract: unknown): Set<string> {
@@ -155,7 +157,7 @@ function cargoOf(command: string, value: string | undefined): string[] {
 }
 
 function usage(message: string): never {
-  process.stderr.write(`binding: ${message}\nusage: binding check <interface.json> --cargo <command> [--go <command>] [--release] | binding scaffold [--root <repository> | --contract <interface.json>] [--out <directory>] --cargo <command> [--go <command>] | binding generate [--root <repository> | --contract <interface.json>] [--out <directory>] [--target <target>[,<target>...]] --cargo <command> | binding release-go-module (--root <repository> | --contract <interface.json>) --tag vX.Y.Z --libraries <directory> --work <directory> [--remote <name>] [--go <command>] | binding go-link --cargo <command> [--cargo-flags <arguments>] --manifest <Cargo.toml of the Go crate> --target-dir <directory> [--features <features>] | binding release-recipes [--root <repository> | --contract <interface.json>] [--out <directory>]\n`);
+  process.stderr.write(`binding: ${message}\nusage: binding check <interface.json> --cargo <command> [--go <command>] [--release] | binding scaffold [--root <repository> | --contract <interface.json>] [--out <directory>] --cargo <command> [--go <command>] | binding generate [--root <repository> | --contract <interface.json>] [--out <directory>] [--target <target>[,<target>...]] --cargo <command> | binding release-go-module (--root <repository> | --contract <interface.json>) --tag vX.Y.Z --libraries <directory> --work <directory> [--remote <name>] [--go <command>] [--rehearsal] | binding go-link --cargo <command> [--cargo-flags <arguments>] --manifest <Cargo.toml of the Go crate> --target-dir <directory> [--features <features>] | binding release-recipes [--root <repository> | --contract <interface.json>] [--out <directory>]\n`);
   process.exit(2);
 }
 
@@ -170,8 +172,11 @@ function sentences(error: unknown): string[] {
 // GN-19f: the commit and the tag of the Go module of a release. The command reads from the contract only where the Go
 // module is and how its library is named; the checks of the contract are those of `binding check --release`, which the
 // recipe of a release runs before it (GN-19g).
-function releaseGoModuleCommand(argv: string[]): never {
+function releaseGoModuleCommand(all: string[]): never {
   const given = new Map<string, string>();
+  // B2.479: --rehearsal takes no value, as --release of check takes none.
+  const rehearsal = all.includes('--rehearsal');
+  const argv = all.filter((argument) => argument !== '--rehearsal');
   for (let i = 0; i < argv.length; i += 2) {
     const key = argv[i];
     const value = argv[i + 1];
@@ -206,15 +211,21 @@ function releaseGoModuleCommand(argv: string[]): never {
       log: (line) => {
         if (line !== '') process.stderr.write(`${line}\n`);
       },
+      rehearsal,
     });
   } catch (error) {
     if (error instanceof Refused) {
       for (const finding of error.findings) process.stderr.write(`binding: ${finding}\n`);
-      process.stderr.write('binding: no commit and no tag of the Go module was made (GN-19f)\n');
+      process.stderr.write(rehearsal ? 'binding: the rehearsal of the Go module stopped at these checks, and it made no commit and no tag (GN-19f)\n' : 'binding: no commit and no tag of the Go module was made (GN-19f)\n');
       process.exit(1);
     }
     for (const sentence of sentences(error)) process.stderr.write(`binding: ${sentence}\n`);
     process.exit(1);
+  }
+  // B2.479: a rehearsal prints no reference, so no recipe pushes one, and its last lines are what it did not see.
+  if (released.unseen !== undefined) {
+    for (const line of rehearsalReport(module, tag, released.unseen)) process.stderr.write(`binding: ${line}\n`);
+    process.exit(0);
   }
   const reference = `refs/tags/${goModuleDir(contract)}/${tag}`;
   process.stderr.write(`binding: ${reference} names the commit ${released.commit}${released.reference === undefined ? ', and the remote holds it already' : '; the recipe pushes it'}\n`);

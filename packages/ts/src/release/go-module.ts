@@ -399,19 +399,35 @@ export interface GoModuleRelease {
   env: Record<string, string | undefined>;
   // Takes each command of the run and what it found, for the reader of the run.
   log: (line: string) => void;
+  // B2.479: the rehearsal of --rehearsal. It reads HEAD in place of the commit of the tag, checks the platforms whose
+  // library and generated files are there, and writes its commit and its tag into a repository of `work` alone.
+  rehearsal?: boolean;
 }
 
 export interface GoModuleReleased {
   commit: string;
-  // The reference that the recipe pushes to the remote, or undefined when the remote holds the tag at the commit.
+  // The reference that the recipe pushes to the remote, or undefined when the remote holds the tag at the commit; a
+  // rehearsal gives none.
   reference: string | undefined;
+  // What a rehearsal did not see, one phrase each, the last of which says that no commit and no tag was made;
+  // undefined for a release.
+  unseen?: string[];
+}
+
+// GN-19f, B2.479: the last lines of the output of a rehearsal that passed: what it did not see, so that it is not read
+// as a release that passed.
+export function rehearsalReport(module: string, tag: string, unseen: readonly string[]): string[] {
+  return [`the rehearsal of ${module} ${tag} passed on what is here, and it is no release (GN-19f). It did not see:`, ...unseen.map((line) => `  - ${line}`)];
 }
 
 // GN-19f: makes the commit and the tag <directory>/vX.Y.Z of the Go module in the repository. It runs every check to
 // its end and throws Refused with each failed one before it writes an object; a command that fails for another reason
-// throws an Error with its arguments and its status. It pushes nothing to the remote.
+// throws an Error with its arguments and its status. It pushes nothing to the remote. A rehearsal (B2.479) runs the
+// same checks and the same proof and writes no object and no reference into the repository.
 export function releaseGoModule(release: GoModuleRelease): GoModuleReleased {
   const { root, directory, module, tag, work, remote } = release;
+  const rehearsal = release.rehearsal === true;
+  const unseen: string[] = [];
   if (!/^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/.test(tag)) throw new Refused([`the tag ${tag} is not vX.Y.Z`]);
   const at = goRemote(module, tag);
   const misplaced = goModulePlaceFinding(module, directory);
@@ -447,19 +463,68 @@ export function releaseGoModule(release: GoModuleRelease): GoModuleReleased {
     throw new Error(`git rev-parse --verify --quiet ${name}^{commit} ended with status ${String(ran.status)}`);
   };
 
+  // ---- The repository of the proof ------------------------------------------------------------------------------------
+  // A rehearsal keeps its repository between runs, so the rehearsal of a module finds the one of its sibling (B2.479).
+  const bare = join(work, rehearsal ? 'rehearsal.git' : 'remote.git');
+  const consumer = join(work, 'consumer');
+  const gitConfig = join(work, 'gitconfig');
+  // No setting of the machine reaches Go, no proxy and no checksum database is asked, and the library is the one that
+  // the module carries: GOFLAGS and CGO_LDFLAGS are empty.
+  const goEnv = {
+    GIT_CONFIG_GLOBAL: gitConfig, GIT_CONFIG_NOSYSTEM: '1', GOENV: 'off', GOTOOLCHAIN: 'local', GOWORK: 'off', GOPROXY: 'direct', GOSUMDB: 'off',
+    GOMODCACHE: join(work, 'modcache'), GOCACHE: join(work, 'gocache'), GOFLAGS: '', CGO_ENABLED: '1', CGO_LDFLAGS: '',
+  };
+  // Every call of Go of the run: the go command with the settings above.
+  const go = (argv: string[], cwd?: string): string => run(goProgram, [...goPrefix, ...argv], goEnv, cwd);
+  // Go keeps the directories of a module cache read-only, so Go removes it.
+  const cleanCache = (): void => {
+    if (existsSync(goEnv.GOMODCACHE)) go(['clean', '-modcache']);
+  };
+  const initBare = (): void => {
+    run('git', ['init', '--quiet', '--bare', bare]);
+    for (const [key, value] of [['maintenance.auto', 'false'], ['gc.auto', '0'], ['receive.autogc', 'false']] as const) run('git', ['--git-dir', bare, 'config', key, value]);
+  };
+  // The Git of the repository of the proof. A rehearsal writes each object of its commit there and none into the
+  // repository, whose objects that repository reads as its alternates.
+  const bareGit = (argv: string[], env: Record<string, string> = {}): string => run('git', ['--git-dir', bare, ...argv], env).trim();
+  // The bare repository that Git reads in place of the remote of the repository, made once in a run.
+  let opened = false;
+  const openBare = (): void => {
+    if (opened) return;
+    opened = true;
+    cleanCache();
+    mkdirSync(work, { recursive: true });
+    rmSync(consumer, { recursive: true, force: true });
+    if (!rehearsal) {
+      rmSync(bare, { recursive: true, force: true });
+      initBare();
+    }
+    writeFileSync(gitConfig, `[url "${bare}"]\n\tinsteadOf = https://github.com/${at.owner}/${at.repository}\n`);
+  };
+
   // ---- The checks -----------------------------------------------------------------------------------------------------
-  const parent = named(`refs/tags/${tag}`);
-  if (parent === undefined) throw new Refused([`the repository has no tag ${tag}`]);
   const findings: string[] = [];
-  const head = git(['rev-parse', '--verify', 'HEAD^{commit}']);
-  if (head !== parent) findings.push(`HEAD is the commit ${head}, not the commit ${parent} of the tag ${tag}`);
+  let parent: string;
+  if (rehearsal) {
+    parent = git(['rev-parse', '--verify', 'HEAD^{commit}']);
+    unseen.push(`the tag ${tag}: the rehearsal read HEAD, the commit ${parent}, and the generated files of the work tree, whether a tag names that commit or not`);
+    if (!existsSync(bare)) initBare();
+    mkdirSync(join(bare, 'objects/info'), { recursive: true });
+    writeFileSync(join(bare, 'objects/info/alternates'), `${git(['rev-parse', '--path-format=absolute', '--git-path', 'objects'])}\n`);
+  } else {
+    const tagged = named(`refs/tags/${tag}`);
+    if (tagged === undefined) throw new Refused([`the repository has no tag ${tag}`]);
+    parent = tagged;
+    const head = git(['rev-parse', '--verify', 'HEAD^{commit}']);
+    if (head !== parent) findings.push(`HEAD is the commit ${head}, not the commit ${parent} of the tag ${tag}`);
+  }
   const goMod = run('git', ['-C', root, 'show', `${parent}:${directory}/go.mod`]);
   findings.push(...goModFindings(goMod));
 
   // B2.479: the modules of this repository that the go.mod requires at a release version, and those that they require
   // in turn. Go fetches each at its tag from the same remote as this module, so the proof needs every one of those
   // tags, and the go.sum of the commit takes the hashes of their commits: a missing tag is named before any write.
-  interface Sibling { module: string; version: string; tag: string; commit: string }
+  interface Sibling { module: string; version: string; tag: string; commit: string; rehearsed: boolean }
   const siblings = new Map<string, Sibling>();
   const asked = new Set<string>();
   const pending = siblingRequires(goMod, module).map((r) => ({ ...r, by: 'go.mod' }));
@@ -468,13 +533,34 @@ export function releaseGoModule(release: GoModuleRelease): GoModuleReleased {
     if (r.module === module || asked.has(key)) continue;
     asked.add(key);
     const its = goRemote(r.module, r.version);
-    const found = named(`refs/tags/${its.tag}`);
+    let found = named(`refs/tags/${its.tag}`);
+    let rehearsed = false;
+    if (found === undefined && rehearsal) {
+      // A rehearsal before any release: the sibling has no tag yet, and its own rehearsal in the same --work stands
+      // for it when it was made from the commit that this one reads.
+      const ran = start('git', ['--git-dir', bare, 'rev-parse', '--verify', '--quiet', `refs/tags/${its.tag}^{commit}`]);
+      if (ran.status !== 0 && ran.status !== 1) throw new Error(`git rev-parse --verify --quiet refs/tags/${its.tag}^{commit} ended with status ${String(ran.status)}`);
+      if (ran.status === 0) {
+        const source = bareGit(['rev-parse', '--verify', `${ran.stdout.trim()}^1`]);
+        if (source !== parent) {
+          findings.push(`${r.by} requires ${key}, a Go module of this repository, and its rehearsal in ${work} was made from the commit ${source}, not from HEAD, the commit ${parent}: rehearse that module again first, with the same --work (GN-19f)`);
+          continue;
+        }
+        found = ran.stdout.trim();
+        rehearsed = true;
+        unseen.push(`the tag ${its.tag}: the repository has none, and the rehearsal took ${r.module} from the rehearsal of that module in ${work}`);
+      }
+    }
+    if (found === undefined && rehearsal) {
+      findings.push(`${r.by} requires ${key}, a Go module of this repository, and the repository has no tag ${its.tag} and ${work} holds no rehearsal of that module: rehearse that module first, with the same --work (binding release-go-module --rehearsal, the recipe rehearse-go-module of its contract), because the proof fetches that module at its tag (GN-19f)`);
+      continue;
+    }
     if (found === undefined) {
       findings.push(`${r.by} requires ${key}, a Go module of this repository, and the repository has no tag ${its.tag}: run binding release-go-module of that module first (the recipe release-go-module of its contract), because the proof fetches that module at its tag and the go.sum of this commit holds the hashes of the commit of that tag (GN-19f)`);
       continue;
     }
-    siblings.set(key, { module: r.module, version: r.version, tag: its.tag, commit: found });
-    const itsGoMod = run('git', ['-C', root, 'show', `${found}:${its.directory === '' ? '' : `${its.directory}/`}go.mod`]);
+    siblings.set(key, { module: r.module, version: r.version, tag: its.tag, commit: found, rehearsed });
+    const itsGoMod = run('git', [...(rehearsal ? ['--git-dir', bare] : ['-C', root]), 'show', `${found}:${its.directory === '' ? '' : `${its.directory}/`}go.mod`]);
     pending.push(...siblingRequires(itsGoMod, r.module).map((next) => ({ ...next, by: `the go.mod of ${key}` })));
   }
 
@@ -514,7 +600,25 @@ export function releaseGoModule(release: GoModuleRelease): GoModuleReleased {
   // which release-go-static wrote beside its library; the commit takes it in place of the file of the work tree.
   const linked = new Map<string, string>();
   const carried = new Map<string, string>();
-  for (const platform of GO_PLATFORMS) {
+  const libraryOf = (platform: GoPlatform): string => join(release.libraries, platform, `lib${release.library}.a`);
+  const isFile = (path: string): boolean => existsSync(path) && statSync(path).isFile();
+  // B2.479: a rehearsal names each platform whose library, native-static-libs or generated files are not there and
+  // checks the others; the proof links the library of the platform of the run, which is there.
+  const absent = new Map<string, string[]>();
+  if (rehearsal) {
+    for (const platform of GO_PLATFORMS) {
+      const missing = [`internal/binding/zz_generated_link_${goLinkFile(platform)}.go`, `internal/ffi/lib/${platform}/zz_generated_lib.go`].filter((file) => !generated.includes(file)).map((file) => `${directory}/${file} is not in the work tree`);
+      for (const path of [libraryOf(platform), join(release.libraries, platform, 'native-static-libs')]) if (!isFile(path)) missing.push(`${path} is not there`);
+      if (missing.length === 0) continue;
+      absent.set(platform, missing);
+      unseen.push(`the platform ${platform}: ${missing.join(', ')}`);
+    }
+    const host = go(['env', 'GOOS', 'GOARCH']).trim().split(/\s+/).join('_');
+    if (!(GO_PLATFORMS as readonly string[]).includes(host)) findings.push(`the proof links the library of the platform of the run, and ${host} is no platform of a Go module (GN-15g)`);
+    else if (absent.has(host)) findings.push(`the proof links the library of ${host}, the platform of the run, and ${(absent.get(host) ?? []).join(', ')}: build the library (the recipe release-go-static) and run binding generate --target go (GN-19f)`);
+  }
+  const platforms = GO_PLATFORMS.filter((platform) => !absent.has(platform));
+  for (const platform of platforms) {
     const link = `internal/binding/zz_generated_link_${goLinkFile(platform)}.go`;
     for (const file of [link, `internal/ffi/lib/${platform}/zz_generated_lib.go`]) {
       if (!generated.includes(file)) findings.push(`${directory}/${file} is not in the work tree: run binding generate --target go`);
@@ -540,9 +644,8 @@ export function releaseGoModule(release: GoModuleRelease): GoModuleReleased {
 
   // GN-19b: the llvm tools of the pinned toolchain, never those of PATH.
   const llvm = join(run('rustc', ['--print', 'sysroot']).trim(), 'lib/rustlib', run('rustc', ['--print', 'host-tuple']).trim(), 'bin');
-  const libraryOf = (platform: GoPlatform): string => join(release.libraries, platform, `lib${release.library}.a`);
   const entry = testEntrySymbol(release.prefix);
-  for (const platform of GO_PLATFORMS) {
+  for (const platform of platforms) {
     const path = libraryOf(platform);
     const of = `${path}: the library of ${platform}`;
     if (!existsSync(path) || !statSync(path).isFile()) {
@@ -557,36 +660,7 @@ export function releaseGoModule(release: GoModuleRelease): GoModuleReleased {
   }
   if (findings.length > 0) throw new Refused(findings);
 
-  // ---- The repository of the proof ------------------------------------------------------------------------------------
-  const bare = join(work, 'remote.git');
-  const consumer = join(work, 'consumer');
-  const gitConfig = join(work, 'gitconfig');
-  // No setting of the machine reaches Go, no proxy and no checksum database is asked, and the library is the one that
-  // the module carries: GOFLAGS and CGO_LDFLAGS are empty.
-  const goEnv = {
-    GIT_CONFIG_GLOBAL: gitConfig, GIT_CONFIG_NOSYSTEM: '1', GOENV: 'off', GOTOOLCHAIN: 'local', GOWORK: 'off', GOPROXY: 'direct', GOSUMDB: 'off',
-    GOMODCACHE: join(work, 'modcache'), GOCACHE: join(work, 'gocache'), GOFLAGS: '', CGO_ENABLED: '1', CGO_LDFLAGS: '',
-  };
-  // Every call of Go of the run: the go command with the settings above.
-  const go = (argv: string[], cwd?: string): string => run(goProgram, [...goPrefix, ...argv], goEnv, cwd);
-  // Go keeps the directories of a module cache read-only, so Go removes it.
-  const cleanCache = (): void => {
-    if (existsSync(goEnv.GOMODCACHE)) go(['clean', '-modcache']);
-  };
   const goVersion = /^go (\S+)$/m.exec(goMod)?.[1];
-  // The bare repository that Git reads in place of the remote of the repository, made once in a run.
-  let opened = false;
-  const openBare = (): void => {
-    if (opened) return;
-    opened = true;
-    cleanCache();
-    mkdirSync(work, { recursive: true });
-    rmSync(bare, { recursive: true, force: true });
-    rmSync(consumer, { recursive: true, force: true });
-    run('git', ['init', '--quiet', '--bare', bare]);
-    for (const [key, value] of [['maintenance.auto', 'false'], ['gc.auto', '0'], ['receive.autogc', 'false']] as const) run('git', ['--git-dir', bare, 'config', key, value]);
-    writeFileSync(gitConfig, `[url "${bare}"]\n\tinsteadOf = https://github.com/${at.owner}/${at.repository}\n`);
-  };
 
   // ---- The go.sum of the commit ---------------------------------------------------------------------------------------
   // GN-15g, B2.479: a module builds alone inside the commit of its tag (GN-15l), so the go.sum of that commit holds the
@@ -596,7 +670,10 @@ export function releaseGoModule(release: GoModuleRelease): GoModuleReleased {
   if (siblings.size > 0) {
     if (goVersion === undefined) throw new Error(`${directory}/go.mod names no Go version (GN-15)`);
     openBare();
-    git(['push', '--quiet', bare, ...[...siblings.values()].map((s) => `${s.commit}:refs/tags/${s.tag}`)]);
+    // A sibling that a rehearsal took from the rehearsal of that module is in the repository of the proof already,
+    // and a tag of the repository replaces a rehearsal of an earlier run there.
+    const tagged = [...siblings.values()].filter((s) => !s.rehearsed).map((s) => `${s.commit}:refs/tags/${s.tag}`);
+    if (tagged.length > 0) git(['push', '--quiet', ...(rehearsal ? ['--force'] : []), bare, ...tagged]);
     const sums = join(work, 'sums');
     rmSync(sums, { recursive: true, force: true });
     mkdirSync(sums, { recursive: true });
@@ -618,7 +695,7 @@ export function releaseGoModule(release: GoModuleRelease): GoModuleReleased {
     writeFileSync(join(work, 'go.sum'), goSum);
     added.set(`${directory}/go.sum`, join(work, 'go.sum'));
   }
-  for (const platform of GO_PLATFORMS) added.set(`${directory}/internal/ffi/lib/${platform}/lib${release.library}.a`, libraryOf(platform));
+  for (const platform of platforms) added.set(`${directory}/internal/ffi/lib/${platform}/lib${release.library}.a`, libraryOf(platform));
   for (const [path, source] of carried) added.set(path, source);
   mkdirSync(join(work, 'link'), { recursive: true });
   for (const [link, text] of linked) {
@@ -628,36 +705,48 @@ export function releaseGoModule(release: GoModuleRelease): GoModuleReleased {
   }
   const index = { GIT_INDEX_FILE: join(work, 'index') };
   rmSync(index.GIT_INDEX_FILE, { force: true });
-  git(['read-tree', parent], index);
+  // The Git that writes the objects of the commit: the one of the repository, and for a rehearsal the one of the
+  // repository of the proof, so the repository gets no object.
+  const objects = rehearsal ? bareGit : git;
+  objects(['read-tree', parent], index);
   // GN-15g: the tests of the repository and the programs leave the index, and the checkout keeps them.
   for (const path of removed) {
     release.log(`${directory}/${path}: the released form leaves it out, since it ${form.leftOut.get(path) ?? ''} (GN-15g)`);
-    git(['update-index', '--force-remove', '--', `${directory}/${path}`], index);
+    objects(['update-index', '--force-remove', '--', `${directory}/${path}`], index);
   }
   for (const path of [...added.keys()].sort()) {
-    const object = git(['hash-object', '-w', '--no-filters', '--', added.get(path) ?? '']);
-    git(['update-index', '--add', '--cacheinfo', `100644,${object},${path}`], index);
+    const object = objects(['hash-object', '-w', '--no-filters', '--', added.get(path) ?? '']);
+    objects(['update-index', '--add', '--cacheinfo', `100644,${object},${path}`], index);
   }
-  const tree = git(['write-tree'], index);
+  const tree = objects(['write-tree'], index);
   // The dates of the commit of the tag, so that the same inputs give the same commit.
   const date = git(['show', '-s', '--format=%cI', parent]);
-  const commit = git(['commit-tree', tree, '-p', parent, '-m', `chore(release): Carry the Go module of ${tag}`], { GIT_AUTHOR_DATE: date, GIT_COMMITTER_DATE: date });
+  // The commit of a rehearsal has an identity of its own, which no setting of the repository gives its repository.
+  const identity = rehearsal ? { GIT_AUTHOR_NAME: 'binding rehearsal', GIT_AUTHOR_EMAIL: 'rehearsal@example.invalid', GIT_COMMITTER_NAME: 'binding rehearsal', GIT_COMMITTER_EMAIL: 'rehearsal@example.invalid' } : {};
+  const commit = objects(['commit-tree', tree, '-p', parent, '-m', `chore(release): ${rehearsal ? 'Rehearse' : 'Carry'} the Go module of ${tag}`], { GIT_AUTHOR_DATE: date, GIT_COMMITTER_DATE: date, ...identity });
 
   // ---- The tag of an earlier run --------------------------------------------------------------------------------------
-  const local = named(reference);
-  if (local !== undefined && local !== commit) throw new Refused([`the tag ${moduleTag} of the repository names the commit ${local}, not the commit ${commit} of this run`]);
-  // An annotated tag of the remote names its commit on the line of <reference>^{}, any other tag on its own line.
-  const listed = new Map(git(['ls-remote', '--tags', remote, reference, `${reference}^{}`]).split('\n').filter((line) => line !== '').map((line) => {
-    const [object, name] = line.split('\t');
-    return [name ?? '', object ?? ''];
-  }));
-  const pushed = listed.get(`${reference}^{}`) ?? listed.get(reference);
-  if (pushed !== undefined && pushed !== commit) throw new Refused([`the tag ${moduleTag} of the remote ${remote} names the commit ${pushed}, not the commit ${commit} of this run`]);
+  let local: string | undefined;
+  let pushed: string | undefined;
+  if (rehearsal) {
+    unseen.push(`the tag ${moduleTag} of the repository and of the remote ${remote}: the rehearsal did not ask whether one of an earlier run names another commit`);
+  } else {
+    local = named(reference);
+    if (local !== undefined && local !== commit) throw new Refused([`the tag ${moduleTag} of the repository names the commit ${local}, not the commit ${commit} of this run`]);
+    // An annotated tag of the remote names its commit on the line of <reference>^{}, any other tag on its own line.
+    const listed = new Map(git(['ls-remote', '--tags', remote, reference, `${reference}^{}`]).split('\n').filter((line) => line !== '').map((line) => {
+      const [object, name] = line.split('\t');
+      return [name ?? '', object ?? ''];
+    }));
+    pushed = listed.get(`${reference}^{}`) ?? listed.get(reference);
+    if (pushed !== undefined && pushed !== commit) throw new Refused([`the tag ${moduleTag} of the remote ${remote} names the commit ${pushed}, not the commit ${commit} of this run`]);
+  }
 
   // ---- The consumer ---------------------------------------------------------------------------------------------------
   // The repository of the proof holds the tag of this module beside the tags of its siblings (B2.479).
   openBare();
-  git(['push', '--quiet', bare, `${commit}:${reference}`]);
+  if (rehearsal) bareGit(['update-ref', reference, commit]);
+  else git(['push', '--quiet', bare, `${commit}:${reference}`]);
   if (goVersion === undefined) throw new Error(`${directory}/go.mod names no Go version (GN-15)`);
   mkdirSync(consumer, { recursive: true });
   for (const [name, text] of consumerFiles(goVersion, [{ module, version: tag, packages: publicPackages(form.carried, read) }])) writeFileSync(join(consumer, name), text);
@@ -671,6 +760,12 @@ export function releaseGoModule(release: GoModuleRelease): GoModuleReleased {
   }
 
   // ---- The tag --------------------------------------------------------------------------------------------------------
+  if (rehearsal) {
+    // The objects of the rehearsals before this one, which no tag of the repository of the proof names any more.
+    bareGit(['prune', '--expire=now']);
+    unseen.push(`a commit and a tag of the Go module: the rehearsal made none in the repository and pushed nothing; its commit ${commit} is in ${bare} alone`);
+    return { commit, reference: undefined, unseen };
+  }
   if (local === undefined) git(['tag', '-a', moduleTag, '-m', moduleTag, commit], { GIT_COMMITTER_DATE: date });
   return { commit, reference: pushed === undefined ? reference : undefined };
 }

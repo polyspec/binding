@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 381db9d28900a0f9dd903360849c9e9070a819731816e469a21dd98ea299a18c -->
+<!-- source-sha256: 29216433b30adbf1441fcbee5d9ef700e4593b4d6160a6124e2961519da33122 -->
 # 생성기
 
 [English](generator.md)
@@ -3162,7 +3162,7 @@
   [{"path": …}]}}`)로 쓰고, recipe는 그 형식만 읽으며 패키지를 이름으로 담지 않은 목록은 거부한다. npm의 release는
   레포가 정하므로, 두 번째 형식은 어떤 실행도 지나지 않는 경로가 되기 때문이다.
 - **GN-19f** `binding release-go-module (--root <repository> | --contract <interface.json>) --tag vX.Y.Z --libraries
-  <directory> --work <directory> [--remote <name>] [--go <command>]`은 contract의 레포에 GN-15g의 commit과 tag를 만든다. 입력: checkout은
+  <directory> --work <directory> [--remote <name>] [--go <command>] [--rehearsal]`은 contract의 레포에 GN-15g의 commit과 tag를 만든다. 입력: checkout은
   tag `vX.Y.Z`의 commit에 있다. `binding generate --target go`가 Go 모듈의 파일 `zz_generated_*.go`를 work tree에 썼다.
   `--libraries`는 플랫폼마다 `<Go 디렉터리>/libpolyspec_<repository>_go.a`를 갖는다(GN-19b). `--work`는 실행의 디렉터리이고
   명령은 거기에 자기 index, 증명의 저장소와 소비자, Go의 cache를 둔다. `--remote`는 레포의 Git remote이고 주지 않으면
@@ -3233,6 +3233,27 @@
   `refs/tags/<directory>/vX.Y.Z`를 쓴다. recipe가 remote에 push하는 reference다. remote가 이미 그 tag를 가지면 아무것도
   쓰지 않는다. 명령은 remote에 아무것도 push하지 않는다. 이유: 실행이 무엇을 공개하는지는 그것을 시작한 recipe가 정하고,
   push가 실패한 뒤 다시 실행한 명령은 같은 reference를 준다.
+  rehearsal(B2.479): 값이 없는 option `--rehearsal`을 주면 명령은 release에 tag가 생기기 전에 검사와 증명을 실행하고
+  commit도 tag도 만들지 않는다. 레포에 object도 reference도 쓰지 않고, remote에 아무것도 묻지 않으며 아무것도 push하지
+  않는다. 이때 `--tag vX.Y.Z`는 release가 만들 tag이고 있을 필요가 없다. rehearsal은 tag의 commit 대신 `HEAD`를 읽고 work
+  tree의 생성 파일을 읽는다. 플랫폼의 라이브러리, `native-static-libs`, 두 생성 파일 가운데 하나라도 없으면 그 플랫폼은
+  없는 것이다. rehearsal은 없는 플랫폼을 빠진 것과 함께 각각 밝히고 나머지를 release처럼 검사하므로, 있는 라이브러리가
+  검사에 실패하면 rehearsal도 실패한다. 증명은 실행의 플랫폼, 곧 `go env`의 `<GOOS>_<GOARCH>`의 라이브러리를 링크하므로,
+  그 플랫폼이 없거나 Go 모듈의 플랫폼이 아니면 rehearsal은 거부된다. 증명의 commit은 `--work`의 bare 저장소
+  `rehearsal.git`에 만들고, 그 저장소의 alternates는 레포의 object다(`objects/info/alternates`). object나 index를 쓰는 모든
+  명령은 그 저장소의 `git --git-dir`로 실행하고, commit의 identity는 `binding rehearsal`, message는 `chore(release):
+  Rehearse the Go module of vX.Y.Z`이며, `git update-ref`가 거기에 tag `<directory>/vX.Y.Z`를 둔다. 그 저장소는 실행
+  사이에 남고, `git prune`이 이전 rehearsal의 object를 거기서 지운다. 위 검사의 형제 모듈은 레포에 tag가 있으면 그
+  tag에서 가져오며, rehearsal은 그것을 이전 실행의 rehearsal 위에 그 저장소로 push한다. tag가 없는 형제, 곧 한 version의
+  첫 release 전의 모든 형제는 같은 `--work`에 있는 그 모듈의 rehearsal에서 가져오되, 그 commit의 부모가 이 실행의
+  `HEAD`일 때만 그렇다. 그래서 한 레포의 모듈들은 `--work` 하나로 require의 순서대로 rehearsal한다. 둘 다 없는 형제와
+  다른 commit에서 rehearsal한 형제는 그 모듈의 이름과 그것을 만드는 실행을 대며 거부한다. rehearsal은 표준 출력에 아무것도
+  쓰지 않으므로 어떤 recipe도 reference를 push하지 않고, 오류 출력의 마지막 줄들은 rehearsal이 보지 못한 것의 목록이다:
+  tag가 아니라 `HEAD`를 읽었다는 것, rehearsal에서 가져온 형제 각각, 없는 플랫폼 각각, 레포나 remote의 이전 tag와
+  비교하지 않았다는 것, 그리고 마지막으로 commit도 tag도 만들지 않았다는 것. 목록이 출력의 끝인 이유: 한 플랫폼에서
+  통과한 rehearsal은 마지막 줄들이 아직 증명되지 않은 것을 말하지 않으면 통과한 release처럼 읽힌다. 레포의 script가 아니라
+  명령의 한 형태인 이유: crud-ui는 release를 rehearsal할 수 없었다. 명령이 증명에 이르기 전에 다섯 플랫폼의 라이브러리와
+  그 생성 파일을 요구했기 때문이며, B2.479의 결함은 이미 tag를 push한 release가 찾았다.
 - **GN-19g** release의 recipe는 archive를 빌드하기 전에 레포의 contract마다 `binding check <interface.json> --release`를
   실행한다. 모두 끝까지 실행하고 하나라도 실패하면 멈춘다(CK-70). recipe `release-binding-check`가 그 호출이고, asset의 빌드
   recipe는 CI에서도 release에서도 그것을 먼저 실행한다(GN-19i). GitHub Release의 asset은 label
@@ -3264,7 +3285,13 @@
   | `release-assets-npm` | `node`나 `wasm` | GN-19i, job `npm`의 빌드 |
   | `install-wasm-bindgen` | `wasm` | `mise.toml`의 wasm-bindgen CLI만 설치한다 |
   | `checkout-node-addon` | `node` | GN-3c, checkout의 addon을 생성된 진입점 옆에 |
+  | `rehearse-go-module` | `go` | GN-19f, `TAG`의 tag에 대한 rehearsal, commit도 tag도 없이 |
 
+  `rehearse-go-module`은 release의 단계가 아니다. 레포는 tag `TAG`를 만들기 전에 그것을 실행한다. 그 prerequisite는
+  host의 라이브러리를 빌드하는 `release-go-static`이고, `--work $(RELEASE_TARGET)/go-module-rehearsal`로 `binding
+  release-go-module --rehearsal`을 실행한다. 그 폴더는 component의 이름이 없어서 한 레포의 계약들이 함께 쓰므로, 한
+  모듈의 rehearsal이 자기가 require하는 모듈의 rehearsal을 찾는다(GN-19f, B2.479). require되는 모듈을 먼저 rehearsal하고,
+  두 rehearsal을 동시에 실행하지 않는다.
   계약이 둘이고 한 계약의 Go 모듈이 다른 계약의 Go 모듈을 release version으로 require하는 레포(crud-ui: generator가
   validator를 require한다)는 require되는 모듈의 `release-go-module-<component>`를 그것을 require하는 모듈의 것보다 먼저
   실행한다(GN-19f, B2.479). 둘째 실행은 레포에서 첫 실행의 tag를 읽고, 순서가 반대인 실행은 tag가 없는 모듈의 이름을

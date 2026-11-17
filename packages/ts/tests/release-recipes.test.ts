@@ -12,7 +12,7 @@ import { test, type TestContext } from 'node:test';
 import type { Contract } from '../src/contract.ts';
 import { generate } from '../src/generate/index.ts';
 import { NODE_PLATFORMS, WASM_BINDGEN } from '../src/generate/packages.ts';
-import { ASSET_JOBS, cargoFindings, CHECKOUT_STEPS, releaseRecipes, RELEASE_STEPS } from '../src/release/recipes.ts';
+import { ASSET_JOBS, cargoFindings, CHECKOUT_STEPS, REHEARSAL_STEPS, releaseRecipes, RELEASE_STEPS } from '../src/release/recipes.ts';
 
 const cli = new URL('../src/cli.ts', import.meta.url).pathname;
 const fixture = new URL('./fixtures/repo/', import.meta.url).pathname;
@@ -26,7 +26,7 @@ test('the recipes of a contract name its crates, packages and targets, and a com
   const contract = fixtureContract();
   const recipes = releaseRecipes(contract);
   assert.equal(recipes.path, 'packages/release.mk');
-  assert.deepEqual(recipes.targets, ['release-go-static', 'release-wheel', 'release-php-ext', 'release-npm-platform', 'release-npm', 'release-go-module', 'release-binding-check', 'release-platform-assets', 'release-assets-platform', 'release-assets-php', 'release-assets-npm', 'checkout-node-addon']);
+  assert.deepEqual(recipes.targets, ['release-go-static', 'release-wheel', 'release-php-ext', 'release-npm-platform', 'release-npm', 'release-go-module', 'release-binding-check', 'release-platform-assets', 'release-assets-platform', 'release-assets-php', 'release-assets-npm', 'checkout-node-addon', 'rehearse-go-module']);
   for (const target of recipes.targets) assert.match(recipes.text, new RegExp(`^${target}:`, 'm'), target);
   assert.match(recipes.text, /-p polyspec-sample-go\b/);
   assert.match(recipes.text, /-p polyspec-sample-php-ext\b/);
@@ -50,7 +50,7 @@ test('the recipes of a contract name its crates, packages and targets, and a com
   assert.match(component.text, /--manifest-path packages\/forms\/ts\/Cargo\.toml/);
   assert.match(component.text, /\$\(CURDIR\)\/packages\/forms\/rust\/interface\.json/);
   // Every step of a release that GN-19h names is a target of a contract with every target.
-  assert.deepEqual([...RELEASE_STEPS, ...ASSET_JOBS, ...CHECKOUT_STEPS].sort(), [...recipes.targets].sort());
+  assert.deepEqual([...RELEASE_STEPS, ...ASSET_JOBS, ...CHECKOUT_STEPS, ...REHEARSAL_STEPS].sort(), [...recipes.targets].sort());
 });
 
 /** A copy of the fixture repository with its recipes, a Makefile that includes them and the stand-ins of one case. */
@@ -389,6 +389,29 @@ test('the release check and the Go module run the commands of binding on the con
   assert.equal(box.make('release-go-module', 'TAG=v0.0.3').status, 0);
   const calls = box.calls();
   assert.ok(callIndex(calls, 'binding', ...generation(box.root, 'go')) < callIndex(calls, 'binding', 'release-go-module', '--contract', join(box.root, 'packages/rust/interface.json'), '--tag', 'v0.0.3'));
+});
+
+test('B2.479: rehearse-go-module builds the library of the host and runs the rehearsal of binding release-go-module for TAG in the folder that the contracts of the repository share, and pushes nothing (GN-19f, GN-19h)', (t) => {
+  const box = sandbox(t, 'aarch64-apple-darwin');
+  const noTag = box.make('rehearse-go-module');
+  assert.equal(noTag.status, 2);
+  assert.match(noTag.output, /rehearse-go-module: TAG is required, the tag that the release will make/);
+  writeFileSync(box.env['CALLS'] as string, '');
+  const run = box.make('rehearse-go-module', 'TAG=v0.0.3');
+  assert.equal(run.status, 0, run.output);
+  const calls = box.calls();
+  const rehearsal = callIndex(calls, 'binding', 'release-go-module');
+  assert.deepEqual(calls[rehearsal]?.args, ['release-go-module', '--contract', join(box.root, 'packages/rust/interface.json'), '--tag', 'v0.0.3', '--libraries', join(box.root, 'var/release/assets/go'), '--work', join(box.root, 'var/release/target/go-module-rehearsal'), '--go', 'go', '--rehearsal']);
+  // The library of the host is built before the rehearsal reads it.
+  assert.ok(callIndex(calls, 'cargo', 'rustc') < rehearsal);
+  assert.equal(existsSync(join(box.root, 'var/release/assets/go/darwin_arm64/libpolyspec_sample_go.a')), true);
+  assert.deepEqual(calls.filter((call) => call.tool === 'git').map((call) => call.args.join(' ')).filter((line) => /\b(push|tag)\b/.test(line)), []);
+  // The folder has no name of a component, so the rehearsals of two contracts of one repository share it.
+  const component = releaseRecipes({ ...fixtureContract(), core: { ...fixtureContract().core, path: 'packages/forms/rust' } });
+  assert.match(component.text, /^rehearse-go-module-forms: \$\(BINDING_DEP\) release-go-static-forms$/m);
+  assert.match(component.text, /--work \$\(abspath \$\(RELEASE_TARGET\)\)\/go-module-rehearsal --go "\$\(GO\)" --rehearsal$/m);
+  // It is no step of a release: no recipe of a release runs it.
+  assert.doesNotMatch(releaseRecipes(fixtureContract()).text, /^release-[a-z-]+:.*rehearse-go-module/m);
 });
 
 // B2.267: the wheel that release-wheel builds on each platform is one that release-platform-assets takes, a manylinux
