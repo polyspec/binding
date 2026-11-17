@@ -2863,8 +2863,10 @@ test('a parameter of a value type with the default {empty: "object"} is None whe
   const sample = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
   for (const unit of sample.units) for (const m of unit.members ?? []) if (m.id === 'sample.size') m.parameters[0].default = { empty: 'object' };
   const own = generate({ contract: sample, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: sampleCases() });
-  assert.match(text(own, RELAY_TESTS.python), /left = _outcome\(lambda: pkg\.size\(\)\)\n\s+right = _outcome\(lambda: pkg\.size\(\{\}\)\)\n/);
-  assert.match(text(own, RELAY_TESTS.node), /outcome\(\(\) => pkg\.size\(\)\), outcome\(\(\) => pkg\.size\(new Map\(\[\]\)\)\)/);
+  // B2.465: the empty map of data leaves Python and Node as an instance of box (its row of sequence keys), so the
+  // test gives it as that instance.
+  assert.match(text(own, RELAY_TESTS.python), /left = _outcome\(lambda: pkg\.size\(\)\)\n\s+right = _outcome\(lambda: pkg\.size\(pkg\.Box\(\{\}\)\)\)\n/);
+  assert.match(text(own, RELAY_TESTS.node), /outcome\(\(\) => pkg\.size\(\)\), outcome\(\(\) => pkg\.size\(new pkg\.Box\(new Map\(\[\]\)\)\)\)/);
   assert.match(text(own, RELAY_TESTS.php), /self::outcome\(static fn \(\): mixed => \\Polyspec\\Sample\\size\(new \\stdClass\(\)\)\),/);
   assert.match(text(own, RELAY_TESTS.go), /\tvalue0, err0 := Size\(nil\)\n\tvalue1, err1 := Size\(ptr\[any\]\(map\[string\]any\{\}\)\)\n/);
   // Any other {empty} of a value type stays refused by name.
@@ -12820,6 +12822,109 @@ test('B2.466: a case of a member without a result that states the result null is
     const refused = body(target, 'a_value_is_stated', 'AValueIsStated');
     assert.ok(refused.includes('the case a_value_is_stated of ledger.note gives result 1, but ledger.note returns none, whose result is null alone (GN-13e)'), `${target}: ${refused}`);
   }
+});
+
+// B2.465: the sample whose alias data has the rows of orm_value: a row of the kind int64 that makes the integer of the
+// language, and the kinds int and bytes made as instances of the value classes whole and octets in PHP and Python.
+const kindRows = (echo: object[]): { contract: any; caseFiles: Map<string, unknown> } => {
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/sample/${path}`, import.meta.url), 'utf8'));
+  const contract = read('packages/rust/interface.json');
+  const cases = read('contracts/cases.json');
+  const cls = (id: string, core: string, type: string): any => ({
+    id, name: [id], module: '', kind: 'class', visibility: 'public', origin: 'value', core_type: `polyspec_sample::${core}`,
+    members: [
+      { id: `${id}.constructor`, name: ['constructor'], kind: 'constructor', visibility: 'public', parameters: [{ name: ['value'], type, required: true }], raises: [], wait: 'none', core: `polyspec_sample::${core}::new` },
+      { id: `${id}.value`, name: ['value'], kind: 'property', visibility: 'public', returns: type, raises: [], wait: 'none', core: { path: `polyspec_sample::${core}::value`, receiver: '&self' } },
+    ],
+  });
+  contract.units.push(cls('whole', 'Whole', 'int64'), cls('octets', 'Octets', 'bytes'));
+  const data = contract.units.find((u: any) => u.id === 'data');
+  data.out.push(
+    { kind: 'int', make: { php: 'whole.constructor', python: 'whole.constructor', node: 'int', go: 'int', wasm: 'int' } },
+    { kind: 'int64', make: { php: 'int', python: 'int', node: 'bigint', go: 'int', wasm: 'bigint' } },
+    { kind: 'bytes', make: { php: 'octets.constructor', python: 'octets.constructor', node: 'bytes', go: 'bytes', wasm: 'bytes' } },
+  );
+  // A map with sequence keys leaves PHP as an instance of the class bag, as map_value of orm: a PHP array with such
+  // keys, the empty array among them, is read as a list.
+  const bag = cls('bag', 'Bag', 'int64');
+  bag.members[0].parameters[0] = { name: ['value'], type: { map: { unit: 'data' } }, required: true };
+  bag.members[1].returns = { map: { unit: 'data' } };
+  bag.only = { targets: ['php'], reason: 'Q-4' };
+  contract.units.push(bag);
+  data.out.find((row: any) => row.kind === 'map' && row.when?.is === true).make.php = 'bag.constructor';
+  cases.echo = echo;
+  return { contract, caseFiles: new Map([['contracts/cases.json', cases]]) };
+};
+
+test('B2.465: a case value that its out row makes as an instance of a value class is given as that instance, for an int, bytes and a map, in PHP too (GN-13)', () => {
+  // orm in PHP: a PHP int is read as an int64 and the int is an instance of integer_value; an empty PHP array is
+  // read as a list and the empty map is an instance of map_value. The test gave 7 and [].
+  const x = { kind: 'text', value: 'x' };
+  const { contract, caseFiles } = kindRows([
+    { id: 'an_int', value: { kind: 'int', value: 7 }, result: x },
+    { id: 'bytes', value: { kind: 'bytes', value: { hex: 'ff00' } }, result: x },
+    { id: 'an_empty_map', value: { kind: 'map', value: [] }, result: x },
+    { id: 'a_named_map', value: { kind: 'map', value: [['a', { kind: 'int', value: 7 }], ['b', { kind: 'map', value: [] }]] }, result: x },
+    { id: 'an_int64', value: { kind: 'int64', value: 7 }, result: x },
+  ]);
+  const out = generateTargets({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles, targets: ['python', 'node', 'php'] });
+  const call = (target: 'python' | 'node' | 'php', id: RegExp, end: string): string => /(?:\\Polyspec\\Sample\\|pkg\.)same\(.*\);?$/m.exec(bodiesOf(text_(target), id, end)[0] ?? '')?.[0] ?? '';
+  const text_ = (target: 'python' | 'node' | 'php'): string => text(out, STATEFUL_TESTS[target]);
+  const php = (id: string): string => call('php', new RegExp(`function testGn13esame${id}\\(`), '\n    }\n');
+  assert.equal(php('AnInt'), '\\Polyspec\\Sample\\same(new \\Polyspec\\Sample\\Whole(7));');
+  assert.equal(php('Bytes'), '\\Polyspec\\Sample\\same(new \\Polyspec\\Sample\\Octets(hex2bin("ff00")));');
+  assert.equal(php('AnEmptyMap'), '\\Polyspec\\Sample\\same(new \\Polyspec\\Sample\\Bag([]));');
+  // A map whose keys are no sequence keys stays the array of its row, and its values take their own rows.
+  assert.equal(php('ANamedMap'), '\\Polyspec\\Sample\\same(["a" => new \\Polyspec\\Sample\\Whole(7), "b" => new \\Polyspec\\Sample\\Bag([])]);');
+  // A kind whose row makes a built-in form stays that value.
+  assert.equal(php('AnInt64'), '\\Polyspec\\Sample\\same(7);');
+  assert.equal(call('python', /def test_gn13e_same_an_int\(/, '\n\n'), 'pkg.same(pkg.Whole(7))');
+  assert.equal(call('node', /test\('GN-13e: same an_int'/, '\n});'), 'pkg.same(7);');
+});
+
+test('B2.465: a case value of the kind int64 of a value alias has a form in the five targets, as an argument and as an expected result (GN-13, GN-13e)', () => {
+  // orm: the case kinds of map_value gives {"kind": "int64"}, and its test failed with "a case value of the kind
+  // int64 of the alias orm_value is not generated yet".
+  const int64 = (value: unknown): object => ({ kind: 'int64', value });
+  const { contract, caseFiles } = kindRows([{ id: 'an_int64', value: int64(7), result: int64(7) }, { id: 'the_least_int64', value: int64('-9223372036854775808'), result: int64('-9223372036854775808') }]);
+  const out = generateTargets({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles, targets: ['python', 'node', 'wasm', 'php', 'go'] });
+  const all = Object.fromEntries(Object.entries({ ...STATEFUL_TESTS, go: 'packages/go/zz_generated_test.go' }).map(([target, path]) => [target, text(out, path)])) as Record<'python' | 'node' | 'wasm' | 'php' | 'go', string>;
+  for (const [target, body] of Object.entries(all)) assert.doesNotMatch(body, /of the kind int64 of [^\n]* is not (generated|compared) yet/, target);
+  // The member sample.echo has the name same.
+  assert.match(all.python, /result = pkg\.same\(7\)\n {8}expected = json\.loads\("\[\\"int 7\\"\]"\)/);
+  assert.match(all.python, /result = pkg\.same\(-9223372036854775808\)\n {8}expected = json\.loads\("\[\\"int -9223372036854775808\\"\]"\)/);
+  for (const target of ['node', 'wasm'] as const) {
+    assert.match(all[target], /const result = pkg\.same\(7n\);\n {2}const expected = JSON\.parse\('\["bigint 7"\]'\);/, target);
+    assert.match(all[target], /const result = pkg\.same\(-9223372036854775808n\);\n {2}const expected = JSON\.parse\('\["bigint -9223372036854775808"\]'\);/, target);
+  }
+  assert.match(all.php, /\$result = \\Polyspec\\Sample\\same\(7\);\n {8}\$expected = json_decode\("\[\\"int 7\\"\]", /);
+  assert.match(all.php, /\$result = \\Polyspec\\Sample\\same\(\\PHP_INT_MIN\);\n {8}\$expected = json_decode\("\[\\"int -9223372036854775808\\"\]", /);
+  assert.match(all.go, /value0, err := Same\(int64\(7\)\)\n(?:[^\n]*\n){3}\tif want := \(any\)\(int64\(7\)\); /);
+  assert.match(all.go, /value0, err := Same\(int64\(-9223372036854775808\)\)\n/);
+  // An integer outside the range of i64 is no int64: the test of the case fails with the reason.
+  const wide = kindRows([{ id: 'too_wide', value: int64('9223372036854775808'), result: int64(7) }]);
+  const refused = text(generateTargets({ ...wide, version: '0.0.0', coreLib: 'polyspec_sample', targets: ['python'] }), STATEFUL_TESTS.python);
+  assert.match(refused, /the case too_wide of sample\.echo: [^\n]*the int64 9223372036854775808 is outside the range of i64 \(G-5\)/);
+});
+
+test('B2.465: the expected texts of a value that its out row makes as an instance of a value class name the class for an int and for bytes, as for a float (GN-13e)', () => {
+  // orm: integer_value and bytes_value. The texts named the class for a float alone, so the expected texts of an int
+  // of PHP were ["int 7"] where the binding gives an instance of the class.
+  const { contract, caseFiles } = kindRows([
+    { id: 'an_int', value: { kind: 'text', value: 'x' }, result: { kind: 'int', value: 7 } },
+    { id: 'bytes', value: { kind: 'text', value: 'x' }, result: { kind: 'bytes', value: { hex: 'ff00' } } },
+    { id: 'a_list', value: { kind: 'text', value: 'x' }, result: { kind: 'list', value: [{ kind: 'int', value: 7 }, { kind: 'bytes', value: { hex: 'ff' } }, { kind: 'int64', value: 7 }] } },
+  ]);
+  const out = generateTargets({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles, targets: ['python', 'node', 'php'] });
+  const expected = (target: 'python' | 'node' | 'php', id: RegExp, end: string): string => /(?:json\.loads|JSON\.parse|json_decode)\((["'])(\[.*?\])\1[,)]/.exec(bodiesOf(text(out, STATEFUL_TESTS[target]), id, end)[0] ?? '')?.[2]?.replaceAll('\\"', '"') ?? '';
+  assert.equal(expected('php', /function testGn13esameAnInt\(/, '\n    }\n'), '["whole #0","int 7"]');
+  assert.equal(expected('php', /function testGn13esameBytes\(/, '\n    }\n'), '["octets #0","string ff00"]');
+  assert.equal(expected('php', /function testGn13esameAList\(/, '\n    }\n'), '["list 3","whole #0","int 7","octets #1","string ff","int 7"]');
+  assert.equal(expected('python', /def test_gn13e_same_an_int\(/, '\n\n'), '["whole #0","int 7"]');
+  assert.equal(expected('python', /def test_gn13e_same_bytes\(/, '\n\n'), '["octets #0","bytes ff00"]');
+  // Node makes both as its built-in forms, so its texts name no class.
+  assert.equal(expected('node', /test\('GN-13e: same an_int'/, '\n});'), `["number ${Buffer.from(new Float64Array([7]).buffer).reverse().toString('hex')}"]`);
+  assert.equal(expected('node', /test\('GN-13e: same bytes'/, '\n});'), '["bytes ff00"]');
 });
 
 // B2.463: the sample whose counter is a receiver that holds state and whose placeholder the core would refuse: no

@@ -413,6 +413,17 @@ The schema is part of the npm package `@polyspec/binding` and is exported as `./
   `raises`, in a step of a function fixture and in a row of a callback fixture it is `null`, and another value there
   is reported. Why: the generator tests it as no value at each of these places, so a case that states a value for it
   would have a test that fails, which the check says first.
+  A case value of a value alias of the contract, `{"kind": <kind>, "value": ...}` (generator GN-13), is read wherever
+  a case of a member gives one (B2.465): at an argument of the case and of every call that the case writes (an
+  instance value, a call of `then`, a step of a function fixture, a call of `after`), at the result, at an item of a
+  list, a map, a tuple, an optional or a field of a record or a variant at any depth, and at each value inside it. Reported are a kind that the
+  generator gives no form, which is another kind than `null`, `bool`, `int`, `int64`, `float`, `text`, `bytes`,
+  `list`, `map`, `object` and `reference`; a `list` whose `value` is no array and that is no repeat form; and a `map`
+  or an `object` whose `value` is no array of `[key, value]` pairs and that is no repeat form, an `object` that its
+  `id` names again having no `value`. A value that is no `{"kind": ...}` object, such as `{"host": <sort>}` or a value
+  of another JSON kind that a case gives for the binding to refuse, is not judged here. Why: the generator answers
+  such a value with a test that fails with "is not generated yet" and the check said nothing, so 19 places of 12 cases
+  of orm gave a map as a JSON object, whose order JSON does not keep, and passed the check.
   A case of a method may name `with`, `{"<name>": <instance value>}` (generator GN-13pa): each value is `{"new":
   <member id>, ...}` of a member that makes a class of this contract and is judged as an instance value of that class,
   each name is snake_case and not `receiver`, and no function fixture of the case gives the name again; a step of a

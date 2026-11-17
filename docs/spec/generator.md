@@ -2644,8 +2644,12 @@ the design ids are those of the binding design.
   and then one code unit that no well-formed text holds: an unpaired surrogate (U+D800) in Python, Node and WASM,
   whose texts are code points or UTF-16, and the byte 0xFF in PHP and Go, whose texts are bytes; a float that is not finite is `{"float": "nan" | "inf" | "-inf"}`; a
   value of a value type (`json_value`, `php_value`, `template_value`) is `{"kind": <value kind>, "value": ...}` with
-  the kinds of the value table: `null` has no `value`; `bool`, `int`, `float` (a number or the form above), `number`
-  (its literal as text), `text` and `bytes` (`{"hex": ...}`) hold that value; `list` holds an array of such values,
+  the kinds of the value table: `null` has no `value`; `bool`, `int`, `int64` (an integer of the range of i64, a
+  number or, outside the safe integers, its decimal text; B2.465), `float` (a number or the form above), `text` and
+  `bytes` (`{"hex": ...}`) hold that value; `number` holds its literal as a text and has a form only where a class of
+  origin value represents the value type, whose member takes that text (below): no built-in form of a language makes
+  the kind (`BUILTIN_FORMS`), so a value alias gives it no case value, and `binding check` refuses one (CK-22);
+  `list` holds an array of such values,
   or, for a value nested deeper than a JSON reader takes, `{"kind": "list", "repeat": <n>, "value": <value>}`: n
   lists (at least 1), each the one item of the one around it, the innermost holding the value, which the test makes
   in a loop;
@@ -2762,12 +2766,21 @@ the design ids are those of the binding design.
   one more test: the value of the alias's first case at that place, as the parameter or as the one item of the list,
   with placeholders for the other arguments, gives the same class and kind through the member. A case gives a value
   of a value type as `{"kind", "value"}` of the kinds `null`, `bool`, `int` (a number, or its decimal text outside the
-  safe integers: a Node `bigint`, a Python `int`), `float`, `text`, `bytes`, `list` and `map`, each as the value that
-  the built-in form of the kind makes; PHP gives the least int as `\PHP_INT_MIN`, because PHP reads
+  safe integers: a Node `bigint`, a Python `int`), `int64` (an integer of the range of i64, given as `int` is: a Node
+  and WASM `bigint`, a Python and PHP `int`, a Go `int64`; a value outside that range is refused by name; B2.465),
+  `float`, `text`, `bytes`, `list` and `map`, each as the value that
+  the built-in form of the kind makes. Why `int64` is a kind of a case value: a row of an alias may have the kind
+  (`VALUE_KINDS`, the schema), and an alias of orm reads a PHP and a Python `int` as `int64` and a class as `int`, so a
+  case could not state the value that such a row reads, and its test failed with "is not generated yet". PHP gives the least int as `\PHP_INT_MIN`, because PHP reads
   `-9223372036854775808` as the negation of a float, and Go gives a negative zero as `math.Copysign(0, -1)`, because
-  the Go constant `-0.0` is 0. A `float` whose out row of the alias in the language makes an
-  instance of a value class (`<unit>.constructor`, such as a Node integral float, which a `number` would carry as an
-  `int`) is that instance made from the number, because the binding takes back the form that it gives. A value of the
+  the Go constant `-0.0` is 0. A value whose out row of the alias in the target, the row of its
+  kind whose `when` the value holds, makes an instance of a value class (`<unit>.constructor`) is that instance made
+  from the built-in value, for every kind that a row makes so (`int`, `int64`, `float`, `text`, `bytes`, `list`,
+  `map`) and in PHP, Python, Node and WASM, as an argument and as the expected value inside another type (B2.465).
+  Why: the binding takes back the form that it gives. A Node number would carry an integral float as an `int`; an
+  alias of orm reads a PHP `int` as `int64` and an instance of `integer_value` as `int`, and reads a PHP array with
+  sequence keys, the empty array among them, as a list and an instance of `map_value` as a map, so the built-in value
+  entered as another kind. GN-13v stays the rule of an alias whose row makes no class for the empty map. A value of the
   language that is no value of the value type is `{"host": <sort>}`
   of a closed table of sorts, so that each language makes the same value for it: `callable`, a function (Python
   `lambda: None`, Node and WASM `() => null`, PHP `static fn (): null => null`, Go `func() {}`); `date`, a date (Python
@@ -2867,8 +2880,12 @@ the design ids are those of the binding design.
   <bits>` in Node and WASM, the hex of the IEEE 754 bits or `nan`; `bigint <decimal>`; `float <bits>` in Python and
   PHP; `text <hex>` and `bytes <hex>` of the UTF-8 or the bytes in Python, Node and WASM, `string <hex>` in PHP;
   `list <n>`, then its items; `map <n>`, then each key and its value, a key in the form of its keyed map (a PHP key
-  that is the decimal text of an integer is that integer); and an instance of a value class that an out row names as
-  `<unit>.constructor`, a PHP `stdClass` and a PHP reference, numbered together by their first place: `<unit> #k`,
+  that is the decimal text of an integer is that integer); a value of the kind `int64` has the text of an integer in
+  the form of its row; and an instance of a value class that an out row names as
+  `<unit>.constructor`, of every kind that a row makes so (`int`, `int64`, `float`, `text`, `bytes` and `map`;
+  B2.465, where only `float` and `map` had it, so an `int` or a byte string that orm gives as an instance of
+  `integer_value` or `bytes_value` was expected as the bare value), a PHP `stdClass` and a PHP reference, numbered
+  together by their first place: `<unit> #k`,
   then its one field, `php_object #k <n>`, then its pairs, and `php_reference #k`, then its value, and
   `<form> again k` at a later place, so the identity of each place and each cycle is compared. A PHP reference whose
   id has one place in the case value has no text of its own, only its value: PHP does not keep a reference that one

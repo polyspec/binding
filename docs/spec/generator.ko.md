@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 01a8f6d832194d8a843a472034240671542c86de3312e1e3a995bbe1dfdd5e60 -->
+<!-- source-sha256: e5eac01add750e6d9815578c9cd7c18b3991804b997a7cb94e17003c70bfeebe -->
 # 생성기
 
 [English](generator.md)
@@ -2164,7 +2164,11 @@
   텍스트가 담지 않는 code unit 하나가 온다(텍스트가 code point나 UTF-16인 Python·Node·WASM은 짝 없는 surrogate U+D800,
   텍스트가 바이트인 PHP·Go는 바이트 0xFF), 유한하지 않은 float는 `{"float": "nan" | "inf" | "-inf"}`, 값 타입(`json_value`,
   `php_value`, `template_value`)의 값은 값 표의 kind로 적은 `{"kind": <값 kind>, "value": ...}`다: `null`은 `value`가 없고,
-  `bool`, `int`, `float`(수 또는 위 형태), `number`(리터럴 텍스트), `text`, `bytes`(`{"hex": ...}`)는 그 값을, `list`는 그런
+  `bool`, `int`, `int64`(i64 범위의 정수이고, 수 또는 안전 정수 밖이면 10진 텍스트다. B2.465), `float`(수 또는 위 형태),
+  `text`, `bytes`(`{"hex": ...}`)는 그 값을 담는다. `number`는 리터럴을 텍스트로 담고, origin value class가 그 값 타입을
+  나타내는 곳에서만 꼴을 가진다. 그 class의 member가 그 텍스트를 받는다(아래). 어느 언어의 내장 형태도 이 kind를
+  만들지 않으므로(`BUILTIN_FORMS`) 값 alias는 그 kind에 case 값을 주지 않고, `binding check`는 그것을 거부한다(CK-22).
+  `list`는 그런
   값의 배열을, 또는 JSON reader가 받는 것보다 깊이 중첩된 값이면 `{"kind": "list", "repeat": <n>, "value": <값>}`을
   담는다. 이것은 n개(1 이상)의 list이고, 각 list는 그것을 감싸는 list의 유일한 항목이며 가장 안쪽 list가 그 값을 담고,
   시험은 그것을 loop로 만든다. `map`과 `object`는 순서대로 `[key, value]` 쌍의 배열을(key는 텍스트, keyed map이면 `{"int": n}`이나
@@ -2253,12 +2257,20 @@
   불러 kind의 정확한 클래스와 kind를 확인한다. 그 클래스는 kind의 행이 적은 error unit의 클래스이고, 없으면 category의 클래스다(E-2). parameter가 그 alias, 그 alias의 optional, 그 alias의 list인
   member마다 시험이 하나 더 있다. alias의 첫 case 값을 그 자리에(parameter로, 또는 list의 한 원소로) 넣고 다른 인자는
   placeholder로 주어, member를 지나 같은 클래스와 kind가 오는지 확인한다. case는 값 타입의 값을 `{"kind", "value"}`로
-  주며, kind는 `null`, `bool`, `int`(수, 또는 안전 정수 밖이면 10진 텍스트: Node `bigint`, Python `int`), `float`,
-  `text`, `bytes`, `list`, `map`이고 각각 그 kind의 내장 형태가 만드는 값이다. PHP는 가장 작은 int를 `\PHP_INT_MIN`으로 준다. PHP가
+  주며, kind는 `null`, `bool`, `int`(수, 또는 안전 정수 밖이면 10진 텍스트: Node `bigint`, Python `int`), `int64`(i64 범위의 정수이고 `int`처럼
+  준다: Node와 WASM의 `bigint`, Python과 PHP의 `int`, Go의 `int64`. 그 범위 밖의 값은 이름을 대며 거부한다. B2.465),
+  `float`,
+  `text`, `bytes`, `list`, `map`이고 각각 그 kind의 내장 형태가 만드는 값이다. `int64`가 case 값의 kind인 이유: alias의
+  행은 그 kind를 가질 수 있고(`VALUE_KINDS`, schema), orm의 alias는 PHP와 Python의 `int`를 `int64`로, class를 `int`로
+  읽는다. 그래서 case는 그런 행이 읽는 값을 적을 수 없었고 그 시험은 "is not generated yet"으로 실패했다. PHP는 가장 작은 int를 `\PHP_INT_MIN`으로 준다. PHP가
   `-9223372036854775808`을 float의 부정으로 읽기 때문이다. Go는 음의 0을 `math.Copysign(0, -1)`로 준다. Go 상수
-  `-0.0`은 0이기 때문이다. 그 언어에서 alias의 out 행이 값 class의 인스턴스를
-  만드는(`<unit>.constructor`) `float`은 그 수로 만든 그 인스턴스다(`number`가 `int`로 실어 나를 Node의 정수 float이
-  그렇다). binding은 자기가 주는 형태를 다시 받기 때문이다. 값 타입의 값이 아닌 언어의 값은 종류의 닫힌
+  `-0.0`은 0이기 때문이다. 그 target에서 alias의 out 행, 곧 그 kind의 행 중 값이
+  `when`을 만족하는 행이 값 class의 인스턴스를 만드는(`<unit>.constructor`) 값은, 내장 값으로 만든 그 인스턴스다. 행이
+  그렇게 만드는 모든 kind(`int`, `int64`, `float`, `text`, `bytes`, `list`, `map`)에서, PHP, Python, Node, WASM에서,
+  인자로도 다른 타입 안의 기대값으로도 그렇다(B2.465). 이유: binding은 자기가 주는 형태를 다시 받는다. Node의 number는
+  정수 float을 `int`로 실어 나른다. orm의 alias는 PHP `int`를 `int64`로, `integer_value`의 인스턴스를 `int`로 읽고,
+  sequence key를 가진 PHP array(빈 array도 그렇다)를 list로, `map_value`의 인스턴스를 map으로 읽어서, 내장 값은 다른
+  kind로 들어갔다. GN-13v는 빈 map에 class를 만드는 행이 없는 alias의 규칙으로 남는다. 값 타입의 값이 아닌 언어의 값은 종류의 닫힌
   표에 있는 `{"host": <종류>}`이며, 그래서 각 언어가 그것에 같은 값을 만든다. `callable`은 함수(Python `lambda: None`,
   Node와 WASM `() => null`, PHP `static fn (): null => null`, Go `func() {}`), `date`는 날짜(Python
   `datetime.date(1970, 1, 1)`, 시험이 import한다, Node와 WASM `new Date(0)`, PHP `new \DateTimeImmutable('@0')`, Go
@@ -2339,8 +2351,11 @@
   형태를 적는다. `null`, `bool true`나 `bool false`, Python과 PHP의 `int <10진>`, Node와 WASM의 `number <bits>`(IEEE 754
   bit의 hex 또는 `nan`), `bigint <10진>`, Python과 PHP의 `float <bits>`, Python, Node, WASM에서 UTF-8이나 bytes의 hex인
   `text <hex>`와 `bytes <hex>`, PHP의 `string <hex>`, `list <n>`과 그 항목들, `map <n>`과 각 key와 그 값(key는 그 keyed
-  map의 형태이며, 정수의 10진 텍스트인 PHP key는 그 정수다)이다. out 행이 `<unit>.constructor`로 적는 값 class의
-  인스턴스, PHP `stdClass`, PHP reference는 첫 자리 순서로 함께 번호를 받는다. `<unit> #k` 다음에 그 field 하나,
+  map의 형태이며, 정수의 10진 텍스트인 PHP key는 그 정수다)이다. kind `int64`의 값은 그 행의 형태로 적은 정수의
+  텍스트를 가진다. out 행이 `<unit>.constructor`로 적는 값 class의
+  인스턴스(행이 그렇게 만드는 모든 kind, 곧 `int`, `int64`, `float`, `text`, `bytes`, `map`에서 그렇다. B2.465 전에는
+  `float`과 `map`만 그랬고, orm이 `integer_value`나 `bytes_value`의 인스턴스로 주는 `int`나 byte string을 맨 값으로
+  기대했다), PHP `stdClass`, PHP reference는 첫 자리 순서로 함께 번호를 받는다. `<unit> #k` 다음에 그 field 하나,
   `php_object #k <n>` 다음에 그 쌍들, `php_reference #k` 다음에 그 값이 오고, 뒤 자리는 `<form> again k`다. 그래서 각
   자리의 동일성과 각 순환을 비교한다. case 값에서 id의 자리가 하나인 PHP reference는 자기 텍스트 없이 그 값만 가진다.
   PHP는 한 자리가 가진 reference를 유지하지 않는다. `ReflectionReference::fromArrayElement`는 그것에 null을 주고

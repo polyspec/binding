@@ -1,5 +1,5 @@
 <!-- doc-id: contract-check -->
-<!-- source-sha256: 573bc12d04a9c0681bf2521a51c20f62d693ee9f171e6b2b27c66a8fccb40cf8 -->
+<!-- source-sha256: c6b8943c3f198aecbb53e82fd79ea761764826f1e43e8ef542b4f3770223339e -->
 # 계약 검사
 
 [English](contract-check.md)
@@ -346,6 +346,16 @@ crate에 대해 Cargo가 해석한 패키지(`cargo metadata`)에서 읽는다. 
   결과 키(그런 case는 생략할 수 있다), `result`나 `raises`를 적는 `after`의 호출, function fixture의 step, callback
   fixture의 row에서 그것은 `null`이고, 거기의 다른 값은 보고된다. 이유: 생성기는 이 자리마다 그것을 값 없음으로
   시험하므로, 거기에 값을 적은 case는 실패하는 시험을 받는데, check가 그것을 먼저 말한다.
+  계약의 값 alias의 case 값 `{"kind": <kind>, "value": ...}`(생성기 GN-13)은 member의 case가 그것을 주는 모든 자리에서
+  읽는다(B2.465). 곧 case의 인자와 case가 적는 모든 호출(instance value, `then`의 호출, function fixture의 step,
+  `after`의 호출)의 인자, 결과, 그리고 어느 깊이든 list, map, tuple, optional의 항목과 record나 variant의 field, 또 그 값
+  안의 각 값에서 읽는다. 보고되는 것: 생성기가 꼴을 주지 않는 kind, 곧 `null`, `bool`, `int`, `int64`, `float`, `text`,
+  `bytes`, `list`, `map`, `object`, `reference`가 아닌 kind. `value`가 배열이 아니고 repeat 꼴도 아닌 `list`. `value`가
+  `[key, value]` 쌍의 배열이 아니고 repeat 꼴도 아닌 `map`이나 `object`(`id`로 다시 가리키는 `object`는 `value`가
+  없다). `{"kind": ...}` object가 아닌 값, 이를테면 `{"host": <sort>}`나 binding이 거부하라고 case가 주는 다른 JSON kind의
+  값은 여기서 판정하지 않는다. 이유: 생성기는 그런 값에 "is not generated yet"으로 실패하는 시험으로 답하는데 check는
+  아무 말도 하지 않아서, orm의 12 case의 19곳이 map을 JSON object로 주고(JSON은 그 순서를 지키지 않는다) check를
+  통과했다.
   method의 case는 `with`, 곧 `{"<name>": <instance value>}`를 적을 수 있다(생성기 GN-13pa). 각 값은 이 계약의 class를
   만드는 member의 `{"new": <member id>, ...}`이고 그 class의 instance value로 판정된다. 각 이름은 snake_case이고
   `receiver`가 아니며, case의 어떤 function fixture도 그 이름을 다시 주지 않는다. 그러면 function fixture의 step과
