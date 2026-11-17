@@ -4,7 +4,7 @@
 import type { Type, Unit } from '../contract.ts';
 import { functionGiven, givenRust } from './callback_arguments.ts';
 import { type Cycle, type CycleHost, cycles, holdsCycle } from './cycles.ts';
-import { type CaseField, caseFields, caseRead, caseStruct, caseType, UNIT_CASE_ALLOW, type Variant, absentInits, boxed, caseLeftOut, keptFunctionType, langName, type Model, narrowed, narrows, recordFn, recordInit, recordLocal, rustType, traitParam, tupleIn, tupleOut, Unsupported } from './model.ts';
+import { type CaseField, caseFields, caseRead, caseStruct, caseType, UNIT_CASE_ALLOW, type Variant, absentInits, borrowedItem, boxed, caseLeftOut, type Fn, keptFunctionType, langName, type Model, narrowed, narrows, recordFn, recordInit, recordLocal, rustType, traitParam, tupleIn, tupleOut, Unsupported } from './model.ts';
 import { closure, optionRef, rustString } from './text.ts';
 
 // T-1: the input conversion of a scalar, by the helper of its name in the crate; overrides gives the helpers of a
@@ -188,6 +188,14 @@ function recordIns(model: Model, unit: Unit, kids: boolean, lang: 'node' | 'wasm
     return `    let ${local}${held ? '' : `: ${rustType(model, f.type)}`} = ${read}?;${narrows(f.type) && !kids ? `\n    ${narrowed(local, rustString(member), 'binding_error')}` : ''}`;
   });
   return `${reads.join('\n')}\n    ${kids ? 'Ok(())' : `Ok(${unit.core_type ?? ''} { ${fields.map((f) => recordInit(f.name)).join(', ')}${absentInits(unit)} })`}`;
+}
+
+// The initializer of a field of a Rust struct from a variable, shortened when they have one name.
+export const fieldInit = (field: string, variable: string): string => (field === variable ? field : `${field}: ${variable}`);
+
+// N-4 iterate: what an iteration yields, and the conversion out of an item of it, borrowed where the place is.
+export function iterateItems(model: Model, fn: Fn, convert: (model: Model, type: Type, value: string) => string): { yields: NonNullable<Fn['yields']>; item: (type: Type, value: string) => string } {
+  return { yields: fn.yields ?? { value: 'none' }, item: (type, value) => `${convert(model, type, borrowedItem(model, type, value))}?` };
 }
 
 // T-2: what the output conversion of a container differs by between the languages.

@@ -13,7 +13,7 @@ import { type Cycle, type CycleHost, cycleLeaf, cycleOf, cycles, cycleUnitRust, 
 import { WASM_NATIVE, aliasWasm, foreignFailureWasm, foreignRegistrationWasm, keptExportsWasm, wasmHost } from './alias_wasm.ts';
 import { jsErrorClasses, typeParameters } from './node.ts';
 import { raisesAssertions } from './raises.ts';
-import { type FunctionType, JS_CONTAINERS, containerIn, containerOut, keptFunctionIn, plainCycleHost, type RecordForm, type VariantForm, recordFns, recordParts, resultCycles, variantFns, variantParts, scalarIn, scalarOut } from './bindings_shared.ts';
+import { type FunctionType, JS_CONTAINERS, containerIn, containerOut, iterateItems, keptFunctionIn, plainCycleHost, type RecordForm, type VariantForm, recordFns, recordParts, resultCycles, variantFns, variantParts, scalarIn, scalarOut } from './bindings_shared.ts';
 import { TAKES_WASM, jsArguments, functionGiven, givenRust, memberGiven, placeSubject } from './callback_arguments.ts';
 import { type Files, header, jsString, rustString, closure, withUsedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
 
@@ -499,8 +499,7 @@ function receiverLines(model: Model, fn: Fn): string[] {
 // N-4 iterate: the export gives the items, or [key, value] for the entries, as an array converted when the iteration
 // starts (a snapshot of the class's value); the ES module makes it the class's Symbol.iterator.
 function iterateRust(model: Model, fn: Fn): string {
-  const yields = fn.yields ?? { value: 'none' };
-  const item = (type: Type, value: string): string => `${convertOut(model, type, borrowedItem(model, type, value))}?`;
+  const { yields, item } = iterateItems(model, fn, convertOut);
   const body = yields.key === undefined
     ? `            items.push(&${item(yields.value, 'item')});`
     : `            let (key, value) = item;

@@ -12,7 +12,7 @@ import { phpCaseTests } from './samples.ts';
 import { phpTests } from './tests_php.ts';
 import { type Cycle, type CycleHost, cycleLeaf, cycleOf, cycles, cycleUnitRust, holdsCycle } from './cycles.ts';
 import { raisesAssertions } from './raises.ts';
-import { type FunctionType, containerIn, containerOut, keptFunctionIn, plainCycleHost, resultCycles, scalarIn, scalarOut } from './bindings_shared.ts';
+import { type FunctionType, containerIn, containerOut, fieldInit, iterateItems, keptFunctionIn, plainCycleHost, resultCycles, scalarIn, scalarOut } from './bindings_shared.ts';
 import { type Files, header, phpText, rustString, closure, optionRef, withUsedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
 
 const ROOT = 'packages/php-ext/generated';
@@ -777,14 +777,11 @@ fn case_object(index: usize, properties: Vec<(&str, Zval)>) -> Result<Zval, Fail
 }
 `;
 
-const fieldInit = (field: string, variable: string): string => (field === variable ? field : `${field}: ${variable}`);
-
 // N-4 iterate: the class is an IteratorAggregate whose getIterator gives the items under their positions, or the
 // entries under their keys, converted when the iteration starts (a snapshot of the class's value), through the
 // extension's Pairs iterator, because a key of an entry may be an object, which no array key is.
 function iterateRust(model: Model, fn: Fn): string {
-  const yields = fn.yields ?? { value: 'none' };
-  const item = (type: Type, value: string): string => `${convertOut(model, type, borrowedItem(model, type, value))}?`;
+  const { yields, item } = iterateItems(model, fn, convertOut);
   const body = yields.key === undefined
     ? `                let position = i64::try_from(position).map_err(|error| binding_error(BindingError::Internal { detail: error.to_string() }))?;
                 pairs.push((int_out(position)?, ${item(yields.value, 'item')}));`

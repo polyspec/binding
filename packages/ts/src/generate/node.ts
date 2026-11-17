@@ -13,7 +13,7 @@ import { addonName, NODE_PLATFORM_JS } from './packages.ts';
 import { nodeTests } from './tests_node.ts';
 import { type Cycle, type CycleHost, cycleLeaf, cycleOf, cycles, cycleUnitRust, holdsCycle } from './cycles.ts';
 import { raisesAssertions } from './raises.ts';
-import { type FunctionType, JS_CONTAINERS, containerIn, containerOut, keptFunctionIn, type RecordForm, type VariantForm, recordFns, recordParts, resultCycles, variantFns, variantParts, scalarIn, scalarOut } from './bindings_shared.ts';
+import { type FunctionType, JS_CONTAINERS, containerIn, containerOut, fieldInit, iterateItems, keptFunctionIn, type RecordForm, type VariantForm, recordFns, recordParts, resultCycles, variantFns, variantParts, scalarIn, scalarOut } from './bindings_shared.ts';
 import { type Files, header, jsString, rustString, closure, optionRef, withUsedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
 
 const ROOT = 'packages/ts/generated';
@@ -586,13 +586,10 @@ const NODE_VARIANT: VariantForm = {
   text: (literal) => `text_out(env_, ${literal})`,
 };
 
-const fieldInit = (field: string, variable: string): string => (field === variable ? field : `${field}: ${variable}`);
-
 // N-4 iterate: the addon's __binding_iterate gives the items, or [key, value] for the entries, as an array converted when the
 // iteration starts (a snapshot of the class's value); the JavaScript entry makes it the class's Symbol.iterator.
 function iterateRust(model: Model, fn: Fn): string {
-  const yields = fn.yields ?? { value: 'none' };
-  const item = (type: Type, value: string): string => `${convertOut(model, type, borrowedItem(model, type, value))}?`;
+  const { yields, item } = iterateItems(model, fn, convertOut);
   const body = yields.key === undefined
     ? `                items.push(${item(yields.value, 'item')});`
     : `                let (key, value) = item;

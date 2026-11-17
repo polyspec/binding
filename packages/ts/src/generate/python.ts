@@ -4,7 +4,7 @@
 import type { Type, Unit } from '../contract.ts';
 import { variantPattern } from '../contract.ts';
 import { raisesAssertions } from './raises.ts';
-import { type FunctionType, containerIn, containerOut, keptFunctionIn, resultCycles, scalarIn, scalarOut } from './bindings_shared.ts';
+import { type FunctionType, containerIn, containerOut, fieldInit, iterateItems, keptFunctionIn, resultCycles, scalarIn, scalarOut } from './bindings_shared.ts';
 import { conversionsOf, convertedFn, ownerErrorClasses } from './model.ts';
 import { TAKES_PYTHON, functionGiven, givenRust, memberGiven, placeSubject } from './callback_arguments.ts';
 import { type Files, header, pyHeader, pyString, rustString, closure, optionRef, withUsedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
@@ -606,14 +606,11 @@ ${arms.join('\n')}
   };
 }
 
-const fieldInit = (field: string, variable: string): string => (field === variable ? field : `${field}: ${variable}`);
-
 // N-4 iterate: __iter__ gives the items, or the keys of the entries with items() for the pairs, as a dict does; the
 // items are converted when the iteration starts, a snapshot of the class's value.
 function iterateRust(model: Model, fn: Fn): string {
-  const yields = fn.yields ?? { value: 'none' };
+  const { yields, item } = iterateItems(model, fn, convertOut);
   const call = armedCall(model, fn, `${fn.corePath}(${coreCallArgs(model, fn, () => '', 'self.inner').join(', ')})`);
-  const item = (type: Type, value: string): string => `${convertOut(model, type, borrowedItem(model, type, value))}?`;
   const iter = (body: string): string => `
         guard(py_, || {${locks(model, fn).map((l) => `\n    ${l}`).join('')}
             let items = PyList::empty(py_);
