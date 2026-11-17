@@ -1737,10 +1737,11 @@ ${arms}
   }
   // E-2, I-3: the kind of an error unit is an instance of the class of the unit. The core error gives its properties
   // here, and the instance takes them where the call returns, which has the env_.
-  // The closure outlives the core error, so a text or bytes that the error lends is copied.
+  // The closure outlives the core error, so a text or bytes that the error lends is copied. A list is lent as a slice,
+  // so its items are read by .iter(): .into_iter() on the reference is the same call (clippy into_iter_on_ref).
   const owned = (type: Type, call: string): string => {
     const base = typeof type === 'object' && 'optional' in type ? type.optional : type;
-    if (typeof type === 'object' && 'list' in type) return `${call}.into_iter().map(|item| String::from(AsRef::<str>::as_ref(&item))).collect::<Vec<String>>()`;
+    if (typeof type === 'object' && 'list' in type) return `${call}.iter().map(|item| String::from(AsRef::<str>::as_ref(item))).collect::<Vec<String>>()`;
     const from = base === 'text' ? 'String::from' : base === 'bytes' ? 'Vec::from' : undefined;
     if (from === undefined) return call;
     return typeof type === 'object' && 'optional' in type ? `${call}.map(${from})` : `${from}(${call})`;

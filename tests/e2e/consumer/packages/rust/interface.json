@@ -483,6 +483,23 @@
             "path": "polyspec_consumer::Error::length",
             "receiver": "&self"
           }
+        },
+        {
+          "id": "absent_error.parts",
+          "name": [
+            "parts"
+          ],
+          "kind": "property",
+          "visibility": "public",
+          "returns": {
+            "list": "text"
+          },
+          "wait": "none",
+          "raises": [],
+          "core": {
+            "path": "polyspec_consumer::Error::parts",
+            "receiver": "&self"
+          }
         }
       ]
     },

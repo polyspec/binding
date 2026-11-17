@@ -14188,3 +14188,56 @@ test('B2.492: the PHP host and the alias round trip give clippy no unused parame
     for (const target of targets) assert.deepEqual(clippyFindings(wholeConsumerTarget(consumer.name, inputs, target)), [], `${consumer.name} ${target}`);
   }
 });
+
+// clippy into_iter_on_ref: the Node crate copied a list property of an error unit, whose core accessor takes &self and
+// lends the list as a slice, by `.into_iter()` on that reference (crud-ui's ComposeLoadError.trace); clippy -D warnings
+// names it, since the call is `.iter()`. A generated .rs calls `.into_iter()` on no reference: neither on an explicit
+// borrow `(&x)` nor on the call of a core accessor that takes &self and returns a list, which lends it. An owned
+// `into_iter()`, of a Vec that a helper made or took by value, is not one of these.
+const lentListPaths = (contracts: readonly any[]): string[] => {
+  const paths: string[] = [];
+  for (const contract of contracts) {
+    for (const unit of contract.units ?? []) {
+      for (const member of unit.members ?? []) {
+        const returns = member.returns;
+        const list = typeof returns === 'object' && returns !== null && ('list' in returns || ('optional' in returns && typeof returns.optional === 'object' && returns.optional !== null && 'list' in returns.optional));
+        if (list && member.core?.receiver === '&self' && typeof member.core.path === 'string') paths.push(member.core.path);
+      }
+    }
+  }
+  return paths;
+};
+const intoIterOnRef = (out: ReadonlyMap<string, string | Buffer>, lent: readonly string[]): string[] => {
+  const found: string[] = [];
+  const calls = lent.map((path) => new RegExp(`${path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\([^()]*\\)\\.into_iter\\(\\)`, 'g'));
+  for (const [path, content] of out) {
+    if (!path.endsWith('.rs')) continue;
+    const source = String(content);
+    for (const [call] of source.matchAll(/\(&[^()]*\)\.into_iter\(\)/g)) found.push(`${path}: ${call}`);
+    for (const pattern of calls) for (const [call] of source.matchAll(pattern)) found.push(`${path}: ${call}`);
+  }
+  return found;
+};
+test('no generated Rust calls into_iter on a lent slice, which clippy names into_iter_on_ref, in each target of the consumer copies and of tests/e2e/consumer (clippy)', () => {
+  const targets: Lang[] = ['php', 'python', 'node', 'go', 'wasm'];
+  const validator = WHOLE_CONSUMERS.find((c) => c.name === 'crud-ui-validator') as WholeConsumer;
+  assert.ok(lentListPaths([wholeConsumer(validator).contract]).includes('polyspec_crud_ui_validator::ValidateError::trace'), 'the shape of the defect: ComposeLoadError.trace');
+  for (const consumer of WHOLE_CONSUMERS) {
+    const inputs = wholeConsumer(consumer);
+    const lent = lentListPaths([inputs.contract, ...(inputs.foreign ?? new Map()).values()]);
+    for (const target of targets) assert.deepEqual(intoIterOnRef(wholeConsumerTarget(consumer.name, inputs, target), lent), [], `${consumer.name} ${target}`);
+  }
+  const e2e = consumerSample();
+  const lent = lentListPaths([e2e.contract, ...e2e.foreign.values()]);
+  assert.ok(lent.includes('polyspec_consumer::Error::parts'), 'tests/e2e/consumer holds the shape');
+  for (const target of targets) {
+    let out: ReadonlyMap<string, string | Buffer>;
+    try {
+      out = generateOnStack({ ...e2e, version: '0.0.0', coreLib: 'polyspec_consumer', targets: [target] });
+    } catch (error) {
+      if (Array.isArray((error as { refusals?: unknown }).refusals)) continue;
+      throw error;
+    }
+    assert.deepEqual(intoIterOnRef(out, lent), [], `consumer ${target}`);
+  }
+});
