@@ -10753,6 +10753,30 @@ test('the .d.ts of Node and WASM declares the constructor of each error class as
   }
 });
 
+// E-1a, GN-6z, B2.475: a value of a function type that is not a function is the one form `<subject> is not a function`
+// of the core, and an entry of a map is named `<map subject>.<key>`, so an entry shout of a map functions that is not a
+// function is "functions.shout is not a function" in every target.
+for (const [target, path] of [
+  ['python', 'packages/python/generated/lib.rs'],
+  ['node', 'packages/ts/generated/lib.rs'],
+  ['wasm', 'packages/ts/wasm/generated/lib.rs'],
+  ['php', 'packages/php-ext/generated/lib.rs'],
+  ['go', 'packages/go/internal/ffi/generated/lib.rs'],
+] as const) {
+  test(`${target}: an entry of a map that is not a function is "<map>.<key> is not a function" (E-1a, GN-6z, B2.475)`, () => {
+    const { contract, caseFiles } = shapes();
+    unitOf(contract, 'shapes').members.push({
+      id: 'shapes.open', name: ['open'], kind: 'function', visibility: 'public', returns: 'text', raises: [], wait: 'none', core: 'polyspec_shapes::open',
+      parameters: [{ name: ['functions'], type: { map: { function: { parameters: ['text'], returns: 'text', async_allowed: false } } }, required: true }],
+    });
+    const lib = text(generate({ contract, version: '0.0.0', coreLib: 'polyspec_shapes', caseFiles, targets: [target] }), path);
+    assert.match(lib, /fn map_in/, path);
+    assert.match(lib, /BindingError::NotAFunction \{ subject: subject\.to_owned\(\) \}/);
+    assert.doesNotMatch(lib, /expected: String::from\("a (callable|Closure|function)"\)/);
+    assert.match(lib, /binding_core::entry_subject\(subject, &key\)/);
+  });
+}
+
 // Q-4, B2.254: a field with only is a field of the record of the targets that it lists alone. The record point of the
 // end-to-end check gets a field z that only Python and Node have; Go, PHP and WASM have a record without it, their
 // binding gives the core struct None for it, and a case whose record gives z is no case of theirs.
