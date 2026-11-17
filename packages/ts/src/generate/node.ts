@@ -7,7 +7,7 @@ import { NODE_NATIVE, aliasNode, foreignFailureNode, foreignRegistration, keptCh
 import { THREAD_THROWN, elsewhereRust } from './alias_shared.ts';
 import { TAKES_NODE, jsArguments, functionGiven, givenRust, memberGiven, placeSubject } from './callback_arguments.ts';
 import { defaultAsserts, declaredValue } from './defaults.ts';
-import { absentInits, categoryClass,type Arg, type CallbackUnit, type Fn, type KeptClass, type Model, isInternal, interfaceOf, implementorsOf, Unsupported, argType, leftOut, errorProperties, byValue, type ObjectClass, coreCallArgs, guardBorrows, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, awaits, cleanupAsserts, cleanupMade, cleanupWarning, futureOf, waitsAsync, waitsIo, waitsProcess, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustType, rustVariant, unitOf, usesNative, takesFunction, keepsThrown, nativeRoundTrip, traitParam, boxed, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, caseWritten, implementsClause, UNIT_CASE_ALLOW, tupleIn, caseLeftOut, narrows, narrowed, tupleOut, propertyValue, errorMatched, recognizedFn, classKinds, recognizedMatch, ownerRecognizedUnits, type ErrorUnit, awaitsNone, unitFn, libraryBlocks, holdsFunction, machineFunction, countsThrown, keepsAny, keptCallbacks, keptModel, takenCallbacks, lentCallbacks, convertsKept, callStruct, recordLocal, recordInit } from './model.ts';
+import { absentInits, armedEntry, categoryClass,type Arg, type CallbackUnit, type Fn, type KeptClass, type Model, isInternal, interfaceOf, implementorsOf, Unsupported, argType, leftOut, errorProperties, byValue, type ObjectClass, coreCallArgs, guardBorrows, aliasKindsRust, aliasesWithKinds, faultRust, armedCall, awaits, cleanupAsserts, cleanupMade, cleanupWarning, futureOf, waitsAsync, waitsIo, waitsProcess, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, resultLet, aliasOf, objectUnit, POISON_ENTRY, recordFn, takesHeld, takesNested, borrowedItem, rustField, rustType, rustVariant, unitOf, usesNative, takesFunction, keepsThrown, nativeRoundTrip, traitParam, boxed, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, caseWritten, implementsClause, UNIT_CASE_ALLOW, tupleIn, caseLeftOut, narrows, narrowed, tupleOut, propertyValue, errorMatched, recognizedFn, classKinds, recognizedMatch, ownerRecognizedUnits, type ErrorUnit, awaitsNone, unitFn, libraryBlocks, holdsFunction, machineFunction, countsThrown, keepsAny, keptCallbacks, keptModel, takenCallbacks, lentCallbacks, convertsKept, callStruct, recordLocal, recordInit } from './model.ts';
 import { addonName, NODE_PLATFORM_JS } from './packages.ts';
 import { nodeTests } from './tests_node.ts';
 import { type Cycle, type CycleHost, cycleLeaf, cycleOf, cycles, cycleUnitRust, holdsCycle } from './cycles.ts';
@@ -787,7 +787,7 @@ function entryRust(model: Model, fn: Fn): string {
     const given = convertOut(model, fn.returns, 'result');
     const reads = /\bresult\b/.test(given);
     const done = fn.fallible ? `${reads ? 'let result = ' : ''}result.map_err(${fn.failure ? 'failure_error' : 'core_error'})?;\n                    ` : '';
-    const wait = futureOf(model, fn, `let output = io.await;\n                        let mut slot = given.lock().map_err(|_poisoned| binding_error(BindingError::Internal { detail: String::from("GN-6ab: the output of a wait") }))?;\n                        *slot = Some(output);\n                        Ok(())`);
+    const wait = futureOf(model, fn, `let output = io.await;\n                        let mut slot = given.lock().map_err(|_poisoned| binding_error(BindingError::Internal { detail: String::from("GN-6ab: the output of a wait") }))?;\n                        *slot = Some(output);\n                        Ok(())`, true);
     // GN-6ae: an advance takes the outcome of the value that the machine awaited, and only after that value.
     const settles = passes(fn) ? `
             match (awaiting, outcome_of(env_, settled)?) {
@@ -803,7 +803,7 @@ function entryRust(model: Model, fn: Fn): string {
                     Ok((1, passed_out(env_, value)?))
                 }` : awaitsNone(fn);
     lines.push(`        let mut machine = binding_core::machine::Driving::new(${core});
-        let given = std::sync::Arc::new(std::sync::Mutex::new(None));${passes(fn) ? '\n        let mut awaiting = false;' : ''}
+        let given = std::sync::Arc::new(std::sync::Mutex::new(None));${armedEntry(model, fn) === '' ? '' : `\n        ${armedEntry(model, fn)}`}${passes(fn) ? '\n        let mut awaiting = false;' : ''}
         Driven::start(env_, advancing(move |env_, ${passes(fn) ? 'settled' : '_settled'}| {${settles}
             let output = given.lock().map_err(|_poisoned| binding_error(BindingError::Internal { detail: String::from("GN-6ab: the output of a wait") }))?.take();
             if let Some(output) = output {

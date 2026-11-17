@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 44059f0c2b2c992167effdee1d9bfdb0d8ff3be53c359a51328f0f5dc45d3707 -->
+<!-- source-sha256: 2a85bce8af87f3ee67cc67d515ecca9d6837e2fdb7dc521844a9837e161b71be -->
 # 생성기
 
 [English](generator.md)
@@ -1348,7 +1348,12 @@
   member의 다음 호출에 남긴다. iterate의 코어 호출은 순회 전체이며, 진입점은 그 항목을 `with_faults` 안에서 모은다.
   그래서 receiver나 인자를 만드는 호출은 시험 대상 member의 장전을 가져가지 않고, callback 안에서 다시 들어온
   진입점은 인자 변환을 포함해 바깥 장전을 보지 않는다. `machine`이 있는 member는 그 대신 machine의 wait마다
-  `armed_future("<member id>", …)`로 장전한다(GN-6n). 그래서 member의 각 진입은 장전 하나와 shield 하나를 갖는다. Node와
+  장전한다. 진입이 `armed_waits("<member id>", …)`로 member의 장전을 한 번 가져오고, machine의 모든 wait가 그 장전
+  하나를 poll마다 설치한다(`binding_core::fault::Armed::wait`). 그래서 한 호출의 장전은 그 호출의 모든 wait를 덮고,
+  member의 각 진입은 장전 하나와 shield 하나를 갖는다(B2.477). wait들은 무엇이 발화했는지의 기록을 함께 쓰므로 `nth`는
+  호출 전체에서 주입점의 방문을 센다. 이유: take는 장전을 지우는데, 생성된 코드는 wait마다 그것을 가져왔다
+  (`armed_future("<member id>", io)`). 그래서 첫 wait만 장전된 채 돌았고, 뒤의 wait의 fault, 이를테면 callback이
+  raise한 뒤 orm `db.transaction`의 rollback의 fault는 서지 않았다. Node와
   WASM의 `Driven` 객체의 `advance`(GN-6ab)는 자기 코어 호출이 없는 진입점이다. 언어 코드가 다른 member의 호출 안에서
   그것을 부를 수 있으므로 그 작업은 `shielded(…)` 안에서 돌고, 아무것도 장전하지 않는다. `_arm_faults(member, faults)`는 member id와 case `faults`의 JSON
   목록을 받아 장전 id를 준다. 장전되지 않는 목록(대상에 없는 errno 기호 등)은 이유를 담은 kind `internal`이다.

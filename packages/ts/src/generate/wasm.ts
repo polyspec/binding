@@ -5,7 +5,7 @@
 
 import type { Type, Unit } from '../contract.ts';
 import { variantPattern } from '../contract.ts';
-import { absentInits, categoryClass,type Arg, type CallbackUnit, type Fn, type KeptClass, type Model, isInternal, interfaceOf, implementorsOf, type ObjectClass, RECEIVER_GUARD, cleanupAsserts, cleanupMade, cleanupWarning, Unsupported, ownerRecognizedUnits, type ErrorUnit, keepsThrown, usesNative, nativeRoundTrip, aliasKindsRust, aliasOf, aliasesWithKinds, argType, leftOut, borrowedItem, coreCallArgs, guardBorrows, errorProperties, armedCall, faultRust, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, objectUnit, recordFn, rustField, rustType, rustVariant, takesHeld, takesObject, traitParam, boxed, unitOf, type CaseField, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, implementsClause, UNIT_CASE_ALLOW, tupleIn, caseLeftOut, narrows, narrowed, tupleOut, propertyValue, waitsAsync, awaits, futureOf, errorMatched, recognizedFn, recognizedMatch, awaitsNone, machineFunction, unitFn, libraryBlocks, countsThrown, keepsAny, keptCallbacks, keptModel, takenCallbacks, lentCallbacks, convertsKept, callStruct, recordLocal, recordInit, byValue , anchorCalls, lentRust} from './model.ts';
+import { absentInits, armedEntry, categoryClass,type Arg, type CallbackUnit, type Fn, type KeptClass, type Model, isInternal, interfaceOf, implementorsOf, type ObjectClass, RECEIVER_GUARD, cleanupAsserts, cleanupMade, cleanupWarning, Unsupported, ownerRecognizedUnits, type ErrorUnit, keepsThrown, usesNative, nativeRoundTrip, aliasKindsRust, aliasOf, aliasesWithKinds, argType, leftOut, borrowedItem, coreCallArgs, guardBorrows, errorProperties, armedCall, faultRust, withFaults, heldNew, heldParam, heldType, langName, libraryOf, lockLines, memberName, objectUnit, recordFn, rustField, rustType, rustVariant, takesHeld, takesObject, traitParam, boxed, unitOf, type CaseField, type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, implementsClause, UNIT_CASE_ALLOW, tupleIn, caseLeftOut, narrows, narrowed, tupleOut, propertyValue, waitsAsync, awaits, futureOf, errorMatched, recognizedFn, recognizedMatch, awaitsNone, machineFunction, unitFn, libraryBlocks, countsThrown, keepsAny, keptCallbacks, keptModel, takenCallbacks, lentCallbacks, convertsKept, callStruct, recordLocal, recordInit, byValue , anchorCalls, lentRust} from './model.ts';
 import { declaredValue, defaultAsserts } from './defaults.ts';
 import { wasmTests } from './tests_wasm.ts';
 import { type Cycle, type CycleHost, cycleLeaf, cycleOf, cycles, cycleUnitRust, holdsCycle } from './cycles.ts';
@@ -691,7 +691,7 @@ function functionRust(model: Model, fn: Fn): string {
     const given = convertOut(model, fn.returns, 'result');
     const reads = /\bresult\b/.test(given);
     const done = fn.fallible ? `${reads ? 'let result = ' : ''}result.map_err(${failed})?;\n                    ` : '';
-    const wait = futureOf(model, fn, 'let output = io.await;\n                        *given.borrow_mut() = Some(output);\n                        Ok(())');
+    const wait = futureOf(model, fn, 'let output = io.await;\n                        *given.borrow_mut() = Some(output);\n                        Ok(())', true);
     // GN-6ae: an advance takes the outcome of the value that the machine awaited, and only after that value.
     const settles = passes(fn) ? `
             match (awaiting, outcome_of(&settled)?) {
@@ -707,7 +707,7 @@ function functionRust(model: Model, fn: Fn): string {
                     Ok((1, passed_out(value)?))
                 }` : awaitsNone(fn);
     lines.push(`        let mut machine = binding_core::machine::Driving::new(${core});
-        let given = Rc::new(RefCell::new(None));${passes(fn) ? '\n        let mut awaiting = false;' : ''}
+        let given = Rc::new(RefCell::new(None));${armedEntry(model, fn) === '' ? '' : `\n        ${armedEntry(model, fn)}`}${passes(fn) ? '\n        let mut awaiting = false;' : ''}
         Ok(JsValue::from(Driven::new(move |${passes(fn) ? 'settled' : '_settled'}| {${settles}
             let output = given.borrow_mut().take();
             if let Some(output) = output {

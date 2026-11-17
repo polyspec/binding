@@ -6317,7 +6317,7 @@ test('an entry point runs its core call with the faults that a case armed, and t
     // GN-6n, GN-6ab: an entry point that waits for a future installs its faults around each poll (armed_future); the
     // advance of a Driven object (Node) is an entry point without a core call of its own.
     const advances = (lib.match(/pub fn advance<'env>/g) ?? []).length;
-    assert.equal((lib.match(/(?:with_faults|armed_future)\("/g) ?? []).length + advances, (lib.match(/shielded\(\|\| /g) ?? []).length, path);
+    assert.equal((lib.match(/(?:with_faults|armed_future|armed_waits)\("/g) ?? []).length + advances, (lib.match(/shielded\(\|\| /g) ?? []).length, path);
   }
   // The Go entry of the points left gives them by the conversion itself, which clippy requires over a closure.
   assert.ok(text(out, 'packages/go/internal/ffi/generated/lib.rs').includes('            list_out(&mut buffer, left, text_out);\n'));
@@ -6422,7 +6422,7 @@ test('fault injection points and the point of another library are armed for the 
   // machine armed_future (GN-6n); the advance of a Driven object is shielded and arms nothing. The test of the entries
   // of the WASM crate reads this entry by entry; here the counts of the crate agree with it.
   const advances = (lib.match(/pub fn advance\(&mut self/g) ?? []).length;
-  assert.equal((lib.match(/with_faults\("|armed_future\("/g) ?? []).length + advances, (lib.match(/shielded\(\|\| /g) ?? []).length, 'each member entry arms once and is shielded once, and each advance is shielded');
+  assert.equal((lib.match(/with_faults\("|armed_future\("|armed_waits\("/g) ?? []).length + advances, (lib.match(/shielded\(\|\| /g) ?? []).length, 'each member entry arms once and is shielded once, and each advance is shielded');
   const sample = plainSample(JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8')));
   assert.match(String(trackedPackages(sample, '0.0.0').get('packages/ts/wasm/Cargo.toml')), /\[features\]\npanic-test = \[\]\nfault-test = \["polyspec-sample\/fault-test"\]\ncodec-test = \[\]\nnative-count-test = \[\]\nthrown-count-test = \[\]\n\n/);
   assert.match(text(wasm, 'packages/ts/wasm/generated/tests/generated.test.mjs'), /async \(\) => \{\n  const glue = await glueModule\(\);\n  const arg0 = 'abc';\n  const armed = glue\.__armFaults\('sample\.measure', [^\n]*\n  assert\.throws\(\(\) => pkg\.measure\(arg0\)(?:[^\n]*\n)+?  assert\.deepEqual\(glue\.__faultLeft\(armed\), \[\]\);/);
@@ -7477,17 +7477,19 @@ test('a member with wait async_driver that reaches language code drives the stat
   const out = sample();
   // Each Io future is polled as the machine gave it, with the faults of the member around it; the machine is a
   // temporary of the call of drive, so no block is the scrutinee of the match of its result (clippy).
-  const wait = String.raw`binding_core::driver::block_on\(binding_core::driver::Caught::new\(armed_future\("sample\.resolve_driven", io\)\)\)`;
+  // B2.477: armed_waits takes the arming of the entry once and installs it at each wait.
+  const wait = String.raw`binding_core::driver::block_on\(binding_core::driver::Caught::new\(io\)\)`;
+  const armed = String.raw`armed_waits\("sample\.resolve_driven", `;
   // The machine owns its arguments, so the core takes each by value.
   const made = /match binding_core::machine::drive\(&mut polyspec_sample::resolve_driven\(lookup, key\), /;
   // PHP: the machine runs on the calling thread, which waits for each Io future on the runtime of binding_core.
   const php = text(out, 'packages/php-ext/generated/lib.rs');
   assert.match(php, made);
-  assert.match(php, new RegExp(String.raw`binding_core::machine::drive\(&mut polyspec_sample::resolve_driven\(lookup, key\), \|io\| driven\(${wait}\), \|value\| Ok\(Ok\(value\)\)\)\.map_err\(binding_error\)\?`));
+  assert.match(php, new RegExp(String.raw`binding_core::machine::drive\(&mut polyspec_sample::resolve_driven\(lookup, key\), ${armed}\|io\| driven\(${wait}\)\), \|value\| Ok\(Ok\(value\)\)\)\.map_err\(binding_error\)\?`));
   // Python: <name> drives the machine and waits for each Io future without the GIL; a<name> runs it in to_thread.
   const python = text(out, 'packages/python/generated/lib.rs');
   assert.match(python, made);
-  assert.match(python, new RegExp(String.raw`binding_core::machine::drive\(&mut polyspec_sample::resolve_driven\(lookup, key\), \|io\| driven\(py_\.detach\(\|\| ${wait}\)\), \|value\| Ok\(Ok\(value\)\)\)\.map_err\(\|error\| binding_error\(py_, error\)\)\?`));
+  assert.match(python, new RegExp(String.raw`binding_core::machine::drive\(&mut polyspec_sample::resolve_driven\(lookup, key\), ${armed}\|io\| driven\(py_\.detach\(\|\| ${wait}\)\)\), \|value\| Ok\(Ok\(value\)\)\)\.map_err\(\|error\| binding_error\(py_, error\)\)\?`));
   assert.match(python, /#\[pyfunction\(name = "aresolve_driven", signature = \(\*args, \*\*kwargs\)\)\]/);
   // Node: the entry returns a Driven object, and the JavaScript entry advances it until it ends.
   const node = text(out, 'packages/ts/generated/lib.rs');
@@ -7517,13 +7519,15 @@ test('a member with wait async_driver that reaches language code drives the stat
   // GN-15: a helper that only an entry point of a test feature uses carries the feature, so the build without it has
   // no dead code.
   assert.match(go, /\n#\[cfg\(feature = "fault-test"\)\]\nfn list_out</);
-  assert.match(go, new RegExp(String.raw`binding_core::machine::drive\(&mut polyspec_sample::resolve_driven\(lookup, key\), \|io\| driven\(${wait}\), \|value\| Ok\(Ok\(value\)\)\)\.map_err\(binding_error\)\?`));
+  assert.match(go, new RegExp(String.raw`binding_core::machine::drive\(&mut polyspec_sample::resolve_driven\(lookup, key\), ${armed}\|io\| driven\(${wait}\)\), \|value\| Ok\(Ok\(value\)\)\)\.map_err\(binding_error\)\?`));
   assert.match(text(out, 'packages/go/zz_generated_sample.go'), /func ResolveDriven\(lookup Lookup, key string\) \(string, error\) \{/);
   // WASM: as Node, the entry returns a Driven object of the module, and the ES entry advances it until it ends; each
   // wait is a promise of the event loop of JavaScript.
   const wasmOut = sample((c) => { delete member(c, 'sample.resolve_driven').only; }, ['wasm']);
   const wasm = text(wasmOut, 'packages/ts/wasm/generated/lib.rs');
-  assert.match(wasm, /let mut machine = binding_core::machine::Driving::new\(polyspec_sample::resolve_driven\(lookup, key\)\);\n\s*let given = Rc::new\(RefCell::new\(None\)\);\n\s*Ok\(JsValue::from\(Driven::new\(move \|_settled\| \{/);
+  assert.match(wasm, /let mut machine = binding_core::machine::Driving::new\(polyspec_sample::resolve_driven\(lookup, key\)\);\n\s*let given = Rc::new\(RefCell::new\(None\)\);\n\s*let mut armed = armed_waits\("sample\.resolve_driven", \|wait\| wait\);\n\s*Ok\(JsValue::from\(Driven::new\(move \|_settled\| \{/);
+  // B2.477: the entry takes its arming once, and each wait of the machine installs it.
+  assert.match(wasm, /binding_core::machine::Next::Wait\(io\) => \{\n\s*let given = Rc::clone\(&given\);\n\s*let promise = awaited\(armed\(async move \{/);
   assert.match(wasm, /binding_core::machine::Next::Wait\(io\) => \{\n\s*let given = Rc::clone\(&given\);\n\s*let promise = awaited\(/);
   assert.match(wasm, /binding_core::machine::Next::Done\(result\) => \{\n\s*let result = result\.map_err\(failure_error\)\?;\n\s*Ok\(\(2, text_out\(result\)\?\)\)/);
   assert.match(wasm, /binding_core::machine::Next::Await\(_value\) => Err\(binding_error\(BindingError::Internal \{ detail: String::from\("GN-6ae: sample\.resolve_driven awaits no value of language code"\) \}\)\),/);
@@ -8832,7 +8836,7 @@ test('every entry point of the WASM crate is shielded once, and the entry of a m
     test: /#\[cfg\(feature = "(?:panic|fault|codec)-test"\)\]/.test(attributes ?? ''),
     guards: (body ?? '').match(/\bguard\(/g)?.length ?? 0,
     shields: (body ?? '').match(/shielded\(\|\| /g)?.length ?? 0,
-    arms: (body ?? '').match(/(?:with_faults|armed_future)\("/g)?.length ?? 0,
+    arms: (body ?? '').match(/(?:with_faults|armed_future|armed_waits)\("/g)?.length ?? 0,
   }));
   const members = entries.filter((entry) => /^(?:function|member)_/.test(entry.name));
   assert.ok(members.length >= 30, String(members.length));
@@ -8842,7 +8846,7 @@ test('every entry point of the WASM crate is shielded once, and the entry of a m
   assert.deepEqual(others.map((entry) => entry.name), ['advance']);
   assert.deepEqual(others.filter((entry) => entry.guards !== 1 || entry.shields !== 1 || entry.arms !== 0), []);
   // No arming and no shield is outside an entry, so the counts of the crate are the sums of its entries.
-  assert.equal(entries.reduce((sum, entry) => sum + entry.arms, 0), lib.match(/(?:with_faults|armed_future)\("/g)?.length);
+  assert.equal(entries.reduce((sum, entry) => sum + entry.arms, 0), lib.match(/(?:with_faults|armed_future|armed_waits)\("/g)?.length);
   assert.equal(entries.reduce((sum, entry) => sum + entry.shields, 0), lib.match(/shielded\(\|\| /g)?.length);
 });
 
@@ -13035,6 +13039,29 @@ test('B2.476: the B-4 test of a case whose function fixture raises an exception 
   assert.match(php, /\n {8}self::\$raised = new \\LogicException\("raised by the function of the case"\);\n[\s\S]*throw self::\$raised;/, php);
   // A B-4 test whose fixtures raise nothing sets no value.
   assert.doesNotMatch(body('python', /def test_b4_counter_add_a_text_amount_is_another_type\(/), /_raised/);
+});
+
+test('B2.477: the entry of a member with a machine takes its arming once, and every wait of the machine installs it, in the crates of PHP, Python, Go and Node (GN-8a, GN-6ab)', () => {
+  // The WASM crate of the sample has no member with a machine; the test of GN-6ab reads its lines in the fixture that
+  // has one.
+  // orm db.transaction: the fault of the rollback, a later wait, never stood, because each wait took the arming of the
+  // member and the first take removed it; the test got the error of the callback in place of rollback_failed.
+  const out = generateTargets({ contract: JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8')), version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: new Map([['contracts/cases.json', JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/contracts/cases.json', import.meta.url), 'utf8'))]]), targets: ['php', 'python', 'node', 'go'] });
+  const libs = { php: 'packages/php-ext/generated/lib.rs', python: 'packages/python/generated/lib.rs', go: 'packages/go/internal/ffi/generated/lib.rs', node: 'packages/ts/generated/lib.rs' };
+  for (const [target, path] of Object.entries(libs)) {
+    const lib = text(out, path);
+    // No wait takes the arming by itself.
+    assert.doesNotMatch(lib, /armed_future\("[a-z_.]+", io\)/, target);
+    // The helper takes the arming once and installs it around each wait.
+    assert.ok(lib.includes('fn armed_waits<F: std::future::Future, T>(member: &str, mut wait: impl FnMut(binding_core::fault::Around<F>) -> T) -> impl FnMut(F) -> T {\n    let armed = binding_core::fault::take(member);\n    move |future| wait(armed.wait(future))\n}\n'), target);
+    assert.ok(lib.includes('#[cfg(not(feature = "fault-test"))]\nfn armed_waits<F: std::future::Future, T>(_member: &str, wait: impl FnMut(F) -> T) -> impl FnMut(F) -> T {\n    wait\n}\n'), target);
+    if (target === 'node') {
+      assert.match(lib, /\n {8}let mut armed = armed_waits\("sample\.resolve_driven", \|wait\| wait\);\n/, target);
+      assert.match(lib, /Next::Wait\(io\) => \{\n[^\n]*\n\s*let promise = (?:driving\(env_, |awaited\()armed\(async move \{/, target);
+    } else {
+      assert.match(lib, /binding_core::machine::drive\(&mut polyspec_sample::resolve_driven\(lookup, key\), armed_waits\("sample\.resolve_driven", \|io\| driven\(/, target);
+    }
+  }
 });
 
 // B2.465: the sample whose alias data has the rows of orm_value: a row of the kind int64 that makes the integer of the
