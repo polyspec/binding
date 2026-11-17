@@ -14231,6 +14231,20 @@ test('CK-69: the core call of a machine method lends its receiver by lent_receiv
   }
 });
 
+// B2.489 (GN-7a): the maker polyspec_make of the PHP crate reads its arguments by Arg::zval of ext-php-rs 0.16.4, which
+// gives Option<&mut &mut Zval>. It gave them to error_arguments, which takes Option<&Zval>, and to Zval::array as a fn
+// of &Zval, so the crate of the sample failed with E0308 and E0631. A test of the text compiles nothing, and the tests of
+// the maker asserted its kinds and properties, not its calls; this one pins the calls in the form that compiles.
+test('B2.489: the PHP maker reads its arguments by Arg::zval as ext-php-rs 0.16.4 gives them (GN-7a)', () => {
+  const read = (path: string): any => JSON.parse(readFileSync(new URL(`../../../tests/e2e/sample/${path}`, import.meta.url), 'utf8'));
+  const out = generateTargets({ contract: read('packages/rust/interface.json'), version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: new Map([['contracts/cases.json', read('contracts/cases.json')]]), targets: ['php'] });
+  const lib = text(out, 'packages/php-ext/generated/lib.rs');
+  const maker = lib.slice(lib.indexOf('fn made_error('), lib.indexOf('\n}\n', lib.indexOf('fn made_error(')));
+  assert.match(maker, /\n {4}let \[message, kind, status, errno\] = \[message\.zval\(\), kind\.zval\(\), status\.zval\(\), errno\.zval\(\)\]\.map\(\|zval\| zval\.map\(\|zval\| zval\.shallow_clone\(\)\)\);\n {4}let \(message, kind, status, errno\) = error_arguments\(class, message\.as_ref\(\), kind\.as_ref\(\), status\.as_ref\(\), errno\.as_ref\(\)\)\?;\n/);
+  assert.match(maker, /properties\.zval\(\)\.and_then\(\|zval\| zval\.array\(\)\)/);
+  assert.doesNotMatch(maker, /Zval::array|error_arguments\(class, message\.zval\(\)/);
+});
+
 // B2.492 (GN-6af, GN-6x): clippy -D warnings refused the PHP crate of the sample. php_value_class took owned, the
 // entries of the maps of a value class of another repository, for every contract that reads values, also where no in
 // row has a map, so the parameter had no use (unused_variables) and, as a &mut Vec that the body did not push to,

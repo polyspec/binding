@@ -1419,7 +1419,10 @@ fn made_error(ex: &mut ExecuteData) -> Result<Zval, Fail> {
     let Some(class) = called else {
         return Err(PhpException::from_message(String::from("B2.489: polyspec_make is called on a class")));
     };
-    let (message, kind, status, errno) = error_arguments(class, message.zval(), kind.zval(), status.zval(), errno.zval())?;
+    // Arg::zval gives the argument as Option<&mut &mut Zval>; error_arguments reads each as a Zval, as construct_error
+    // gives them.
+    let [message, kind, status, errno] = [message.zval(), kind.zval(), status.zval(), errno.zval()].map(|zval| zval.map(|zval| zval.shallow_clone()));
+    let (message, kind, status, errno) = error_arguments(class, message.as_ref(), kind.as_ref(), status.as_ref(), errno.as_ref())?;
     let mut object = ZendObject::new(class);
     with_scope(${model.errorUnits.length === 0 ? 'class' : 'category_scope(class)'}, || -> ext_php_rs::error::Result<()> {
         object.set_property("message", message)?;
@@ -1434,7 +1437,7 @@ fn made_error(ex: &mut ExecuteData) -> Result<Zval, Fail> {
         Some((_unit, names)) => names,
         None => &[],
     };
-    if let Some(given) = properties.zval().and_then(Zval::array) {
+    if let Some(given) = properties.zval().and_then(|zval| zval.array()) {
         for (key, value) in given {
             let name = key.to_string();
             let Some((_name, owner)) = declared.iter().find(|(declared, _owner)| *declared == name) else {
