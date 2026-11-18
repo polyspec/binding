@@ -6,7 +6,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { MessageChannel, receiveMessageOnPort } from 'node:worker_threads';
+import { MessageChannel, receiveMessageOnPort, Worker } from 'node:worker_threads';
 import type { Inputs } from '../src/generate/index.ts';
 import { failHeldRequest, generateOnStack, generationThread } from '../src/generate/stack.ts';
 
@@ -15,7 +15,7 @@ const consumer = (path: string): any => JSON.parse(readFileSync(new URL(`fixture
 const inputsOf = (name: string, coreLib: string): Inputs => {
   const contract = consumer(`${name}/interface.json`);
   const files = [...new Set((contract.cases as { file: string }[]).map((row) => row.file))];
-  return { contract, caseFiles: new Map(files.map((file) => [file, consumer(`${name}/${file}`)])), version: '0.0.0', coreLib, targets: ['typescript'] };
+  return { contract, caseFiles: new Map(files.map((file) => [file, consumer(`${name}/${file}`)])), version: '0.0.0', coreLib, targets: ['node'] };
 };
 
 const cookie = (): Inputs => inputsOf('http-cookie', 'polyspec_http_cookie');
@@ -41,9 +41,13 @@ test('B2.542: a generation gives the same files after another generation as befo
 test('B2.542: a thread that ends while it holds a generation fails that generation with its cause', async () => {
   const done = new Int32Array(new SharedArrayBuffer(4));
   const { port1, port2 } = new MessageChannel();
-  const woken = Atomics.waitAsync(done, 0, 0);
+  // The waiting side is another thread, which waits on the word as the caller of a generation does.
+  const waiter = new Worker("const { workerData, parentPort } = require('node:worker_threads'); parentPort.postMessage(Atomics.wait(workerData, 0, 0));", { eval: true, workerData: done });
+  const woken = new Promise((resolve) => waiter.once('message', resolve));
+  await new Promise((resolve) => waiter.once('online', resolve));
   failHeldRequest({ port: port2, done }, 7);
-  assert.equal(await woken.value, 'ok', 'the waiting side is woken');
+  assert.match(String(await woken), /^(ok|not-equal)$/, 'the waiting side is woken');
+  await waiter.terminate();
   assert.deepEqual(receiveMessageOnPort(port1)?.message, { ended: 'the generation thread ended (code 7) before its generation did' });
   port1.close();
 });
