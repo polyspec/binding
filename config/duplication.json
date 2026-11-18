@@ -1,0 +1,14 @@
+{
+  "formats": ["typescript", "javascript"],
+  "minLines": 6,
+  "ignorePatterns": ["(?m)^import\\s[^;'\"]*['\"][^'\"\\n]*['\"];?$"],
+  "exclude": [
+    { "glob": "tests/**", "reason": "test: tests/e2e states each case in full and holds the fixtures of the consumers" },
+    { "glob": "packages/ts/tests/**", "reason": "test: a test states its case in full; tests/fixtures holds data" },
+    { "glob": "packages/core/**", "reason": "scope: the Rust core is read by cargo clippy; the check reads the TypeScript of packages/ts/src and scripts" },
+    { "glob": "**/dist/**", "reason": "generated: the build output of tsc" },
+    { "glob": "**/target/**", "reason": "generated: the build output of cargo" },
+    { "glob": "**/node_modules/**", "reason": "install: the installed dependencies" },
+    { "glob": "var/**", "reason": "install: the installed tools and the work folders of the checks" }
+  ]
+}

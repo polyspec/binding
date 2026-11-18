@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: c7be3928273d9f851f914e7d335191f4798ff968f3afd296adb163cba6f44b41 -->
+<!-- source-sha256: 94b953aca26a036a435811879c9e6d32b57dcb8063237d6def98ad007fd80dff -->
 # 생성기
 
 [English](generator.md)
@@ -3516,6 +3516,16 @@
   따로 release한다. 소비자는 binding의 release를 pin한 뒤 자기 CI에서 그것을 검증하고, 그 CI가 보인 결함은 binding의
   다음 release에서 고친다. 소비자의 로컬 compile check인 `make consumers-check`(GN-14i)는 남는다. 이 id는 다른
   규칙을 이름하지 않는다.
+- **GN-14o** 중복 코드 검사(B2.515). `make duplication-check`는 kit의 duplication-check(jscpd)를
+  `config/duplication.json`대로 실행한다: 형식 `typescript`와 `javascript`, 6줄 이상인 조각, import 줄은 무시하고,
+  `tests/**`, `packages/ts/tests/**`, `packages/core/**`, `dist`, `target`, `node_modules`, `var`는 각 이유와 함께
+  읽지 않으므로, 읽는 코드는 `packages/ts/src`와 `scripts`의 TypeScript다. 두 번 있는 조각이 있으면 두 곳을 이름 대며
+  실패한다. 기준선(baseline)도 허용 문턱값도 없다: 첫 실행이 찾은 98개 중복은 통과로 고정되지 않는다. 그래서 이
+  target은 오늘의 트리에서 실패하며, 그것이 기대한 결과다. 그 중복들은 B2.517부터 B2.521까지가 제거하거나, kit이
+  받는 형식인 이유가 붙은 `exclude` 항목으로 남긴다. 그 행들이 끝난 뒤에야 `ci.yml`의 check job이 이 target을
+  실행한다. 아직은 CI가 실행하지 않는다. `packages/ts/tests/duplication-check.test.ts`는 임시 사본에서 이 target을
+  실행하여, 중복 없는 사본은 통과하고 `packages/ts/src`에 조각을 두 번 둔 사본은 실패함을 보인다. 이유: 두 번 쓴
+  규칙(B2.509의 Go test 이름 읽기 둘처럼)은 읽어서만 발견되었고, 기준선은 오늘의 중복을 영구히 허용한다.
 
 ## 바인딩을 가진 레포의 release
 
