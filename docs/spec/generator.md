@@ -4284,10 +4284,10 @@ the design ids are those of the binding design.
   `config/duplication.json`: the formats `typescript` and `javascript`, a piece of 6 lines or more, import lines
   ignored, and `tests/**`, `packages/ts/tests/**`, `packages/core/**`, `dist`, `target`, `node_modules` and `var` not
   read, each with its reason, so the code it reads is the TypeScript of `packages/ts/src` and `scripts`. It fails on a
-  piece that exists twice, naming both places. It has no baseline and no threshold: the 98 duplications that its first
-  run found are not frozen as passing. So the target fails on today's tree, and that is expected. Rows B2.517 to B2.521
-  remove those duplications, or keep one by an `exclude` entry with its reason, the form that kit accepts; only after
-  them does the check job of `ci.yml` run the target, and CI does not run it yet.
+  piece that exists twice, naming both places with their lines. It has no baseline and no threshold: the 98
+  duplications that its first run found were not frozen as passing; rows B2.517 to B2.521 removed them, and a
+  duplication may be kept only by an `exclude` entry with its reason, the form that kit accepts. The entry `ts` of the check job of
+  `ci.yml` runs the target after `unit-ts`, and no other entry runs it.
   `packages/ts/tests/duplication-check.test.ts` runs the target in a temporary copy and shows that a copy without a
   duplication passes and a copy that holds a piece of `packages/ts/src` twice fails. Why: a rule written twice, such
   as the two readings of the name of a Go test (B2.509), was found only by reading, and a baseline would allow
