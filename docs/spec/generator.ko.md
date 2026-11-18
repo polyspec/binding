@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 5942f161ea6f1a37d26da2031f6b497056c64e3f48ea7f98a209cfc5d7c986c7 -->
+<!-- source-sha256: 3d516d3e7a2f79f60dbf8a15b4297a377a11a77c7bdb251292ef0c1925158b86 -->
 # 생성기
 
 [English](generator.md)
@@ -63,8 +63,8 @@
   시작된 binding은 아무 표시 없이 그 프로그램을 읽게 되고, make는 export하라고 하지 않은 변수를 export하지 않는다.
 - **GN-2** 결과는 계약, `cases`가 가리키는 case 파일, 코어 crate의 버전과 라이브러리 이름(manifest를 TOML로 읽는다),
   binding 자신에만 기댄다. 시각, 경로, 호스트를 담지 않고 목록은 계약 순서다(I-5). `--out`은 같은 파일을 다른 디렉터리에
-  쓴다. `packages/ts`의 시험은 두 디렉터리에 두 번 생성해 바이트를 비교한다. `config/consumers.json`의 소비자는
-  binding release의 시험이며 생성기의 입력이 아니다: 목록이나 소비자의 어떤 파일도 결과에 들어가지 않는다(GN-14m).
+  쓴다. `packages/ts`의 시험은 두 디렉터리에 두 번 생성해 바이트를 비교한다. binding의 어떤 소비자도 생성기의 입력이
+  아니다: 소비자의 어떤 파일도 결과에 들어가지 않는다.
 
 ## 배치(L-1, L-2)
 
@@ -3508,60 +3508,13 @@
   mode 0644로 쓰고 연결은 파일을 그대로 가리키므로, 그 bin이 "Permission denied"(127)로 실패했다. mode는 각
   소비자가 아니라 build의 출력에 속한다.
 
-- **GN-14m** release의 소비자 관문(B2.494). `config/consumers.json`은 binding의 소비자를 적는다. 각 소비자는 release
-  tag `vX.Y.Z`의 레포 `{repo, tag}`와 그것을 실행하는 job이며, `pending`에는 binding 배치의 release tag가 아직 없는
-  소비자를 그 이유와 함께 적는다. `.github/workflows/ci.yml`의 job `consumers`는 tag가 있는 소비자의 job마다 항목
-  하나를 가진다: 작은 소비자 여덟(fsm, http-cookie, http-form, http-media-type, http-negotiation, json,
-  php-serialization, session-store)은 job `small`을 함께 쓰고, template, crud-ui(그 validator와 generator), hyper,
-  orm은 각자 job을 가진다. 각 항목은 `make ci-consumers JOB=<job>`을 실행하며, 이것은 `dist`를 빌드하고(GN-14j)
-  `make consumer-gate`를 실행한다(`scripts/consumer-gate-run.mts`, 그 목록·단계·표는 `scripts/consumer-gate.mts`).
-  job의 소비자마다 하나씩 차례로, 실행은 tag를 그 역사와 함께 clone하고(`git clone --branch <tag>`, depth 없이: tag가 가리키는 역사는 고정되어
-  있고, 소비자의 Go rehearsal은 tag의 commit을 부모로 하는 commit을 만들며 `git prune`이 그 부모를 따라간다), clone 안에서
-  `rustup toolchain install`로 clone의 `rust-toolchain.toml`이 이름하는 toolchain을 설치하고(clone의 모든 cargo가 그
-  toolchain으로 돌며, runner는 이 단계 뒤에야 그것을 가진다), tag의 lock으로
-  `cargo fetch --locked`를 실행하고, 루트 `Cargo.toml`에 `polyspec-binding-core`를 실행의 `packages/core/rust`로 두는
-  path patch를 GN-14i처럼 쓰고, 네트워크와 함께 `cargo update -p polyspec-binding-core`를
-  실행한다(GN-14d). 그다음 lock을 tag의 lock과 비교한다: `polyspec-binding-core` 말고 다른 entry가 하나라도 더해지거나
-  빠지거나 바뀌면, 그 소비자는 그 entry들을 각각 이름하며 prepare에서 실패한다. 허용하는 바뀜은 하나다: name,
-  version, source가 그대로인 entry의 dependencies 목록이 바뀌고, 새 목록이 이름하는 crate와 version이 모두 lock에 이미
-  있는 것이다. 그런 목록은 바뀐 core 자신의 의존을 resolver가 다시 통일한 것이며(session-store에서 `windows-sys`가
-  0.61.2에서 0.52.0으로 간 것처럼), 소비자가 빌드하는 code는 하나도 바뀌지 않는다. 새 entry, 빠진 entry, version이나
-  source가 바뀐 entry는 그대로 실패다. update가 네트워크를 쓰는 까닭: 다른
-  0.0.x minor의 release로 patch하면 git entry가 unlock되고, cargo는 그 `tag=`를 ref로 푸는데 `cargo fetch --locked`는
-  그 ref를 남기지 않는다. update가 받는 것은 lock이 commit으로 고정한 그 tag이며 최신 release나 범위가 아니므로, 고정된
-  것의 설치다(HR-89). lock이 그 entry만 바뀐다는 GN-14d의 목적은 네트워크가 없어서가 아니라 이 비교로 지킨다. 그 뒤로는 소비자 자신의 Makefile goal만, 각각 실행의 `BINDING`(실행 가능한 `dist/cli.js`),
-  `BINDING_RUN`(그것을 실행하는 node), `NODE`와 함께 실행한다: 네트워크와 함께 그 goal `bootstrap`(소비자 CI의 첫 단계처럼 `devEngines`의 npm으로
-  `package-lock.json`을, 그 안의 locked kit까지 설치하므로 install이 kit의 도구를 찾는다. Makefile에 goal `bootstrap`이
-  없는 소비자는 그것을 이름하며 prepare에서 실패하고, 그 goal이 있는 tag로 옮긴다); 네트워크와 함께 그 install(`install`, 또는 Makefile에
-  goal `install`이 없을 때 항목의 `install`이 이름하는 항목들. 항목 하나는 make 인자 하나의 묶음, 곧 goal과 소비자가
-  그것에 주는 변수이며(`install-tools TOOLS=npm`처럼), 그 순서대로 각각 make 하나로 실행한다). 이때 항목의 `path`가 이름하는 clone의 디렉터리를
-  소비자 자신의 CI처럼 모든 goal의 `PATH` 앞에 둔다(session-store의 `var/tools/bay`. 그 goal `install-bay`와
-  `setup-bay`가 생성된 시험의 Redis 서버를 위해 runner에 bay와 그 기계 설정을 설치한다); 그다음 실행의 `binding scaffold`(GN-14d)를
-  `--go`에 소비자 Makefile의 `GO`를 주어 실행한다. 그 Go는 소비자의 install이 설치한 것이다(`var/tools/mise/shims/go`,
-  그 `mise.toml`의 Go). scaffold는 `go mod download`를 돌리고, 소비자의 `go.mod`는 runner의 Go가 아니라 그 Go를 요구하기
-  때문이다; 생성하는 `bindings`; 계약의 target마다 생성된 시험을
-  그 runner로 offline 실행하는 `test-bindings`(`CARGO_NET_OFFLINE`, `GOPROXY=off`, `GOFLAGS=-mod=readonly`,
-  `npm_config_offline`, `UV_OFFLINE`, `PIP_NO_INDEX`); 그리고 cache 없는 release 리허설, 곧 `release-recipes`, 호스트의
-  release build(계약의 target에 따라 `release-go-static`, `release-wheel`, `release-php-ext`), `rehearse-go-module
-  TAG=<tag>`(GN-19f). cache 없음은 새 Go build cache, `GOFLAGS=-mod=readonly`, `GOWORK=off`, `CARGO_INCREMENTAL=0`,
-  compiler wrapper 없음, 새 clone의 release target이며, workflow의 어느 job도 cache를 복원하지 않으므로 각 Go module은
-  자기 tag에서 홀로 빌드된다. clone, patch, install, `bindings`의 단계가 실패하면 그 소비자는 멈춘다. 뒤의 모든 단계가
-  그것들이 쓴 것을 읽기 때문이다. `test-bindings`와 리허설은 각각 끝까지 실행하고, 모든 소비자가 실행된다. 실행은
-  소비자마다 그 tag와 phase(`prepare`, `generate`, `test`, `rehearsal`)의 표, 각 실패와 그 첫 오류 줄과 log를 찍고,
-  log와 `table.txt`, `report.json`을 job이 올리는 `var/report/consumer-gate/<job>/`에 쓰며, 소비자의 phase가 통과하지
-  않으면 실패한다. 실패한 항목은 `ci-passed`를 실패시키므로, ci의 성공한 실행에서만 시작하는 `release.yml`은 그
-  commit을 release하지 않는다: 어떤 실패든 release를 막는다. job의 matrix가 목록의 job과 다르면 `packages/ts`의
-  시험이 실패한다.
-  binding은 소비자의 사본을 두지 않는다: tag는 소비자가 release한 고정된 입력이고 사본은 낡는다. 소비자의 release는
-  binding의 commit으로 목록의 tag를 올리고, pending 소비자는 binding 배치의 첫 release tag와 함께 `consumers`로
-  옮긴다. branch나 commit은 항목이 되지 않는다. 관문이 증거하는 것은 GN-14i의 읽기와 같다: 각 소비자의 release
-  tag와 이 commit의 생성기·`binding_core`이며, binding의 release를 받은 소비자가 아니다. 소비자가 release를 받은 뒤의
-  그 CI가 마지막 증거다.
-  GN-2와 맞는 방식: 소비자는 release의 시험이며 생성기의 입력이 아니다. 생성기는 목록의 파일도 소비자도 읽지 않고,
-  목록은 어느 레포의 생성된 바이트도 바꾸지 않으며, 관문은 자기가 시험하는 commit의 CLI를 바꾸지 않고 실행한다.
-  올린 tag는 시험이 실행하는 코드만 바꾼다. 이유: 생성기나 `binding_core`의 변경은 모든 소비자에게 닿고, 0.0.21
-  lane의 결함 넷(B2.486, B2.488, B2.491, B2.492)은 binding의 검사가 아니라 소비자나 그 release가 보였다. release된
-  소비자를 실행하는 관문은 그런 결함을 tag 전에 보인다.
+- **GN-14m** 폐기(B2.549). 이것은 release의 소비자 관문이었다(B2.494). `.github/workflows/ci.yml`의 job
+  `consumers`는 `config/consumers.json`의 소비자를 각각 release tag로 clone하고 그 commit으로 install, 생성, 생성된
+  시험, release 리허설을 돌았다. `ci-passed`가 그 job을 needs에 두었으므로 어느 소비자가 실패해도 binding의 release가
+  막혔고, 소비자마다 binding을 고치고 run을 처음부터 다시 돌게 되었다. 레포는 자기 로컬 검사로 스스로를 검증하고
+  따로 release한다. 소비자는 binding의 release를 pin한 뒤 자기 CI에서 그것을 검증하고, 그 CI가 보인 결함은 binding의
+  다음 release에서 고친다. 소비자의 로컬 compile check인 `make consumers-check`(GN-14i)는 남는다. 이 id는 다른
+  규칙을 이름하지 않는다.
 
 ## 바인딩을 가진 레포의 release
 
