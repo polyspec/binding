@@ -34,7 +34,7 @@ import {
 import {
   type Fixture, type MadeRaise, type RaisingCase, convertedCause, boundName, type Receiver, sampleInstance, aliasCases, mapEntries, caseKey, casePascal, casePathOf, checkCaseNames, comparableResult, expectedErrno, fixtureOf, fixturesOf, implementerInstance, instanceOf, interfaceInstance, isInstanceValue, pairsReceiver, valueClassReceiver, raisingCases, resultCases, sampleReceiver, stringCases, type After, FIXTURE_RAISED, argsOf, callbackCases, callbackReachingArgs, classCaseArgs, floatToken, memberById, raisesException, keptOf, type ForeignStep, foreignSteps, aliasOutForm, caseValueBytes, keyedField, outKeyForm, callbackInstance, cancelState, ownerModel, caseFilesOf, ServiceValue, serviceValueOf, serviceChangeOf, servicePeerOf, serviceSteps, type CaseService,
   caseTextParts, BYTE_NAME_LINUX, caseListenerOf, CASE_JSON_STRING_GOLDENS,
-  fixtureType, ROW_EXCEPTION, notAFunctionValue,
+  fixtureType, ROW_EXCEPTION, notAFunctionValue, outsideI64, CLASSED_KINDS,
 } from './samples.ts';
 
 interface Values {
@@ -274,7 +274,7 @@ function value(v: Values, b: Body, type: Type, json: unknown): string {
   const alias = aliasOf(v.model, type);
   // GN-6x, GN-13b: a value of a value class of another repository is an instance of the owner's class.
   if (alias?.library !== undefined && alias.unit.kind === 'class') return foreignMade(v, b, alias, json);
-  if (alias !== undefined) return aliasValue(v.model, b, alias.unit, json, `the alias ${alias.unit.id}`, v.result === true, alias.library === undefined ? undefined : foreignKept(v, alias.library));
+  if (alias !== undefined) return aliasValue(v.model, b, alias.unit, json, `the alias ${alias.unit.id}`, v.result === true, alias.library === undefined ? undefined : foreignKept(v, alias.library), (fn, arg) => `must(${invoke(v, fn, [arg], '')})`);
   // GN-13f, GN-6w: an instance value of a class that implements a callback interface stands for the callback.
   const implemented = callbackOf(v.model, type);
   if (implemented !== undefined && implemented.library === undefined && isInstanceValue(json)) return made(v, b, implementerInstance(v.model, implemented.unit, json));
@@ -413,8 +413,8 @@ const GO_HOST_VALUES = { callable: 'func() {}', date: 'time.Unix(0, 0).UTC()', o
 // GN-13: a value of a value type, {"kind": <value kind>, "value": ...}, as the Go value of the built-in form of the kind:
 // nil, bool, int64, float64, string, []byte, []any, and a map[string]any, or a *KeyedMap[any] for a map whose keys are
 // not all texts or whose Go form is keyed_map.
-function aliasValue(model: Model, b: Body, unit: Unit | undefined, json: unknown, where: string, result = false, foreign?: ForeignKept): string {
-  const making: Making = { b, made: [], fills: [], references: new Map(), objects: new Map(), result, ...(foreign === undefined ? {} : { foreign }) };
+function aliasValue(model: Model, b: Body, unit: Unit | undefined, json: unknown, where: string, result = false, foreign?: ForeignKept, construct?: (fn: Fn, arg: string) => string): string {
+  const making: Making = { b, made: [], fills: [], references: new Map(), objects: new Map(), result, ...(foreign === undefined ? {} : { foreign }), ...(construct === undefined ? {} : { construct }) };
   const text = aliasPart(model, unit, json, where, making);
   // GN-13: the instances of the value classes are made first and then filled, as statements of the test, so every
   // place of an id is the same pointer and a cycle is made.
@@ -435,6 +435,8 @@ interface Making {
   // GN-6ar: the owner of the alias of the value, when it is another repository: an object and a reference are then
   // instances of the value classes of that repository, which the test makes through the package of the owner.
   foreign?: ForeignKept;
+  // GN-13e, B2.543: the call of the constructor of a value class with core_type on the built-in value that it takes.
+  construct?: (fn: Fn, arg: string) => string;
 }
 
 // GN-6ar, GN-6af: the value classes without core_type of the owner of a value alias of another repository, and the
@@ -470,7 +472,33 @@ function outMap(model: Model, unit: Unit | undefined, entries: [unknown, unknown
   return mapLocal(making.b, making.fills, 'binding.KeyedMap[any]', sets);
 }
 
+// GN-13e, B2.543: the value class with core_type of this contract that a Go out row makes by its constructor, or
+// undefined for a row that makes a built-in form or a class without core_type (GN-6af, which the kinds object and
+// reference make).
+function coreClassOf(model: Model, make: unknown): Unit | undefined {
+  if (typeof make !== 'string' || !make.endsWith('.constructor')) return undefined;
+  const unit = model.contract.units.find((u) => `${u.id}.constructor` === make);
+  return unit?.core_type === undefined ? undefined : unit;
+}
+
+// GN-13e, B2.543: a part of an expected result of a value alias of this contract, as the instance that the Go out row of
+// its kind makes, where that row makes a value class with core_type by its constructor, as the other targets make it
+// (B2.465). An int outside i64 is no value of an out row (U-7 (f), B2.493).
 function aliasPart(model: Model, unit: Unit | undefined, json: unknown, where: string, making: Making): string {
+  const built = aliasBuilt(model, unit, json, where, making);
+  if (!making.result || making.foreign !== undefined || making.construct === undefined || unit?.out === undefined) return built;
+  const record = typeof json === 'object' && json !== null && !Array.isArray(json) ? (json as Record<string, unknown>) : undefined;
+  const kind = record?.['kind'];
+  if (record === undefined || typeof kind !== 'string' || !CLASSED_KINDS.has(kind) || record['repeat'] !== undefined) return built;
+  if (kind === 'int' && outsideI64(record['value'])) return built;
+  const form = aliasOutForm(unit, 'go', kind, record);
+  if (coreClassOf(model, form) === undefined) return built;
+  const factory = memberById(model, form as string);
+  if (factory === undefined) throw new Unsupported(`a case value of the kind ${kind} of ${where} is an instance of ${String(form)}, which the binding does not generate (GN-13e)`);
+  return making.construct(factory, built);
+}
+
+function aliasBuilt(model: Model, unit: Unit | undefined, json: unknown, where: string, making: Making): string {
   const record = typeof json === 'object' && json !== null && !Array.isArray(json) ? (json as Record<string, unknown>) : undefined;
   // G-5: a value of the language that is no value of the value type, {"host": <sort>} of the closed table.
   const sort = record?.['host'];
@@ -1192,10 +1220,32 @@ function holdsAlias(model: Model, type: Type): boolean {
   return [...('tuple' in type ? type.tuple : []), ...['list', 'optional', 'map', 'keyed_map'].flatMap((key) => (key in type ? [(type as Record<string, Type>)[key] as Type] : []))].some((inner) => holdsAlias(model, inner));
 }
 
-// GN-13bg: the two sides of a Go comparison of two values of a type. Values that hold an instance of a value class of
-// another repository are read by foreignRead, because reflect.DeepEqual compares two instances by their handles.
+// GN-13e, B2.543: the value classes with core_type of this contract that a Go out row of a value alias of this contract
+// makes, whose instances a result of that alias holds.
+function coreClassesOfAliases(model: Model): Unit[] {
+  const found = new Map<string, Unit>();
+  for (const alias of model.aliases.filter((a) => a.library === undefined)) {
+    for (const row of alias.unit.out ?? []) {
+      const unit = coreClassOf(model, row.make['go']);
+      if (unit !== undefined) found.set(unit.id, unit);
+    }
+  }
+  return [...found.values()];
+}
+
+// GN-13e, B2.543: whether a type holds a value alias of this contract whose Go out row makes a value class with core_type.
+function holdsCoreClass(model: Model, type: Type): boolean {
+  if (typeof type === 'string') return false;
+  const alias = aliasOf(model, type);
+  if (alias !== undefined) return alias.library === undefined && (alias.unit.out ?? []).some((row) => coreClassOf(model, row.make['go']) !== undefined);
+  return [...('tuple' in type ? type.tuple : []), ...['list', 'optional', 'map', 'keyed_map'].flatMap((key) => (key in type ? [(type as Record<string, Type>)[key] as Type] : []))].some((inner) => holdsCoreClass(model, inner));
+}
+
+// GN-13bg, GN-13e: the two sides of a Go comparison of two values of a type. Values that hold an instance of a value class
+// of another repository, or of a value class with core_type that an alias of this contract makes (B2.543), are read by
+// foreignRead, because reflect.DeepEqual compares two instances by their handles.
 function goCompared(v: Values, type: Type, got: string, want: string): [string, string] {
-  if (!holdsForeign(v.model, type)) return [got, want];
+  if (!holdsForeign(v.model, type) && !holdsCoreClass(v.model, type)) return [got, want];
   v.readsForeign = true;
   return [`foreignRead(reflect.ValueOf(${got}))`, `foreignRead(reflect.ValueOf(${want}))`];
 }
@@ -1269,9 +1319,27 @@ ${cases.join('\n')}
 		return pairs`);
     }
   }
+  // GN-13e, B2.543: an instance of a value class with core_type that an alias of this contract makes is its class and the
+  // values of its properties, each read again, as Python (B2.507) and Node (B2.510) compare it.
+  for (const unit of coreClassesOfAliases(model)) {
+    const type = typeName(v, { unit: unit.id });
+    if (seen.has(type)) continue;
+    seen.add(type);
+    const properties = (unit.members ?? []).filter((m) => m.kind === 'property');
+    const reads = properties.map((m, at) => `		read${at}, err := found.${goName(m.name)}()
+		if err != nil {
+			return err
+		}`);
+    arms.push(`	case ${type}:
+		if found == nil {
+			return nil
+		}
+${reads.join('\n')}${reads.length === 0 ? '' : '\n'}		return []any{${[goString(unit.id), ...properties.map((_, at) => `foreignRead(reflect.ValueOf(read${at}))`)].join(', ')}}`);
+  }
   return `
 // foreignRead gives a result in the form in which an instance of a value class of another repository is what the
-// members of its in row read, so that reflect.DeepEqual compares two results by what their instances hold (GN-13e).
+// members of its in row read, and an instance of a value class with core_type of this contract its class and the values
+// of its properties, so that reflect.DeepEqual compares two results by what their instances hold (GN-13e).
 func foreignRead(value reflect.Value) any {
 	if !value.IsValid() {
 		return nil
@@ -1718,8 +1786,9 @@ func TestGN13e${label}${testName(kase.id)}(t *testing.T) {
           const same = (model.kept.length > 0 || foreignKeptClasses(model).length > 0) && holdsAlias(model, type) ? ` || places(value${i}) != places(want)` : '';
           // GN-13e: a NaN equals a NaN, while zero signs differ, also inside a nested result.
           const compare = (got: string, wanted: string): string => needsFloatComparison(given) ? `sameValue(${got}, ${wanted})` : `reflect.DeepEqual(${got}, ${wanted})`;
-          // GN-13e, B2.121: an instance of a value class of another repository is compared by what its in row reads.
-          if (holdsForeign(model, type)) {
+          // GN-13e, B2.121: an instance of a value class of another repository is compared by what its in row reads, and
+          // B2.543: one of a value class with core_type that an alias of this contract makes by its class and properties.
+          if (holdsForeign(model, type) || holdsCoreClass(model, type)) {
             v.readsForeign = true;
             return [`if want := (${typeName(v, type)})(${want}); !${compare(`foreignRead(reflect.ValueOf(value${i}))`, 'foreignRead(reflect.ValueOf(want))')}${same} {`, `\tt.Fatalf("GN-13e: %#v is not %#v", foreignRead(reflect.ValueOf(value${i})), foreignRead(reflect.ValueOf(want)))`, '}'];
           }

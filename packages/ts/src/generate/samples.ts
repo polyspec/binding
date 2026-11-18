@@ -1449,13 +1449,13 @@ function valueOf(model: Model, ctx: Context, value: unknown, where: string, maki
 }
 
 // Whether an integer of a case, a number, a bigint or a decimal text, is outside the range of i64.
-const outsideI64 = (held: unknown): boolean => {
+export const outsideI64 = (held: unknown): boolean => {
   const token = typeof held === 'bigint' ? held : typeof held === 'number' && Number.isInteger(held) ? BigInt(held) : typeof held === 'string' && /^-?(0|[1-9][0-9]*)$/.test(held) ? BigInt(held) : undefined;
   return token !== undefined && (token < -(2n ** 63n) || token >= 2n ** 63n);
 };
 
 // GN-13, B2.465: the kinds whose value an out row may make as an instance of a value class of one value.
-const CLASSED_KINDS: ReadonlySet<string> = new Set(['int', 'int64', 'float', 'text', 'bytes', 'list', 'map']);
+export const CLASSED_KINDS: ReadonlySet<string> = new Set(['int', 'int64', 'float', 'text', 'bytes', 'list', 'map']);
 
 // The value of valueOf as the built-in form of its kind makes it.
 function builtOf(model: Model, ctx: Context, value: unknown, where: string, making: Making, slot: boolean): string {
