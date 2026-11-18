@@ -12971,7 +12971,7 @@ test('the go.sum of a go.mod that requires a release holds the sums of Go, sorte
 
 test('a module that Go cannot give is a named failure, never an empty or partial go.sum (GN-15l, B2.400)', () => {
   const goMod = 'module m\n\ngo 1.27.3\n\nrequire x/y v0.0.31\n';
-  assert.throws(() => goSumOf(goMod, [{ Path: 'x/y', Version: 'v0.0.31', Error: 'x/y@v0.0.31: module lookup disabled by GOPROXY=off' }]), /go mod download gave no sum: x\/y@v0\.0\.31: module lookup disabled by GOPROXY=off/);
+  assert.throws(() => goSumOf(goMod, [{ Path: 'x/y', Version: 'v0.0.31', Error: 'x/y@v0.0.31: module lookup disabled by GOPROXY=off' }]), /go mod download gave no sum of x\/y v0\.0\.31: x\/y@v0\.0\.31: module lookup disabled by GOPROXY=off/);
   assert.throws(() => goSumOf(goMod, []), /gave no sum of x\/y v0\.0\.31, which go\.mod requires/);
   assert.throws(() => goSumOf(goMod, [{ Path: 'x/y', Version: 'v0.0.31', Sum: 'h1:a=' }]), /no go\.mod sum of x\/y v0\.0\.31/);
 });
@@ -12997,7 +12997,7 @@ test('scaffold writes the go.sum beside the go.mod, CK-19 compares it, and a mod
     writeFileSync(manifest, readFileSync(manifest, 'utf8').replace('tag = "v0.1.2"', 'tag = "v9.9.9"'));
     const missing = run('scaffold', '--root', join(root, 'plot'));
     assert.equal(missing.status, 1);
-    assert.match(missing.stderr, /binding: packages\/go\/go\.sum: not written: go mod download gave no sum: github\.com\/polyspec\/points\/packages\/go@v9\.9\.9: module lookup disabled by GOPROXY=off\n/);
+    assert.match(missing.stderr, /binding: packages\/go\/go\.sum: not written: go mod download gave no sum of github\.com\/polyspec\/points\/packages\/go v9\.9\.9: github\.com\/polyspec\/points\/packages\/go@v9\.9\.9: module lookup disabled by GOPROXY=off\n/);
     assert.equal(existsSync(goSum), false);
     assert.match(run('check', contract).stderr, /plot\/packages\/go\/go\.sum: CK-19 binding scaffold does not write it: go mod download gave no sum/);
   } finally {

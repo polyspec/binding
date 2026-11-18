@@ -269,7 +269,7 @@ test('B2.458: binding scaffold of the release form with no tag of the dependency
   // No repository of the dependency stands in the run: Git names the directory of the run.
   const absent = box.scaffold(box.run.env);
   assert.equal(absent.status, 1, absent.stderr);
-  assert.match(absent.stderr, /binding: packages\/go\/go\.sum: not written: go mod download gave no sum: /);
+  assert.match(absent.stderr, /binding: packages\/go\/go\.sum: not written: go mod download gave no sum of github\.com\/polyspec\/points\/packages\/go v0\.0\.1: /);
   assert.ok(absent.stderr.includes(`'${box.run.remotes}/polyspec/points' does not appear to be a git repository`), absent.stderr);
   assert.equal(missingRemoteProblem(absent.status, absent.stderr, box.run.remotes), undefined);
   assert.equal(box.manifests().goSum, undefined);
@@ -277,10 +277,10 @@ test('B2.458: binding scaffold of the release form with no tag of the dependency
   remote(box.run, 'polyspec/points', ['packages/go/v0.0.0']);
   const untagged = box.scaffold(box.run.env);
   assert.equal(untagged.status, 1, untagged.stderr);
-  assert.match(untagged.stderr, /go\.sum: not written: go mod download gave no sum: unknown revision packages\/go\/v0\.0\.1/);
+  assert.match(untagged.stderr, /go\.sum: not written: go mod download gave no sum of github\.com\/polyspec\/points\/packages\/go v0\.0\.1: .*unknown revision packages\/go\/v0\.0\.1/);
   // Without the configuration of the run, the same settings refuse GitHub before a connection.
   rmSync(join(box.run.root, 'gitconfig'));
   const refused = box.scaffold(box.run.env);
   assert.equal(refused.status, 1, refused.stderr);
-  assert.match(refused.stderr, /go\.sum: not written: go mod download gave no sum: fatal: transport 'https' not allowed/);
+  assert.match(refused.stderr, /go\.sum: not written: go mod download gave no sum of github\.com\/polyspec\/points\/packages\/go v0\.0\.1: .*fatal: transport 'https' not allowed/);
 });
