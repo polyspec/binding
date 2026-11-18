@@ -550,6 +550,12 @@ the design ids are those of the binding design.
   writes `pyo3::types::PyDict`, imported `PyDict` into a crate that wrote it nowhere bare, and a consumer whose lints
   deny warnings failed with `unused import: PyDict`. A pass over the written crate reads the whole text, which no
   condition over one part of it does.
+- **GN-4f** A generated Go test file imports a package, standard, of this module or of another repository, exactly
+  when its code uses the package: a selector `<package>.` in the code tokens of the file, read by the lexical rules of
+  Go, which skip the comments `//` and `/* */`, the interpreted strings `"…"` with their escapes, the raw strings
+  `` `…` `` and the runes `'…'`. Why: each import was chosen by a word match over the text of the file, so the comment
+  of `foreignRead` that names a value of a `binding.Map` imported internal/binding into the test files of orm whose
+  code does not name it, and go vet refused them with "imported and not used", so no Go test of orm ran (B2.546).
 - **GN-5** Every crate has `rust-version = "1.99.0"` and the feature `panic-test`, which adds the entry point of the
   B-7 test. The test features of a binding crate are the features of this table and no other; each adds entry points
   of the names below, the manifest that `binding scaffold` writes turns none on by default, and no release build has

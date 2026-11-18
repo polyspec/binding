@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 0eef38cb8547507514baee1f2da618e7f9ab404716b3a12a6c5cae87a670be99 -->
+<!-- source-sha256: b17e42df4a7751d94b18d199eb0e6b23f4ecdade0c7e5dfc274cf0054f1e7d74 -->
 # 생성기
 
 [English](generator.md)
@@ -456,6 +456,12 @@
   경로도 단어에 일치한다. 그래서 직접 생성을 거부하는 생성자(GN-6b)가 `pyo3::types::PyDict`를 쓰면, 어디에서도 bare로
   쓰지 않는 crate에 `PyDict`를 import했고, lint가 warning을 거부하는 consumer는 `unused import: PyDict`로 실패했다.
   작성된 crate에 대한 처리는 텍스트 전체를 읽는다. crate의 한 부분에 대한 조건은 그렇게 하지 못한다.
+- **GN-4f** 생성된 Go 시험 파일은 package(표준, 이 module의 것, 다른 레포의 것)를 그 code가 쓸 때만 import한다.
+  쓴다는 것은 파일의 code token에 selector `<package>.`이 있다는 것이다. code token은 Go 어휘 규칙으로 읽으며, 주석
+  `//`와 `/* */`, escape를 포함한 해석 문자열 `"…"`, raw 문자열 `` `…` ``, rune `'…'`를 건너뛴다. 이유: 각 import는
+  파일 text에 대한 단어 일치로 정해졌다. 그래서 `binding.Map`의 값을 적는 `foreignRead`의 주석이, code가 그것을
+  쓰지 않는 orm의 시험 파일에 internal/binding을 import했다. go vet이 그것을 "imported and not used"로 거부해 orm의 Go
+  시험이 하나도 돌지 않았다(B2.546).
 - **GN-5** 모든 crate는 `rust-version = "1.99.0"`과 B-7 시험의 진입점을 더하는 feature `panic-test`를 갖는다. 바인딩
   crate의 시험 feature는 이 표의 것뿐이다. 각 feature는 아래 이름의 진입점을 더하고, `binding scaffold`가 쓰는
   매니페스트는 어느 것도 기본으로 켜지 않으며, 릴리스 빌드에는 어느 것도 없다(G-5). `<Alias>`와 `<alias>`는 그 alias
