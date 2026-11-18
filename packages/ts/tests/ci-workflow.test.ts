@@ -565,9 +565,14 @@ test('B2.455: the entry ts of the job check runs release-candidate-assets after 
   const entries = matrix(check);
   const ts = entries.find((entry) => entry.name === 'ts');
   // It refuses a checkout with an untracked path, so it is the last target: a file that an earlier target left fails it.
-  assert.deepEqual(ts?.targets?.split(' '), ['typecheck-ts', 'unit-ts', 'release-coverage', 'release-candidate-assets']);
+  assert.deepEqual(ts?.targets?.split(' '), ['typecheck-ts', 'unit-ts', 'duplication-check', 'release-coverage', 'release-candidate-assets']);
   assert.deepEqual(entries.filter((entry) => (entry.targets ?? '').split(' ').includes('release-candidate-assets')).map((entry) => entry.name), ['ts']);
   assert.ok(!check.some((line) => /VERSION=/.test(line)), 'the job check gives a VERSION; the target reads the version of the change log');
+});
+
+test('B2.515: the entry ts of the job check runs make duplication-check, and only that entry runs it (GN-14o)', () => {
+  const entries = matrix(jobs().get('check') ?? []);
+  assert.deepEqual(entries.filter((entry) => (entry.targets ?? '').split(' ').includes('duplication-check')).map((entry) => entry.name), ['ts']);
 });
 
 // B2.455: the version of the candidate is the top section ## X.Y.Z of the change log of this checkout, which the
