@@ -96,6 +96,9 @@ jobs:
           - name: plot
             repo: tests/e2e/plot
             deps: tests/e2e/points
+          - name: ratios
+            repo: tests/e2e/ratios
+            deps: ""
           - name: sample
             repo: tests/e2e/sample
             deps: ""

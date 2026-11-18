@@ -57,6 +57,7 @@ test('B2.432: make e2e-lint lints the repositories of the matrix of the job e2e 
     { repo: 'tests/e2e/functions', deps: [] },
     { repo: 'tests/e2e/kept', deps: [] },
     { repo: 'tests/e2e/plot', deps: ['tests/e2e/points'] },
+    { repo: 'tests/e2e/ratios', deps: [] },
     { repo: 'tests/e2e/sample', deps: [] },
     { repo: 'tests/e2e/shapes', deps: [] },
     { repo: 'tests/e2e/variants', deps: [] },

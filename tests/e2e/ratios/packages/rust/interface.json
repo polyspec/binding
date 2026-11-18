@@ -1,0 +1,627 @@
+{
+  "schema": "polyspec/interface@1",
+  "library": "ratios",
+  "core": {
+    "crate": "polyspec-ratios",
+    "path": "packages/rust"
+  },
+  "targets": [
+    "php",
+    "python",
+    "node",
+    "go",
+    "wasm"
+  ],
+  "packages": {
+    "php": {
+      "package": "polyspec/ratios",
+      "namespace": "Polyspec\\Ratios"
+    },
+    "python": {
+      "package": "polyspec-ratios",
+      "module": "polyspec.ratios"
+    },
+    "node": {
+      "package": "@polyspec/ratios",
+      "entries": {
+        ".": {
+          "formats": [
+            "import",
+            "require"
+          ],
+          "conditions": {
+            "node": "napi",
+            "browser": "wasm"
+          }
+        }
+      }
+    },
+    "go": {
+      "module": "github.com/polyspec/ratios/packages/go"
+    }
+  },
+  "naming": {
+    "exceptions": []
+  },
+  "types": {},
+  "errors": {
+    "classes": {
+      "value": {
+        "php": "Polyspec\\Ratios\\RatiosValueError",
+        "python": "RatiosValueError",
+        "node": "RatiosValueError",
+        "wasm": "RatiosValueError"
+      },
+      "type": {
+        "php": "Polyspec\\Ratios\\RatiosTypeError",
+        "python": "RatiosTypeError",
+        "node": "RatiosTypeError",
+        "wasm": "RatiosTypeError"
+      },
+      "io": {
+        "php": "Polyspec\\Ratios\\RatiosIoError",
+        "python": "RatiosIoError",
+        "node": "RatiosIoError",
+        "wasm": "RatiosIoError"
+      },
+      "store": {
+        "php": "Polyspec\\Ratios\\RatiosStoreError",
+        "python": "RatiosStoreError",
+        "node": "RatiosStoreError",
+        "wasm": "RatiosStoreError"
+      },
+      "busy": {
+        "php": "Polyspec\\Ratios\\RatiosBusyError",
+        "python": "RatiosBusyError",
+        "node": "RatiosBusyError",
+        "wasm": "RatiosBusyError"
+      },
+      "internal": {
+        "php": "Polyspec\\Ratios\\RatiosInternalError",
+        "python": "RatiosInternalError",
+        "node": "RatiosInternalError",
+        "wasm": "RatiosInternalError"
+      }
+    },
+    "fixed": [
+      {
+        "lang": "php",
+        "class": "ArgumentCountError"
+      },
+      {
+        "lang": "php",
+        "class": "Error"
+      },
+      {
+        "lang": "python",
+        "class": "TypeError"
+      },
+      {
+        "lang": "node",
+        "class": "TypeError"
+      }
+    ],
+    "kinds": [
+      {
+        "variant": "polyspec_ratios::Error::Unsupported",
+        "category": "value"
+      }
+    ],
+    "binding": [],
+    "wrapped": []
+  },
+  "units": [
+    {
+      "id": "ratio",
+      "name": [
+        "ratio"
+      ],
+      "module": "",
+      "kind": "class",
+      "visibility": "public",
+      "origin": "value",
+      "core_type": "polyspec_ratios::Ratio",
+      "members": [
+        {
+          "id": "ratio.constructor",
+          "name": [
+            "constructor"
+          ],
+          "kind": "constructor",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "value"
+              ],
+              "type": "float",
+              "required": true
+            }
+          ],
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_ratios::Ratio::new"
+        },
+        {
+          "id": "ratio.value",
+          "name": [
+            "value"
+          ],
+          "kind": "property",
+          "visibility": "public",
+          "returns": "float",
+          "raises": [],
+          "wait": "none",
+          "core": {
+            "path": "polyspec_ratios::Ratio::value",
+            "receiver": "&self"
+          }
+        }
+      ]
+    },
+    {
+      "id": "quantity",
+      "name": [
+        "quantity"
+      ],
+      "module": "",
+      "kind": "alias",
+      "visibility": "public",
+      "origin": "value",
+      "core_type": "polyspec_ratios::Quantity",
+      "sequence_keys": {
+        "keys": "text"
+      },
+      "core": {
+        "in": "polyspec_ratios::quantity_from_host",
+        "out": "polyspec_ratios::quantity_to_out"
+      },
+      "in_raises": [
+        "polyspec_ratios::Error::Unsupported"
+      ],
+      "out": [
+        {
+          "kind": "null",
+          "make": {
+            "php": "null",
+            "python": "null",
+            "node": "null",
+            "go": "null",
+            "wasm": "null"
+          }
+        },
+        {
+          "kind": "float",
+          "make": {
+            "php": "float",
+            "python": "float",
+            "node": "float",
+            "go": "ratio.constructor",
+            "wasm": "float"
+          }
+        },
+        {
+          "kind": "text",
+          "make": {
+            "php": "text",
+            "python": "text",
+            "node": "text",
+            "go": "text",
+            "wasm": "text"
+          }
+        },
+        {
+          "kind": "list",
+          "make": {
+            "php": "list",
+            "python": "list",
+            "node": "list",
+            "go": "list",
+            "wasm": "list"
+          }
+        },
+        {
+          "kind": "map",
+          "when": {
+            "predicate": "sequence_keys",
+            "is": false
+          },
+          "make": {
+            "php": "map",
+            "python": "map",
+            "node": "map",
+            "go": "map",
+            "wasm": "map"
+          }
+        },
+        {
+          "kind": "map",
+          "when": {
+            "predicate": "sequence_keys",
+            "is": true
+          },
+          "make": {
+            "php": "php_object",
+            "python": "map",
+            "node": "map",
+            "go": "map",
+            "wasm": "map"
+          }
+        }
+      ],
+      "in": [
+        {
+          "php": "null",
+          "cases": [
+            {
+              "kind": "null"
+            }
+          ]
+        },
+        {
+          "php": "float",
+          "cases": [
+            {
+              "kind": "float",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "php": "string",
+          "cases": [
+            {
+              "kind": "text",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "php": "array",
+          "cases": [
+            {
+              "when": {
+                "predicate": "sequence_keys",
+                "is": true
+              },
+              "kind": "list",
+              "read": "builtin"
+            },
+            {
+              "when": {
+                "predicate": "sequence_keys",
+                "is": false
+              },
+              "kind": "map",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "python": "None",
+          "cases": [
+            {
+              "kind": "null"
+            }
+          ]
+        },
+        {
+          "python": "float",
+          "cases": [
+            {
+              "kind": "float",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "python": "str",
+          "cases": [
+            {
+              "kind": "text",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "python": "list",
+          "cases": [
+            {
+              "kind": "list",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "python": "dict",
+          "cases": [
+            {
+              "kind": "map",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "node": "null",
+          "cases": [
+            {
+              "kind": "null"
+            }
+          ]
+        },
+        {
+          "node": "number",
+          "cases": [
+            {
+              "kind": "float",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "node": "string",
+          "cases": [
+            {
+              "kind": "text",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "node": "Array",
+          "cases": [
+            {
+              "kind": "list",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "node": "Map",
+          "cases": [
+            {
+              "kind": "map",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "php": "stdClass",
+          "cases": [
+            {
+              "kind": "map",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "go": "nil",
+          "cases": [
+            {
+              "kind": "null"
+            }
+          ]
+        },
+        {
+          "go": "float64",
+          "cases": [
+            {
+              "kind": "float",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "go": "string",
+          "cases": [
+            {
+              "kind": "text",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "go": "[]any",
+          "cases": [
+            {
+              "kind": "list",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "go": "map[string]any",
+          "cases": [
+            {
+              "kind": "map",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "wasm": "null",
+          "cases": [
+            {
+              "kind": "null"
+            }
+          ]
+        },
+        {
+          "wasm": "number",
+          "cases": [
+            {
+              "kind": "float",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "wasm": "string",
+          "cases": [
+            {
+              "kind": "text",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "wasm": "Array",
+          "cases": [
+            {
+              "kind": "list",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "wasm": "Map",
+          "cases": [
+            {
+              "kind": "map",
+              "read": "builtin"
+            }
+          ]
+        },
+        {
+          "node": "ratio",
+          "cases": [
+            {
+              "kind": "float",
+              "read": "ratio.value"
+            }
+          ]
+        },
+        {
+          "go": "ratio",
+          "cases": [
+            {
+              "kind": "float",
+              "read": "ratio.value"
+            }
+          ]
+        },
+        {
+          "wasm": "ratio",
+          "cases": [
+            {
+              "kind": "float",
+              "read": "ratio.value"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "holder",
+      "name": [
+        "holder"
+      ],
+      "module": "",
+      "kind": "record",
+      "visibility": "public",
+      "origin": "generated",
+      "core_type": "polyspec_ratios::Holder",
+      "fields": [
+        {
+          "name": [
+            "qty"
+          ],
+          "type": {
+            "unit": "quantity"
+          },
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "ratios",
+      "name": [
+        "ratios"
+      ],
+      "module": "",
+      "kind": "functions",
+      "visibility": "public",
+      "origin": "generated",
+      "members": [
+        {
+          "id": "ratios.echo",
+          "name": [
+            "same"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "value"
+              ],
+              "type": {
+                "unit": "quantity"
+              },
+              "required": true
+            }
+          ],
+          "returns": {
+            "unit": "quantity"
+          },
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_ratios::echo"
+        },
+        {
+          "id": "ratios.hold",
+          "name": [
+            "hold"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "holder"
+              ],
+              "type": {
+                "unit": "holder"
+              },
+              "required": true
+            }
+          ],
+          "returns": {
+            "unit": "holder"
+          },
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_ratios::hold"
+        }
+      ]
+    }
+  ],
+  "changes": [],
+  "cases": [
+    {
+      "member": "ratios.echo",
+      "file": "contracts/cases.json",
+      "group": "echo"
+    },
+    {
+      "member": "ratios.hold",
+      "file": "contracts/cases.json",
+      "group": "hold"
+    },
+    {
+      "member": "ratio.constructor",
+      "file": "contracts/cases.json",
+      "group": "ratio_constructor"
+    },
+    {
+      "member": "ratio.value",
+      "file": "contracts/cases.json",
+      "group": "ratio_value"
+    },
+    {
+      "alias": "quantity",
+      "file": "contracts/cases.json",
+      "group": "quantity_in"
+    }
+  ]
+}

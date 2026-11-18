@@ -1,0 +1,98 @@
+{
+  "echo": [
+    {
+      "id": "a_ratio_in_a_map_comes_back",
+      "value": {
+        "kind": "list",
+        "value": [
+          {
+            "kind": "map",
+            "value": [
+              [
+                "qty",
+                {
+                  "kind": "float",
+                  "value": 1.5
+                }
+              ]
+            ]
+          }
+        ]
+      },
+      "result": {
+        "kind": "list",
+        "value": [
+          {
+            "kind": "map",
+            "value": [
+              [
+                "qty",
+                {
+                  "kind": "float",
+                  "value": 1.5
+                }
+              ]
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "a_bare_ratio_comes_back",
+      "value": {
+        "kind": "float",
+        "value": 1.5
+      },
+      "result": {
+        "kind": "float",
+        "value": 1.5
+      }
+    }
+  ],
+  "hold": [
+    {
+      "id": "a_ratio_in_a_record_comes_back",
+      "holder": {
+        "qty": {
+          "kind": "float",
+          "value": 1.5
+        }
+      },
+      "result": {
+        "qty": {
+          "kind": "float",
+          "value": 1.5
+        }
+      }
+    }
+  ],
+  "ratio_constructor": [
+    {
+      "id": "a_float_is_held",
+      "value": 0.5
+    }
+  ],
+  "ratio_value": [
+    {
+      "id": "the_float_is_kept",
+      "value": 0.5,
+      "result": 0.5
+    }
+  ],
+  "quantity_in": [
+    {
+      "id": "bytes_are_no_quantity",
+      "value": {
+        "kind": "bytes",
+        "value": {
+          "hex": "ff"
+        }
+      },
+      "raises": {
+        "kind": "unsupported",
+        "status": null,
+        "category": "value"
+      }
+    }
+  ]
+}

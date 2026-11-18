@@ -1,0 +1,17 @@
+[package]
+name = "polyspec-ratios"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license = "MIT"
+publish = false
+
+[lib]
+name = "polyspec_ratios"
+path = "src/lib.rs"
+
+[dependencies]
+polyspec-binding-core = { git = "https://github.com/polyspec/binding.git", branch = "v1/rust-core" }
+
+[lints]
+workspace = true
