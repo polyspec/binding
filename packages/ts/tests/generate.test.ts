@@ -14792,7 +14792,7 @@ console.log(JSON.stringify(found));
 });
 
 test('B2.543: Go makes the expected value of an alias by the constructor of its out row and reads a value class by its class and properties before reflect.DeepEqual (GN-13e)', () => {
-  // orm on 87cc8d61: {"qty": {"kind": "int", "value": 1}} of orm_value was written as int64(1) and never equalled the
+  // orm on the release candidate of 0.0.22: {"qty": {"kind": "int", "value": 1}} of orm_value was written as int64(1) and never equalled the
   // *orm.IntegerValue that the member gave. The sample stands for it: its data alias makes a float in Go by
   // ratio.constructor, and a case gives back a list of a map that holds one.
   const contract = JSON.parse(readFileSync(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url), 'utf8'));
