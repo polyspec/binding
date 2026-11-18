@@ -22,6 +22,19 @@ const LLVM_MAJOR = '21';
 // The PHP minors of the extension that a repository names in phpExtension.minors of config/toolchain.json (GN-19a).
 const PHP_MINORS = ['8.4', '8.5'];
 
+test('B2.544: release-wheel builds the binding crate of the Python package, native/ of a host package (GN-19c, GN-3b)', () => {
+  // hyper: a host Python package holds its crate at native/, and the wheel was built from packages/python/Cargo.toml,
+  // which does not exist there.
+  const contract = fixtureContract();
+  const wheel = (recipes: { text: string }): string => recipes.text.slice(recipes.text.indexOf('\nrelease-wheel:'), recipes.text.indexOf('\nrelease-php-ext:'));
+  const thin = wheel(releaseRecipes(contract));
+  assert.match(thin, /--manifest-path packages\/python\/Cargo\.toml /, thin);
+  const host = wheel(releaseRecipes({ ...contract, packages: { ...contract.packages, python: { ...(contract.packages.python as object), host: true } } as Contract['packages'] }));
+  assert.match(host, /--manifest-path packages\/python\/native\/Cargo\.toml /, host);
+  const component = wheel(releaseRecipes({ ...contract, core: { ...contract.core, path: 'packages/forms/rust' }, packages: { ...contract.packages, python: { ...(contract.packages.python as object), host: true } } as Contract['packages'] }));
+  assert.match(component, /--manifest-path packages\/forms\/python\/native\/Cargo\.toml /, component);
+});
+
 test('the recipes of a contract name its crates, packages and targets, and a component has its own file and targets (GN-19h)', () => {
   const contract = fixtureContract();
   const recipes = releaseRecipes(contract);
