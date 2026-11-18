@@ -5,6 +5,8 @@
 
 ## Unreleased
 
+- When `go mod download` cannot give a module, the refusal of a `go.sum` by `binding scaffold` and CK-19 names the module path and the version that Go was asked for, with the error of Go (B2.550, GN-15l). Before, it gave the error of Go alone: the release check of crud-ui failed with `go mod download gave no sum: module lookup disabled by GOPROXY=off`, which named no module. What a repository does: nothing; a failed check now names the module to download. Verified by the test of B2.550 in `packages/ts`, which failed before the change.
+
 ## 0.0.22
 
 - The generated `release-php-ext` packs the generated `<extension-name>.stub.php` beside `<extension-name>.so` into the platform zip of PIE (GN-19d, B2.530). Before, the zip held the `.so` alone, and since PIE installs that zip alone and Composer unpacks no php-ext package, no consumer got the stub, so a static analyser such as PHPStan of a consumer did not know the classes of the extension. What a repository does: nothing; once a repository pins this binding, `make release-recipes` writes the recipe that packs the stub into the zip. Verified by `node --test --test-name-pattern "B2.530" tests/release-recipes.test.ts` in `packages/ts`, which failed before the change.

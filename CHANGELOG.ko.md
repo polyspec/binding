@@ -1,10 +1,12 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: fc7bdc8537965d2929571450b8d4504bc3d1a7365e0ac7757e3d69fb136311d5 -->
+<!-- source-sha256: 45107b8d1e60b051b93493fc5a2df4ae90f71164d223d2c4a1f42b1f2e403816 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
+
+- `go mod download`가 모듈을 주지 못하면, `binding scaffold`와 CK-19의 `go.sum` 거절은 Go의 오류와 함께 Go에 물은 모듈 path와 version을 밝힌다(B2.550, GN-15l). 전에는 Go의 오류만 주었다. crud-ui의 release 검사는 모듈을 밝히지 않는 `go mod download gave no sum: module lookup disabled by GOPROXY=off`로 실패했다. 레포가 할 일: 없다. 실패한 검사가 이제 받을 모듈을 밝힌다. `packages/ts`의 B2.550 시험으로 검증했고, 이 시험은 변경 전에 실패했다.
 
 ## 0.0.22
 
