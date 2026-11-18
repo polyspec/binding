@@ -1243,6 +1243,28 @@ test('a binding crate turns on fault-test of the core of another library whose p
   }
 });
 
+// B2.548: Cargo takes an absolute path of a dependency, so scaffold reads its contract from that path as it is, not
+// under the directory of the core.
+test('B2.548: scaffold reads the contract of a path dependency given by an absolute path, without asking Cargo (GN-15f)', () => {
+  const { root } = fixtureCopy((c) => {
+    c.units[0].members[0].parameters[0].type = { unit: 'dep_part', library: 'forms-dep' };
+  });
+  try {
+    execFileSync('mkdir', ['-p', join(root, 'dep'), join(root, 'bin')]);
+    writeFileSync(join(root, 'dep/interface.json'), JSON.stringify({ library: 'forms-dep', units: [{ id: 'dep_part', kind: 'enum' }] }));
+    const manifest = join(root, 'packages/rust/Cargo.toml');
+    writeFileSync(manifest, `${readFileSync(manifest, 'utf8')}\n[dependencies]\npolyspec-forms-dep = { path = ${JSON.stringify(join(root, 'dep'))} }\n`);
+    // A cargo that fails, so only the read of the path finds the contract.
+    writeFileSync(join(root, 'bin/cargo'), '#!/bin/sh\necho "error: no matching package named polyspec-sample" >&2\nexit 101\n', { mode: 0o755 });
+    const env = { ...process.env, PATH: `${join(root, 'bin')}:${process.env['PATH'] ?? ''}` };
+    const ran = spawnSync(process.execPath, [cli, 'scaffold', '--cargo', 'cargo', '--root', root], { env, encoding: 'utf8' });
+    assert.doesNotMatch(ran.stderr, /forms-dep: the contract of the library is not found/, ran.stderr);
+    assert.equal(ran.status, 0, ran.stderr);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('scaffold rewrites its packages after the core crate was renamed, without asking Cargo', () => {
   const { root } = fixtureCopy((c) => {
     // A type of another repository, for which check and generate ask Cargo for that repository's contract.
