@@ -26,7 +26,12 @@ test('B2.544: release-wheel builds the binding crate of the Python package, nati
   // hyper: a host Python package holds its crate at native/, and the wheel was built from packages/python/Cargo.toml,
   // which does not exist there.
   const contract = fixtureContract();
-  const wheel = (recipes: { text: string }): string => recipes.text.slice(recipes.text.indexOf('\nrelease-wheel:'), recipes.text.indexOf('\nrelease-php-ext:'));
+  // The recipe of release-wheel, whose target carries the name of a component (GN-19h), to the next target.
+  const wheel = (recipes: { text: string }): string => {
+    const start = recipes.text.search(/\nrelease-wheel(-[a-z0-9-]+)?:/);
+    assert.ok(start >= 0, recipes.text.slice(0, 2000));
+    return recipes.text.slice(start, recipes.text.indexOf('\nrelease-php-ext', start));
+  };
   const thin = wheel(releaseRecipes(contract));
   assert.match(thin, /--manifest-path packages\/python\/Cargo\.toml /, thin);
   const host = wheel(releaseRecipes({ ...contract, packages: { ...contract.packages, python: { ...(contract.packages.python as object), host: true } } as Contract['packages'] }));
