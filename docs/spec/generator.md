@@ -4406,7 +4406,9 @@ the design ids are those of the binding design.
   of the job `platform` (GN-19i), so the missing declaration fails before a tag in either place.
 - **GN-19c** The Python wheel, on each platform: `$(MISE) install --locked github:PyO3/maturin`, then
   `SOURCE_DATE_EPOCH=<commit time of the tag> $(MATURIN) build --release --locked --compatibility manylinux_2_34
-  --interpreter python3 --manifest-path <package directory>/Cargo.toml --out <assets>`. `MATURIN` is the maturin of
+  --interpreter python3 --manifest-path <package directory>/Cargo.toml --out <assets>`, where the package directory is
+  that of the binding crate of the Python package: `packages/<component>/python` of a thin package (GN-3a), and its
+  `native/` of a host package (GN-3b), because a host package holds its crate there (B2.544). `MATURIN` is the maturin of
   `mise.toml` of the repository, the shim of the mise of the checkout unless the Makefile gives another path to the same
   tool, such as `link.mjs maturin` of kit; the recipe requires that `$(MATURIN) --version` prints the release of maturin
   that binding pins (`MATURIN` of `packages/ts/src/generate/packages.ts`, the release of `mise.toml` of binding) and

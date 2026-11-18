@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: dd1f43b76f998f7f8c427ffc773887ea2571b773a6e11b4acd9b39d71c08737d -->
+<!-- source-sha256: 0eef38cb8547507514baee1f2da618e7f9ab404716b3a12a6c5cae87a670be99 -->
 # 생성기
 
 [English](generator.md)
@@ -3627,7 +3627,9 @@
   `release-go-static`은 job `platform`의 빌드로 CI에서 실행되므로(GN-19i), 빠진 선언은 어느 쪽에서든 tag 전에 실패한다.
 - **GN-19c** Python wheel, 플랫폼마다: `$(MISE) install --locked github:PyO3/maturin`, 그다음
   `SOURCE_DATE_EPOCH=<tag의 commit 시각> $(MATURIN) build --release --locked --compatibility manylinux_2_34
-  --interpreter python3 --manifest-path <패키지 디렉터리>/Cargo.toml --out <assets>`. `MATURIN`은 레포의 `mise.toml`의
+  --interpreter python3 --manifest-path <패키지 디렉터리>/Cargo.toml --out <assets>`. 패키지 디렉터리는 Python package의
+  결합 crate의 디렉터리다. thin package(GN-3a)에서는 `packages/<component>/python`이고, host package(GN-3b)에서는 그
+  `native/`다. host package가 crate를 거기에 두기 때문이다(B2.544). `MATURIN`은 레포의 `mise.toml`의
   maturin이며, Makefile이 같은 도구의 다른 경로(kit의 `link.mjs maturin` 등)를 주지 않으면 checkout의 mise의 shim이다.
   recipe는 `$(MATURIN) --version`이 binding이 pin한 maturin release(`packages/ts/src/generate/packages.ts`의 `MATURIN`,
   binding의 `mise.toml`의 release)를 출력하기를 요구하고, 아니면 빌드 전에 status 2로 끝난다. `uv build`를 쓰지 않는
