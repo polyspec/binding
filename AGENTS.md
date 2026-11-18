@@ -78,7 +78,10 @@ rules of this repository.
   `make install-tools`, runs `make e2e` in a work directory of its own outside the checkout, then runs `make go-musl-check` on it
   when the check passed and the repository is no refusal fixture (GN-14k), whose run makes no released form, and the job uploads
   the record `var/report/e2e/`; the job `e2e-amd64` does the same for `tests/e2e/sample` on linux/amd64 (`make ci-e2e-amd64`); an entry
-  whose run fails stays in the matrix. A contract of `tests/e2e` whose core depends on a repository that is not in
+  whose run fails stays in the matrix. The job `release-rehearsal` runs the steps of `make ci-release` that come after
+  the tag, on a fresh checkout and with no tag and no write to GitHub (`make ci-release-rehearsal`, B2.547): `bootstrap`,
+  `install-tools TOOLS=npm`, `release-prepare`, `release-tools` and `release-candidate-assets`, the archive steps of
+  `release-assets` with no tag, each after the one before passed, so a failure of them fails `ci-passed` before a tag. A contract of `tests/e2e` whose core depends on a repository that is not in
   `tests/e2e` has no entry until a tracked file of the contract names a release tag of that repository, and
   `tests/e2e/not-in-ci.json` lists it with its reason and the condition that ends it (GN-14g). The end-to-end check of another repository is no job of the workflow: it needs a
   checkout of that repository, and the rule above requires its run of a commit before that commit is pushed or merged.

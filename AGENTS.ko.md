@@ -1,5 +1,5 @@
 <!-- doc-id: development -->
-<!-- source-sha256: 22fa36a9fb19f08a486f0861fc81d7070e80e48346aefe5275c29d466181e67e -->
+<!-- source-sha256: eb34c8e23eca09a31a535bb7ba9292fe623446b6449cc83d112ef7bede145990 -->
 # 개발
 
 [English](AGENTS.md)
@@ -70,7 +70,7 @@
   모든 job의 bootstrap이다. job `e2e`는 `tests/e2e`의 각 레포의 끝에서 끝까지 확인을 실행한다. matrix 항목은 레포마다
   하나이고 그 코어가 의존하는 레포를 `DEPS`로 준다. `make ci-e2e`는 `make install-tools`로 모든 도구를 설치하고, checkout 밖의
   자기 work 디렉터리에서 `make e2e`를 실행한 뒤 확인이 통과하고 레포가 release 형태를 만들지 않는 refusal fixture(GN-14k)가 아니면 그것으로 `make go-musl-check`를 실행하며, job은 기록
-  `var/report/e2e/`를 upload한다. job `e2e-amd64`는 linux/amd64에서 `tests/e2e/sample`에 같은 일을 한다(`make ci-e2e-amd64`). 실행이 실패하는 항목도 matrix에 남는다. 코어가 `tests/e2e`에
+  `var/report/e2e/`를 upload한다. job `e2e-amd64`는 linux/amd64에서 `tests/e2e/sample`에 같은 일을 한다(`make ci-e2e-amd64`). 실행이 실패하는 항목도 matrix에 남는다. job `release-rehearsal`은 `make ci-release`에서 tag 뒤에 오는 단계를 새 checkout에서 tag와 GitHub 쓰기 없이 돈다(`make ci-release-rehearsal`, B2.547): `bootstrap`, `install-tools TOOLS=npm`, `release-prepare`, `release-tools`, 그리고 tag 없이 `release-assets`의 archive 단계를 도는 `release-candidate-assets`를, 각각 앞 단계가 통과한 뒤에 돈다. 그래서 그 단계가 실패하면 tag 전에 `ci-passed`가 실패한다. 코어가 `tests/e2e`에
   없는 레포에 의존하는 `tests/e2e`의 계약은 그 계약의 추적되는 파일이 그 레포의 release tag를 적을 때까지 항목이 없고,
   `tests/e2e/not-in-ci.json`이 그 계약을 이유와 끝나는 조건과 함께 적는다(GN-14g). 다른 레포의
   끝에서 끝까지 확인은 workflow의 job이 아니다. 그 확인은 그 레포의 checkout이 필요하고, 위의 규칙이 commit을 push하거나
