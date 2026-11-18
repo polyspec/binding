@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 90e999965d8d997d47365c8ceb0f6d8f2ef6c1d39e2d0a1065ca5a8a9819437a -->
+<!-- source-sha256: 05265a6259b56b20732be16504c643a1e82eb114daf39b687b97f05aa8bd83ae -->
 # 생성기
 
 [English](generator.md)
@@ -2147,7 +2147,9 @@
   곳에서 실패한다. 이 머신이 fetch한 적 없는 Git 의존을 network 없이 해석할 때, 또는 manifest가 더 이상 없는 crate를 적을
   때다. 그때 `scaffold`는 Go module을 쓰지 않은 것으로 이름하고(GN-3e), Cargo의 상태와 함께 레포의 `Cargo.lock`의 crate를
   fetch하는 install target(`cargo fetch --locked`)을 실행한 뒤 `scaffold`를 다시 실행하라는 안내를 적으며, 그 계약을 읽지 않는
-  다른 target의 package는 쓴다. `check`와 `generate`는 모든 target에서 그 계약을 읽으므로 같은 안내와 함께 실패한다. 계약이 record, 값 class(GN-6x), callback unit(GN-6s)이나 Go 행이 owner의 class를 이름하는 값 alias(GN-6ar)를 이름하거나 계약이 받는 다른 라이브러리의 callback unit의 member가 그것을 이름하는(GN-3e) 라이브러리마다
+  다른 target의 package는 쓴다. `check`와 `generate`는 모든 target에서 그 계약을 읽으므로 같은 안내와 함께 실패한다. 거부는 Cargo가 쓴 오류를 먼저 주고, 그 오류가 offline에서
+  crate가 없다고 말할 때(Cargo가 `--offline`이나 offline mode를 이름할 때)만 그 안내를 적는다. `Cargo.toml`이 없는 workspace
+  구성원 같은 다른 실패는 Cargo의 오류만 준다. crate를 fetch해도 고쳐지지 않기 때문이다(B2.552). 계약이 record, 값 class(GN-6x), callback unit(GN-6s)이나 Go 행이 owner의 class를 이름하는 값 alias(GN-6ar)를 이름하거나 계약이 받는 다른 라이브러리의 callback unit의 member가 그것을 이름하는(GN-3e) 라이브러리마다
   `go.mod`에 `require <module> <version>` 줄을 적는다. Go 바인딩이 그 각각의 패키지를 import하기 때문이다(B2.87). 코어의 `polyspec-<library>` 의존 줄이 버전 `=X.Y.Z`나 tag `vX.Y.Z`를 적으면
   버전은 `vX.Y.Z`다. 이 레포 안의 `path` 옆에 그 라이브러리의 한 버전 `X.Y.Z`가 있을 때에도 그렇고(GN-3e, B2.460), 이때
   `replace` 줄은 없다. Go module의 tag를 쓰는 소비자는 `replace`를 해석할 수 없기 때문이다(GN-19f). 그 밖의 `path` 의존은 `v0.0.0`과, 이 레포의 Go module에서 그 레포의 Go module로 가는

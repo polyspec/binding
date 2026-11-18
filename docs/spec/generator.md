@@ -2602,7 +2602,10 @@ the design ids are those of the binding design.
   then names the Go module as not written (GN-3e), with the status of Cargo and the instruction to run the install
   target of the repository that fetches the crates of its `Cargo.lock` (`cargo fetch --locked`) and to run `scaffold`
   again, and writes the packages of the other targets, which do not read those contracts; `check` and `generate` read
-  them for every target, so they fail with the same instruction. For
+  them for every target, so they fail with the same instruction. The refusal gives the error that Cargo wrote first,
+  and names that instruction only when that error says that a crate is missing offline (Cargo names `--offline` or the
+  offline mode); any other failure, such as a workspace member whose `Cargo.toml` does not exist, gets the error of
+  Cargo alone, since fetching crates does not fix it (B2.552). For
   each library whose records, value classes (GN-6x) or callback units (GN-6s) the contract names, or the value
   aliases whose Go rows name a class of their owner (GN-6ar), or the members of a callback unit of another library that
   the contract takes name (GN-3e), it writes a line `require <module> <version>`
