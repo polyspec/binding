@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 90e999965d8d997d47365c8ceb0f6d8f2ef6c1d39e2d0a1065ca5a8a9819437a -->
+<!-- source-sha256: 63e33a61aae21585e64cf11409ea91c0dcc0eaa3d35cb0fb41ce9008906d3a49 -->
 # 생성기
 
 [English](generator.md)
@@ -3735,7 +3735,10 @@
   `rehearsal.git`에 만들고, 그 저장소의 alternates는 레포의 object다(`objects/info/alternates`). object나 index를 쓰는 모든
   명령은 그 저장소의 `git --git-dir`로 실행하고, commit의 identity는 `binding rehearsal`, message는 `chore(release):
   Rehearse the Go module of vX.Y.Z`이며, `git update-ref`가 거기에 tag `<directory>/vX.Y.Z`를 둔다. 그 저장소는 실행
-  사이에 남고, `git prune`이 이전 rehearsal의 object를 거기서 지운다. 위 검사의 형제 모듈은 레포에 tag가 있으면 그
+  사이에 남고, `git prune`이 이전 rehearsal의 object를 거기서 지운다. rehearsal은 매번 그 저장소에 레포의 shallow
+  파일을 주고, 레포에 없으면 주지 않는다. alternates가 가진 history는 그 파일이 말하는 곳에서 끝나기 때문이다. 그래서
+  `git prune`은 그 파일의 commit에서 멈추고, `HEAD`만 읽는 rehearsal은 CI의 depth 1 checkout처럼 어떤 depth의 shallow
+  clone에서도 끝난다(B2.553). 위 검사의 형제 모듈은 레포에 tag가 있으면 그
   tag에서 가져오며, rehearsal은 그것을 이전 실행의 rehearsal 위에 그 저장소로 push한다. tag가 없는 형제, 곧 한 version의
   첫 release 전의 모든 형제는 같은 `--work`에 있는 그 모듈의 rehearsal에서 가져오되, 그 commit의 부모가 이 실행의
   `HEAD`일 때만 그렇다. 그래서 한 레포의 모듈들은 `--work` 하나로 require의 순서대로 rehearsal한다. 둘 다 없는 형제와

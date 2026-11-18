@@ -4533,7 +4533,10 @@ the design ids are those of the binding design.
   that writes an object or the index runs with `git --git-dir` of that repository, the commit has the identity
   `binding rehearsal` and the message `chore(release): Rehearse the Go module of vX.Y.Z`, and `git update-ref`
   sets the tag `<directory>/vX.Y.Z` there. That repository is kept between runs, and `git prune` removes the
-  objects of the earlier rehearsals from it. A sibling module of the check above is taken from its tag of the
+  objects of the earlier rehearsals from it. Each rehearsal gives that repository the shallow file of the
+  repository, or none when the repository has none, because the history that its alternates hold ends where that
+  file says: so `git prune` stops at the commits of that file, and the rehearsal, which reads `HEAD` alone, ends in
+  a shallow clone of any depth, as a CI checkout of depth 1 is (B2.553). A sibling module of the check above is taken from its tag of the
   repository when it has one, which the rehearsal pushes into that repository over a rehearsal of an earlier run;
   a sibling without a tag, which is every sibling before the first release of a version, is taken from the
   rehearsal of that module in the same `--work`, when the parent of its commit is the `HEAD` of this run. So the
