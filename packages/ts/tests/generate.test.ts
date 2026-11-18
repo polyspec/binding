@@ -2000,18 +2000,19 @@ test('a scaffold whose cargo metadata fails writes no file and fails with the er
     writeFileSync(manifest, readFileSync(manifest, 'utf8').replace('polyspec-points = { path = "../../../points/packages/rust" }', 'polyspec-points = { git = "https://github.com/polyspec/points.git", branch = "main" }'));
     // A cargo that fails as it does for a Cargo.lock that the version of a manifest no longer matches.
     writeFileSync(join(root, 'bin/cargo'), '#!/bin/sh\necho "error: the lock file needs to be updated but --locked was passed" >&2\nexit 101\n', { mode: 0o755 });
-    const advice = 'cargo metadata failed with status 101; run the install target of the repository that fetches the crates of its Cargo\\.lock \\(cargo fetch --locked\\), then run the command again';
+    // B2.552: the refusal gives the error of Cargo; a stale lock is no crate missing offline, so it names no fetch.
+    const advice = 'cargo metadata failed with status 101:\\nerror: the lock file needs to be updated but --locked was passed';
     const scaffold = spawnSync(process.execPath, [cli, 'scaffold', '--cargo', 'cargo', '--root', join(root, 'plot')], { encoding: 'utf8', env });
     assert.equal(scaffold.status, 1);
-    assert.match(scaffold.stderr, /error: the lock file needs to be updated but --locked was passed\n/);
-    assert.match(scaffold.stderr, new RegExp(`\\nbinding: the contracts of the libraries that the contract names are not all found, so binding scaffold writes no file \\(GN-3e\\): ${advice}\\n$`));
+    assert.doesNotMatch(scaffold.stderr, /cargo fetch --locked/);
+    assert.match(scaffold.stderr, new RegExp(`^binding: the contracts of the libraries that the contract names are not all found, so binding scaffold writes no file \\(GN-3e\\): ${advice}\\n$`));
     assert.doesNotMatch(scaffold.stderr, /\n {4}at /);
     assert.deepEqual(readdirSync(join(root, 'plot/packages')), ['rust']);
     // check and generate read the contracts for every target, so they fail with the same instruction.
     for (const args of [['check', join(root, 'plot/packages/rust/interface.json')], ['generate', '--root', join(root, 'plot'), '--out', join(root, 'out')]]) {
       const run = spawnSync(process.execPath, [cli, ...args, '--cargo', 'cargo'], { encoding: 'utf8', env });
       assert.equal(run.status, 1, args[0]);
-      assert.match(run.stderr, new RegExp(`\\nbinding: ${advice}\\n$`), args[0]);
+      assert.match(run.stderr, new RegExp(`^binding: ${advice}\\n$`), args[0]);
     }
   } finally {
     rmSync(root, { recursive: true, force: true });
