@@ -2725,9 +2725,42 @@ ${[...new Set(['binding', ...foreign.map((f) => f.pkg)])].map((pkg) => `		case *
 `;
 }
 
-// Whether a Go text uses the package of a name: a selector `<name>.` of it (GN-4f).
+// The code of a Go text by the lexical rules of Go: each comment, `//` to the end of its line and `/*` to `*/`, and each
+// interpreted string `"…"` with its escapes, raw string `` `…` `` and rune `'…'` become a space (GN-4f).
+function goCode(text: string): string {
+  let code = '';
+  let at = 0;
+  while (at < text.length) {
+    const c = text[at] as string;
+    const next = text[at + 1];
+    let end: number;
+    if (c === '/' && next === '/') {
+      end = text.indexOf('\n', at);
+      if (end < 0) end = text.length;
+    } else if (c === '/' && next === '*') {
+      end = text.indexOf('*/', at + 2);
+      end = end < 0 ? text.length : end + 2;
+    } else if (c === '`') {
+      end = text.indexOf('`', at + 1);
+      end = end < 0 ? text.length : end + 1;
+    } else if (c === '"' || c === "'") {
+      end = at + 1;
+      while (end < text.length && text[end] !== c && text[end] !== '\n') end += text[end] === '\\' ? 2 : 1;
+      end = Math.min(end + 1, text.length);
+    } else {
+      code += c;
+      at += 1;
+      continue;
+    }
+    code += ' ';
+    at = end;
+  }
+  return code;
+}
+
+// Whether a Go text uses the package of a name: a selector `<name>.` in its code tokens (GN-4f).
 export function goUses(text: string, name: string): boolean {
-  return new RegExp(`\\b${name}\\.`).test(text);
+  return new RegExp(`(?<![\\p{L}\\p{N}_])${name}\\s*\\.`, 'u').test(goCode(text));
 }
 
 // The standard packages and the packages of the module that a test file names.
@@ -3134,7 +3167,7 @@ func TestB2${name}TakesAValueOfItsType(t *testing.T) {
   const tests = `${latin1}${map}${keyed}${aliases}${numbers}`;
   const body = `${/\bmust\(/.test(tests) ? MUST : ''}${tests}`;
   // gofmt orders the imports of a block by their path, so "testing" takes its place among them.
-  const std = [...['fmt', 'math', 'math/big', 'reflect', 'syscall', 'time'].filter((p) => new RegExp(`\\b${p.slice(p.lastIndexOf('/') + 1)}\\.`).test(body)), 'testing'].sort().map((p) => `\t"${p}"\n`).join('');
+  const std = [...['fmt', 'math', 'math/big', 'reflect', 'syscall', 'time'].filter((p) => goUses(body, p.slice(p.lastIndexOf('/') + 1))), 'testing'].sort().map((p) => `\t"${p}"\n`).join('');
   return `${goHeader()}
 
 //go:build ${goTestTag(model, 'codec_test')}
