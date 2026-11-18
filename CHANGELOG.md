@@ -6,6 +6,7 @@
 ## Unreleased
 
 - When `go mod download` cannot give a module, the refusal of a `go.sum` by `binding scaffold` and CK-19 names the module path and the version that Go was asked for, with the error of Go (B2.550, GN-15l). Before, it gave the error of Go alone: the release check of crud-ui failed with `go mod download gave no sum: module lookup disabled by GOPROXY=off`, which named no module. What a repository does: nothing; a failed check now names the module to download. Verified by the test of B2.550 in `packages/ts`, which failed before the change.
+- When `go mod download` cannot give a sibling module, `binding release-go-module` refuses the `go.sum` of the commit of a release in the same form, with the module path and the version that Go was asked for (B2.551, GN-19f). What a repository does: nothing. Verified by the test of B2.551 in `packages/ts`, which failed before the change.
 
 ## 0.0.22
 
