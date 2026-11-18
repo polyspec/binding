@@ -14791,6 +14791,22 @@ console.log(JSON.stringify(found));
   }
 });
 
+test('B2.543: the Go tests of tests/e2e/ratios compare a Ratio inside a map, inside a record and bare through foreignRead (GN-13e)', () => {
+  const root = new URL('../../../tests/e2e/ratios/', import.meta.url);
+  const contract = JSON.parse(readFileSync(new URL('packages/rust/interface.json', root), 'utf8'));
+  const cases = JSON.parse(readFileSync(new URL('contracts/cases.json', root), 'utf8'));
+  const out = generate({ contract, version: '0.0.0', coreLib: 'polyspec_ratios', caseFiles: new Map([['contracts/cases.json', cases]]), targets: ['go'] });
+  const body = String(out.get('packages/go/zz_generated_test.go'));
+  for (const want of ['[]any{map[string]any{"qty": must(NewRatio(float64(1.5)))}}', 'must(NewRatio(float64(1.5)))', 'Holder{Qty: must(NewRatio(float64(1.5)))}']) {
+    const line = body.split('\n').find((l) => l.includes(`want := `) && l.includes(want) && !(want === 'must(NewRatio(float64(1.5)))' && /map|Holder/.test(l)));
+    assert.ok(line !== undefined, want);
+    assert.match(line, /!reflect\.DeepEqual\(foreignRead\(reflect\.ValueOf\(value0\)\), foreignRead\(reflect\.ValueOf\(want\)\)\)/, line);
+  }
+  // A pointer that an unexported field holds, as a value of a binding.Map does, is made again from its address.
+  assert.match(body, /reflect\.NewAt\(value\.Type\(\)\.Elem\(\), unsafe\.Pointer\(value\.Pointer\(\)\)\)/);
+  assert.match(body, /\t"unsafe"\n/);
+});
+
 test('B2.543: Go makes the expected value of an alias by the constructor of its out row and reads a value class by its class and properties before reflect.DeepEqual (GN-13e)', () => {
   // orm on the release candidate of 0.0.22: {"qty": {"kind": "int", "value": 1}} of orm_value was written as int64(1) and never equalled the
   // *orm.IntegerValue that the member gave. The sample stands for it: its data alias makes a float in Go by

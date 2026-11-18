@@ -1234,11 +1234,18 @@ function coreClassesOfAliases(model: Model): Unit[] {
 }
 
 // GN-13e, B2.543: whether a type holds a value alias of this contract whose Go out row makes a value class with core_type.
-function holdsCoreClass(model: Model, type: Type): boolean {
+function holdsCoreClass(model: Model, type: Type, seen: Set<string> = new Set()): boolean {
   if (typeof type === 'string') return false;
   const alias = aliasOf(model, type);
   if (alias !== undefined) return alias.library === undefined && (alias.unit.out ?? []).some((row) => coreClassOf(model, row.make['go']) !== undefined);
-  return [...('tuple' in type ? type.tuple : []), ...['list', 'optional', 'map', 'keyed_map'].flatMap((key) => (key in type ? [(type as Record<string, Type>)[key] as Type] : []))].some((inner) => holdsCoreClass(model, inner));
+  const inner = [...('tuple' in type ? type.tuple : []), ...['list', 'optional', 'map', 'keyed_map'].flatMap((key) => (key in type ? [(type as Record<string, Type>)[key] as Type] : []))];
+  // A record or a variant holds one in a field (B2.543), as holdsForeign reads them.
+  const unit = unitOf(model, type);
+  if (unit !== undefined && (unit.kind === 'record' || unit.kind === 'variant') && !seen.has(unit.id)) {
+    seen.add(unit.id);
+    inner.push(...(unit.fields ?? []).map((f) => f.type), ...(unit.cases ?? []).flatMap((c) => c.fields).map((f) => f.type));
+  }
+  return inner.some((t) => holdsCoreClass(model, t, seen));
 }
 
 // GN-13bg, GN-13e: the two sides of a Go comparison of two values of a type. Values that hold an instance of a value class
@@ -1343,6 +1350,11 @@ ${reads.join('\n')}${reads.length === 0 ? '' : '\n'}		return []any{${[goString(u
 func foreignRead(value reflect.Value) any {
 	if !value.IsValid() {
 		return nil
+	}
+	// B2.543: a pointer read through an unexported field, such as a value of a binding.Map, gives no interface, so the
+	// cases of the classes would not run for it; the same pointer made again from its address does.
+	if !value.CanInterface() && value.Kind() == reflect.Pointer && !value.IsNil() {
+		value = reflect.NewAt(value.Type().Elem(), unsafe.Pointer(value.Pointer()))
 	}
 	if value.CanInterface() {
 		switch found := value.Interface().(type) {
@@ -2715,7 +2727,7 @@ ${[...new Set(['binding', ...foreign.map((f) => f.pkg)])].map((pkg) => `		case *
 
 // The standard packages and the packages of the module that a test file names.
 function testImports(model: Model, module: string, text: string, scope: GoScope, extraStd: readonly { path: string; alias: string }[] = []): string {
-  const std = ['bufio', 'context', 'encoding/hex', 'errors', 'fmt', 'io', 'log', 'math', 'math/big', 'net', 'os', 'os/exec', 'path/filepath', 'reflect', 'runtime', 'slices', 'strconv', 'strings', 'sync', 'syscall', 'weak'].filter((p) => new RegExp(`\\b${p.slice(p.lastIndexOf('/') + 1)}\\.`).test(text)).map((p) => `"${p}"`);
+  const std = ['bufio', 'context', 'encoding/hex', 'errors', 'fmt', 'io', 'log', 'math', 'math/big', 'net', 'os', 'os/exec', 'path/filepath', 'reflect', 'runtime', 'slices', 'strconv', 'strings', 'sync', 'syscall', 'unsafe', 'weak'].filter((p) => new RegExp(`\\b${p.slice(p.lastIndexOf('/') + 1)}\\.`).test(text)).map((p) => `"${p}"`);
   // Owned-text helpers declare their imports without interpreting ordinary literals as code.
   std.push(...extraStd.map(({ path, alias }) => `${alias} ${goString(path)}`));
   std.push('"testing"');
