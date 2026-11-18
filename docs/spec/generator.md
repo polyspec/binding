@@ -52,7 +52,11 @@ the design ids are those of the binding design.
   usage line would say that the command was written wrong when it was not. The command generates each target on a
   thread of its own with a stack of 1 GiB and waits for it, so a case value nested past the depth limit of its core
   (hundreds of levels, each several frames of the generator) is generated as the case gives it; the stack of the main
-  thread holds less, and a generation that overflowed it would fail by chance of the depth.
+  thread holds less, and a generation that overflowed it would fail by chance of the depth. A process keeps one such
+  thread and gives it each generation in turn, and a generation leaves nothing in it that changes a later one; a thread
+  that ends fails the generation that it held with its cause, and the next generation starts a new thread. Why: a
+  thread that loads its module as TypeScript leaves the address space of its type stripping in the process when it
+  ends, and a process that started a thread for each generation grew past what Linux lets a process fork (B2.542).
 - **GN-1d** Every call of Cargo by binding runs the cargo command that the repository gives, with the arguments of a
   build that the repository gives, and never the `cargo` of `PATH`. The commands that run Cargo, `binding check`,
   `binding scaffold` and `binding generate` (`cargo metadata --locked --offline`, GN-15f) and `binding go-link`

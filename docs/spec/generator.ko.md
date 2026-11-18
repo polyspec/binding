@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 0bdf0ff13a84245a5e92877bae054bd4c584c16ea8208fb29aebf2b4f0b5274c -->
+<!-- source-sha256: 7aaa15323d3096a6e4503cd605ee3749e853bf189422137305461a54cb7c7753 -->
 # 생성기
 
 [English](generator.md)
@@ -35,6 +35,10 @@
   이름하며, usage 줄은 명령을 잘못 적지 않았는데도 잘못 적었다고 말하기 때문이다. 명령은 각 target을 1 GiB stack을
   가진 자기 thread에서 생성하고 그것을 기다린다. 그래서 코어의 깊이 한계를 넘게 중첩된 case 값(수백 단계, 단계마다 생성기의
   frame 여럿)도 case가 주는 대로 생성된다. main thread의 stack은 그보다 작고, 그것을 넘친 생성은 깊이에 따라 우연히 실패한다.
+  process는 그런 thread 하나를 두고 각 generation을 차례로 그것에 주며, generation은 그 안에 뒤 generation을 바꾸는 것을
+  남기지 않는다. 끝난 thread는 자기가 가진 generation을 그 원인과 함께 실패시키고, 다음 generation이 새 thread를 띄운다.
+  이유: 자기 module을 TypeScript로 load하는 thread는 끝날 때 type stripping의 주소 공간을 process에 남기며, generation마다
+  thread를 띄운 process는 Linux가 process의 fork를 허락하는 크기를 넘었다(B2.542).
 - **GN-1d** binding의 모든 Cargo 호출은 저장소가 주는 cargo 명령을 저장소가 주는 build 인자와 함께 실행하며, `PATH`의
   `cargo`를 실행하지 않는다. Cargo를 실행하는 명령, 곧 `binding check`, `binding scaffold`, `binding generate`(`cargo metadata
   --locked --offline`, GN-15f)와 `binding go-link`(`cargo rustc`, GN-15k)는 저장소의 `$(CARGO)` 값인 `--cargo <command>`를
