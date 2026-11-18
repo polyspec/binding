@@ -601,7 +601,12 @@ test('B2.479: the go.sum of the commit takes the two lines of each sibling, and 
     `go.sum holds the line \`${VALIDATOR} v0.0.1/go.mod h1:other=\` of a Go module of this repository, and the commit of its tag has the hash h1:validatormod=: remove the line, since no tracked go.sum holds the hash of a module that the release itself commits (GN-15l)`,
   ]);
   assert.throws(() => goSumWith('', [{ Path: VALIDATOR, Version: 'v0.0.1', GoModSum: 'h1:validatormod=' }]), /go mod download gave no sum of github\.com\/polyspec\/sample\/packages\/validator\/go v0\.0\.1/);
-  assert.throws(() => goSumWith('', [{ Path: VALIDATOR, Error: 'unknown revision' }]), /go mod download gave no sum: unknown revision/);
+  assert.throws(() => goSumWith('', [{ Path: VALIDATOR, Error: 'unknown revision' }]), /go mod download gave no sum of github\.com\/polyspec\/sample\/packages\/validator\/go: unknown revision/);
+});
+
+// B2.551: the error of Go alone names no module, so the refusal names the sibling and its version (the form of B2.550).
+test('B2.551: a sibling that Go could not give is refused with its module path, its version and the error of Go (GN-19f)', () => {
+  assert.throws(() => goSumWith('', [{ Path: VALIDATOR, Version: 'v0.0.1', Error: 'unknown revision packages/validator/go/v0.0.1' }]), /go mod download gave no sum of github\.com\/polyspec\/sample\/packages\/validator\/go v0\.0\.1: unknown revision packages\/validator\/go\/v0\.0\.1/);
 });
 
 test('B2.479: a run after a release that stopped between two modules goes on: the tag that names the commit of the run stays, and the module that failed is released (GN-19f)', (t) => {
