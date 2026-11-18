@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: b17e42df4a7751d94b18d199eb0e6b23f4ecdade0c7e5dfc274cf0054f1e7d74 -->
+<!-- source-sha256: 5942f161ea6f1a37d26da2031f6b497056c64e3f48ea7f98a209cfc5d7c986c7 -->
 # 생성기
 
 [English](generator.md)
@@ -2142,7 +2142,7 @@
   `generate`의 Go target을 그 라이브러리와 이유와 함께 거부하고 다른 target은 생성한다(GN-1c). `scaffold`가 Go module만 쓰지
   않은 것으로 이름하는 것과 같다(GN-3e). `binding scaffold`는 `binding generate`처럼 계약이
   이름하는 라이브러리마다 그 계약을 읽는다. 코어의 `path` 의존의 계약은 그 경로의 `interface.json`이라 Cargo가 필요
-  없고, 다른 의존의 계약은 `cargo metadata --locked --offline`으로 찾는다. 이 명령은 레포의 `Cargo.lock`을 그대로 읽고 다시
+  없다. 상대 경로는 그것을 적은 코어의 디렉터리에서 읽고 절대 경로는 그대로 읽는다. Cargo도 둘을 그렇게 읽는다(B2.548). 다른 의존의 계약은 `cargo metadata --locked --offline`으로 찾는다. 이 명령은 레포의 `Cargo.lock`을 그대로 읽고 다시
   쓰지 않으며, 머신이 fetch한 crate만 읽으므로 binding의 명령은 network에 기대지 않는다. `cargo metadata`는 workspace를 해석하므로 Cargo가 그것을 해석할 수 없는
   곳에서 실패한다. 이 머신이 fetch한 적 없는 Git 의존을 network 없이 해석할 때, 또는 manifest가 더 이상 없는 crate를 적을
   때다. 그때 `scaffold`는 Go module을 쓰지 않은 것으로 이름하고(GN-3e), Cargo의 상태와 함께 레포의 `Cargo.lock`의 crate를

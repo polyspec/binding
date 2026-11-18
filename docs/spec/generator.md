@@ -2593,7 +2593,8 @@ the design ids are those of the binding design.
   Go module (`packages.go`) refuses the Go target of `generate` with the library and that reason, and the other
   targets are generated (GN-1c), as `scaffold` names the Go module alone as not written (GN-3e). `binding scaffold` reads the contract of each library that the
   contract names, as `binding generate` does: the contract of a `path` dependency of the core is the `interface.json`
-  of that path, which needs no Cargo, and the contract of any other dependency is found through
+  of that path, which needs no Cargo, a relative path read from the directory of the core that names it and an
+  absolute one as it is, as Cargo reads both (B2.548), and the contract of any other dependency is found through
   `cargo metadata --locked --offline`, which reads the `Cargo.lock` of the repository as it is and never writes it, and
   reads only the crates that the machine fetched, so a command of binding depends on no network.
   `cargo metadata` resolves the workspace, so it fails where Cargo cannot resolve it: without network for a Git
