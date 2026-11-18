@@ -122,7 +122,7 @@ test('every upload of a job runs after a failed step (AGENTS, HR-86)', () => {
     }
   }
   const withMatrix = [...jobs()].filter(([, job]) => job.includes('      matrix:'));
-  assert.deepEqual(withMatrix.map(([name]) => name), ['check', 'e2e', 'consumers']);
+  assert.deepEqual(withMatrix.map(([name]) => name), ['check', 'e2e']);
   for (const [name, job] of withMatrix) assert.ok(job.includes('      fail-fast: false'), `the matrix of ${name} cancels its other entries after a failure`);
 });
 
@@ -267,29 +267,6 @@ test('B2.278: make ci-e2e-amd64 is make ci-e2e of tests/e2e/sample (GN-14g)', (t
   const ran = run('ci-e2e-amd64', []);
   assert.equal(ran.status, 0, ran.output);
   assert.deepEqual(ran.calls.map((c) => [c.goal, c.vars]), [['ci-e2e', { REPO: 'tests/e2e/sample', DEPS: '' }]]);
-});
-
-test('B2.494: make ci-consumers builds dist, stops at a failed build, runs consumer-gate of JOB in a work directory of its own and removes it in every case (GN-14m, HR-87)', (t) => {
-  const { run, temp } = recipes(t);
-  const passed = run('ci-consumers', ['JOB=small']);
-  assert.equal(passed.status, 0, passed.output);
-  assert.deepEqual(passed.calls.map((c) => c.goal), ['dist', 'consumer-gate'], passed.output);
-  const gate = passed.calls[1];
-  assert.equal(gate?.vars['JOB'], 'small');
-  assert.ok(gate?.workIsDirectory === true && (gate.vars['WORK'] ?? '').startsWith(`${temp}/`), 'make consumer-gate gets no work directory under the temporary directory');
-  assert.deepEqual(readdirSync(temp), [], 'make ci-consumers leaves its work directory');
-
-  const gateFailed = run('ci-consumers', ['JOB=small'], ['consumer-gate']);
-  assert.notEqual(gateFailed.status, 0, 'make ci-consumers passes after a failed consumer-gate');
-  assert.deepEqual(readdirSync(temp), [], 'make ci-consumers leaves its work directory after a failure');
-
-  const distFailed = run('ci-consumers', ['JOB=small'], ['dist']);
-  assert.notEqual(distFailed.status, 0, 'make ci-consumers passes after a failed build of dist');
-  assert.deepEqual(distFailed.calls.map((c) => c.goal), ['dist'], 'make ci-consumers runs the consumers without the CLI of the run');
-
-  const usage = run('ci-consumers', []);
-  assert.equal(usage.status, 2, usage.output);
-  assert.deepEqual(usage.calls, []);
 });
 
 test('the job e2e runs the end-to-end check of every repository of tests/e2e that waits for no other repository and uploads its record (GN-14, GN-14f, GN-14g)', () => {
@@ -452,6 +429,17 @@ test('B2.547: make ci-release-rehearsal runs the release steps after the tag wit
     assert.notEqual(failed.status, 0, `make ci-release-rehearsal passes after a failed ${goal}`);
     assert.deepEqual(steps(failed.calls), order.slice(0, index + 1), `make ci-release-rehearsal goes on after a failed ${goal}`);
   }
+});
+
+// B2.549: GN-14m is retired. A consumer verifies a release of binding in its own CI after it pins it, so no job of
+// binding runs the consumers, ci-passed needs no such job, and the gate's list, recipes and scripts are gone.
+test('B2.549: no job runs the consumers, ci-passed needs none, and the gate has no list, recipe or script', () => {
+  const all = jobs();
+  assert.ok(!all.has('consumers'), 'the workflow has a job consumers');
+  assert.ok(!(all.get('ci-passed') ?? []).some((l) => /^ {4}needs: \[.*\bconsumers\b.*\]$/.test(l)), 'ci-passed needs the job consumers');
+  const makefile = readFileSync(`${top}Makefile`, 'utf8');
+  for (const goal of ['ci-consumers', 'consumer-gate']) assert.doesNotMatch(makefile, new RegExp(`^${goal}:`, 'm'), `the Makefile has the goal ${goal}`);
+  for (const path of ['config/consumers.json', 'scripts/consumer-gate.mts', 'scripts/consumer-gate-run.mts']) assert.ok(!existsSync(`${top}${path}`), `${path} is still there`);
 });
 
 test('B2.547: the job release-rehearsal runs make ci-release-rehearsal and ci-passed needs it', () => {
