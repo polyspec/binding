@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 207b7262debf8c9b3a6f15ef2d9600add0e25103d3d149a55d82b5cbe003e667 -->
+<!-- source-sha256: c7be3928273d9f851f914e7d335191f4798ff968f3afd296adb163cba6f44b41 -->
 # 생성기
 
 [English](generator.md)
@@ -3701,7 +3701,8 @@
   그 저장소를 읽기 때문이다. 명령은 commit 전에 위 검사의 형제 모듈 각각의 tag의 commit을 그 tag로 그 저장소에 push하고,
   `--work`의 모듈 안에서 소비자의 설정으로 형제마다 `go mod download -json <module>@<version>`을 실행한다. 그 `Sum`과
   `GoModSum`이 commit의 `go.sum`의 줄이다(GN-15g). 명령은 그 뒤 module cache를 지우므로 소비자는 형제 모듈을 다시
-  받는다. 추적된 `go.sum`이 형제 모듈에 다른 hash를 주면 commit 전에 그 줄을 대며 거부한다. B2.479 전에는 그 저장소가
+  받는다. Go가 주지 못한 형제 모듈은 Go에 물은 모듈 path와 version, 그리고 Go의 오류와 함께 거부한다(B2.551, B2.550의 꼴).
+  추적된 `go.sum`이 형제 모듈에 다른 hash를 주면 commit 전에 그 줄을 대며 거부한다. B2.479 전에는 그 저장소가
   실행의 모듈의 tag만 가졌다. 같은 레포의 validator 모듈을 require하는 crud-ui의 generator 모듈의 release는 두 실행의
   순서가 어느 쪽이든 소비자의 `go mod tidy`에서 `unknown revision packages/validator/go/v0.0.1`로 실패했고, 원인을
   말하는 문장이 없었다. 한 레포의 두 모듈 사이에서 멈춘 release는 그대로 다시 실행한다. 명령은 이 실행의 commit을

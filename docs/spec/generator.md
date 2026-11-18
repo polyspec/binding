@@ -4490,7 +4490,8 @@ the design ids are those of the binding design.
   sibling of the check above into it under that tag, and runs `go mod download -json <module>@<version>` for each
   in a module of `--work` with the settings of the consumer, whose `Sum` and `GoModSum` are the lines of the
   `go.sum` of the commit (GN-15g); it removes the module cache after it, so the consumer fetches each sibling
-  again. A tracked `go.sum` that gives a sibling another hash is refused with its line, before the commit. Before
+  again. A sibling that Go cannot give is refused with the module path and the version that Go was asked for and
+  the error of Go (B2.551, the form of B2.550). A tracked `go.sum` that gives a sibling another hash is refused with its line, before the commit. Before
   B2.479 that repository held the tag of the module of the run alone: the release of the generator module of
   crud-ui, which requires the validator module of the same repository, failed in `go mod tidy` of the consumer
   with `unknown revision packages/validator/go/v0.0.1` in either order of the two runs, with no word of the cause.
