@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 7aaa15323d3096a6e4503cd605ee3749e853bf189422137305461a54cb7c7753 -->
+<!-- source-sha256: dd1f43b76f998f7f8c427ffc773887ea2571b773a6e11b4acd9b39d71c08737d -->
 # 생성기
 
 [English](generator.md)
@@ -2642,7 +2642,10 @@
   `[{"qty": {"kind": "int", "value": 1}}]`이 Python에서 실패했다(B2.507). Node와 WASM에서 `ordered`는
   `assert.deepStrictEqual`이 비교하기 전에 그런 instance를 그 class 이름과, 각각 다시 ordered한 property의 값들로 바꾼다.
   이유: napi나 wasm-bindgen class는 getter가 prototype에 있고 own property가 없어, 다른 값을 담은 두 instance가 같게
-  비교되었다(B2.510).
+  비교되었다(B2.510). Go에서 value alias의 기대값은 그 Go out row가 인스턴스를 만드는 곳에서 그 row의 생성자가 만드는
+  인스턴스다. 그리고 `reflect.DeepEqual`이 비교하기 전에 두 쪽은 `core_type`을 가진 value class의 인스턴스를 그 class와
+  property 값들로 읽으며, list, map, 안의 class를 거쳐서도 그렇게 한다. 이유: 그런 class는 그 값의 handle을 감싼 struct이고,
+  orm의 `"qty": {"kind": "int", "value": 1}`은 `int64(1)`로 쓰여서 member가 준 `*IntegerValue`와 결코 같지 않았다(B2.543).
   결과를 담은 case의 키는 그 `cases` 행의 `result`이거나
   `result`다(CK-22). 값은 case가 주는 대로 쓴다. `int64` 결과는 Node `bigint`, tuple은 Python tuple과 Go 배열 또는 Go 함수의
   결과들, `bytes`는 `{"hex": ...}`다. 키가 없는 case는 호출만 실행하며, 실패하면 시험이 실패한다.

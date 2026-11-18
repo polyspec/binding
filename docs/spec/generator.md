@@ -3224,6 +3224,11 @@ the design ids are those of the binding design.
   failed in Python (B2.507). In Node and WASM `ordered` makes such an instance its class name and the values of its
   properties, each ordered again, before `assert.deepStrictEqual` compares them. Why: a napi or wasm-bindgen class has
   its getters on the prototype and no own property, so two instances that hold other values compared equal (B2.510).
+  In Go the expected value of a value alias is the instance that the constructor of its Go out row makes, where that
+  row makes one, and both sides read an instance of a value class with `core_type` as its class and the values of its
+  properties, through lists, maps and nested classes, before `reflect.DeepEqual` compares them. Why: such a class is a
+  struct around the handle of its value, and orm's `"qty": {"kind": "int", "value": 1}` was written as `int64(1)` and
+  never equalled the `*IntegerValue` that the member gave (B2.543).
   The key of the case that holds the result is the `result` of its `cases` row, or
   `result` (CK-22). A value is written as the case gives it: an `int64` result is a Node `bigint`, a tuple is a Python
   tuple and a Go array or the results of a Go function, `bytes` is `{"hex": ...}`. A case without the key runs the
