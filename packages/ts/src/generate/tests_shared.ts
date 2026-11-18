@@ -8,7 +8,7 @@ import { type After, type CallbackHow, type Context, type MadeForm, type Receive
 import { jsString } from './text.ts';
 import { jsArguments, jsDeclaredMember, placeTests, refusedJs } from './callback_arguments.ts';
 import { foreignClassNames, foreignReaders, holdsForeign, nodeForeignRead } from './value_class.ts';
-import type { Unit } from '../contract.ts';
+import type { Type, Unit } from '../contract.ts';
 
 // B-2: the numbers that break the rule of each number type (kind invalid_number), and the values of another type than
 // the number that the place takes (kind invalid_argument_type, GN-12a), a null only where it is no absent value.
@@ -330,13 +330,15 @@ export const exactClassOf = (model: Model, lang: 'node' | 'wasm' | 'python', cls
 
 // K-2: the callback parameter of a member, by the unit of its callback, and the arguments of a call of the member: args
 // with a callback made as how says, the other arguments those of a case that reaches the callback where one exists
-// (GN-13y); placed (GN-6bu) with a value at the place of a test of the arguments of a callback.
-export function callbackOf(model: Model, ctx: Context, fn: Fn, classGiven: ReturnType<typeof classCaseArgs>): { unit: Unit | undefined; args: (how: CallbackHow) => string; placed: (place: ReturnType<typeof placeTests>[number], value: string) => string } {
+// (GN-13y); placed (GN-6bu) with a value at the place of a test of the arguments of a callback. type is the type of
+// the callback parameter, whose return type the K-2 test of a result of another type reads (judgesCallbackResult).
+export function callbackOf(model: Model, ctx: Context, fn: Fn, classGiven: ReturnType<typeof classCaseArgs>): ({ unit: Unit; type: Type } | { unit: undefined; type: Type | undefined }) & { args: (how: CallbackHow) => string; placed: (place: ReturnType<typeof placeTests>[number], value: string) => string } {
   const callback = callbackArg(model, fn);
   const reaching = callbackReachingArgs(model, fn);
   const unit = callback === undefined ? undefined : unitOf(model, callback.type);
+  const typed: { unit: Unit; type: Type } | { unit: undefined; type: Type | undefined } = unit === undefined || callback === undefined ? { unit: undefined, type: callback?.type } : { unit, type: callback.type };
   return {
-    unit,
+    ...typed,
     args: (how) => callArgs(model, ctx, fn, (arg) => (arg === callback && unit !== undefined ? ctx.callbackNew(unit, how) : reaching === undefined ? otherValue(model, ctx, arg, classGiven, true) : caseValue(model, ctx, arg, reaching))),
     placed: (place, value) => callArgs(model, ctx, fn, (arg) => (arg === place.arg ? value : place.form === 'unit' && reaching !== undefined ? caseValue(model, ctx, arg, reaching) : otherValue(model, ctx, arg, classGiven, place.form === 'unit'))),
   };
