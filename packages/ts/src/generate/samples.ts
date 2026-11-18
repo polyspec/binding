@@ -79,6 +79,14 @@ export interface Context {
 }
 
 // G-5, GN-6aq: the state of a case value of the type cancel, {"cancel": "fired"} or {"cancel": "open"}.
+// G-5: the n of {"kind": "list", "repeat": n, "value": <value>}, refused unless it is an integer of at least 1 and the
+// record has those three members; shown gives the case value as the refusal shows it.
+export function listRepeat(record: Record<string, unknown>, where: string, shown: () => string): number {
+  const repeat = record['repeat'];
+  if (typeof repeat !== 'number' || !Number.isSafeInteger(repeat) || repeat < 1 || Object.keys(record).length !== 3) throw new Unsupported(`a case value of ${where} is {"kind": "list", "repeat": <n of at least 1>, "value": <value>}, not ${shown()}`);
+  return repeat;
+}
+
 export function cancelState(value: unknown): boolean {
   const state = typeof value === 'object' && value !== null ? (value as { cancel?: unknown }).cancel : undefined;
   if (state !== 'fired' && state !== 'open') throw new Unsupported(`a case value of the type cancel is {"cancel": "fired" | "open"}, not ${shown(value)} (G-5)`);
@@ -908,8 +916,7 @@ export function foreignSteps(alias: ValueAlias, lang: Lang, value: unknown, wher
   }
   if (make.form === 'list') {
     if (record['repeat'] !== undefined) {
-      const repeat = record['repeat'];
-      if (typeof repeat !== 'number' || !Number.isSafeInteger(repeat) || repeat < 1 || Object.keys(record).length !== 3) throw new Unsupported(`a case value of ${where} is {"kind": "list", "repeat": <n of at least 1>, "value": <value>}, not ${shown(value)} (G-5)`);
+      const repeat = listRepeat(record, where, () => `${shown(value)} (G-5)`);
       return { form: 'repeat', make: make.member, repeat, inner: foreignSteps(alias, lang, held, where) };
     }
     if (!Array.isArray(held)) throw new Unsupported(`a case value of the kind list of ${where} holds a list of values, not ${shown(held)} (G-5)`);
@@ -1503,8 +1510,7 @@ function builtOf(model: Model, ctx: Context, value: unknown, where: string, maki
   // G-5: {"kind": "list", "repeat": n, "value": <value>} is n lists, each the one item of the one around it, the
   // innermost holding the value; the test makes them in a loop, as a value nested deeper than a JSON reader takes.
   if (kind === 'list' && record['repeat'] !== undefined) {
-    const repeat = record['repeat'];
-    if (typeof repeat !== 'number' || !Number.isSafeInteger(repeat) || repeat < 1 || Object.keys(record).length !== 3) throw new Unsupported(`a case value of ${where} is {"kind": "list", "repeat": <n of at least 1>, "value": <value>}, not ${shown(value)}`);
+    const repeat = listRepeat(record, where, () => shown(value));
     const inner = valueOf(model, ctx, held, where, making, false);
     if (lang === 'python') return `__import__("functools").reduce(lambda inner, _: [inner], range(${repeat}), ${inner})`;
     if (lang === 'node') return `Array.from({ length: ${repeat} }).reduce((inner) => [inner], ${inner})`;

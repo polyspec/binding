@@ -163,17 +163,23 @@ export interface ForeignReader {
 // GN-13e, GN-13bg, B2.121: whether a type holds an instance of a value class of another repository, at any place of a
 // list, an optional, a map, a tuple, a record or a variant. A test that compares two values of such a type reads both
 // through the in row.
-export function holdsForeign(model: Model, type: Type, seen: Set<string> = new Set()): boolean {
+export function holdsForeign(model: Model, type: Type): boolean {
+  return holdsAliasWhere(model, type, (alias) => alias.library !== undefined && alias.unit.kind === 'class');
+}
+
+// Whether a type holds an alias that judge takes: the alias itself, an item of a tuple, a list, an optional or a map,
+// or a field of a record or a variant, each record and variant read once.
+export function holdsAliasWhere(model: Model, type: Type, judge: (alias: NonNullable<ReturnType<typeof aliasOf>>) => boolean, seen: Set<string> = new Set()): boolean {
   if (typeof type === 'string') return false;
   const alias = aliasOf(model, type);
-  if (alias !== undefined) return alias.library !== undefined && alias.unit.kind === 'class';
+  if (alias !== undefined) return judge(alias);
   const inner = [...('tuple' in type ? type.tuple : []), ...['list', 'optional', 'map', 'keyed_map'].flatMap((key) => (key in type ? [(type as Record<string, Type>)[key] as Type] : []))];
   const unit = unitOf(model, type);
   if (unit !== undefined && (unit.kind === 'record' || unit.kind === 'variant') && !seen.has(unit.id)) {
     seen.add(unit.id);
     inner.push(...(unit.fields ?? []).map((f) => f.type), ...(unit.cases ?? []).flatMap((c) => c.fields).map((f) => f.type));
   }
-  return inner.some((t) => holdsForeign(model, t, seen));
+  return inner.some((t) => holdsAliasWhere(model, t, judge, seen));
 }
 
 export function foreignReaders(model: Model, lang: Lang): ForeignReader[] {

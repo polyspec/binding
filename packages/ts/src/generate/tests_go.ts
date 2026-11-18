@@ -16,7 +16,7 @@
 // type (a method of the interface returns its declared type).
 
 import type { Contract, Member, Name, Type, Unit } from '../contract.ts';
-import { classIn, holdsForeign } from './value_class.ts';
+import { classIn, holdsAliasWhere, holdsForeign } from './value_class.ts';
 import { computedRule, defaultCaseValue } from './defaults.ts';
 import { countsThrownGo, numberTypes } from './go_rust.ts';
 import {
@@ -34,7 +34,7 @@ import {
 import {
   type Fixture, type MadeRaise, type RaisingCase, convertedCause, boundName, type Receiver, sampleInstance, aliasCases, mapEntries, caseKey, casePascal, casePathOf, checkCaseNames, comparableResult, expectedErrno, fixtureOf, fixturesOf, implementerInstance, instanceOf, interfaceInstance, isInstanceValue, pairsReceiver, valueClassReceiver, raisingCases, resultCases, sampleReceiver, stringCases, type After, FIXTURE_RAISED, argsOf, callbackCases, callbackReachingArgs, classCaseArgs, floatToken, memberById, raisesException, keptOf, type ForeignStep, foreignSteps, aliasOutForm, caseValueBytes, keyedField, outKeyForm, callbackInstance, cancelState, ownerModel, caseFilesOf, ServiceValue, serviceValueOf, serviceChangeOf, servicePeerOf, serviceSteps, type CaseService,
   caseTextParts, BYTE_NAME_LINUX, caseListenerOf, CASE_JSON_STRING_GOLDENS,
-  fixtureType, ROW_EXCEPTION, notAFunctionValue, outsideI64, CLASSED_KINDS,
+  fixtureType, ROW_EXCEPTION, notAFunctionValue, outsideI64, CLASSED_KINDS, listRepeat,
 } from './samples.ts';
 import { heldMembers } from './tests_shared.ts';
 
@@ -540,8 +540,7 @@ function aliasBuilt(model: Model, unit: Unit | undefined, json: unknown, where: 
   }
   // G-5: {"kind": "list", "repeat": n, "value": <value>} is n lists, each the one item of the one around it.
   if (kind === 'list' && record['repeat'] !== undefined) {
-    const repeat = record['repeat'];
-    if (typeof repeat !== 'number' || !Number.isSafeInteger(repeat) || repeat < 1 || Object.keys(record).length !== 3) throw new Unsupported(`a case value of ${where} is {"kind": "list", "repeat": <n of at least 1>, "value": <value>}, not ${JSON.stringify(json)}`);
+    const repeat = listRepeat(record, where, () => JSON.stringify(json));
     const inner = aliasPart(model, unit, held, where, making);
     const local = making.b.fresh('list');
     making.fills.push(`var ${local} any = ${inner}`, `for range ${repeat} {`, `\t${local} = []any{${local}}`, '}');
@@ -1235,18 +1234,9 @@ function coreClassesOfAliases(model: Model): Unit[] {
 }
 
 // GN-13e, B2.543: whether a type holds a value alias of this contract whose Go out row makes a value class with core_type.
-function holdsCoreClass(model: Model, type: Type, seen: Set<string> = new Set()): boolean {
-  if (typeof type === 'string') return false;
-  const alias = aliasOf(model, type);
-  if (alias !== undefined) return alias.library === undefined && (alias.unit.out ?? []).some((row) => coreClassOf(model, row.make['go']) !== undefined);
-  const inner = [...('tuple' in type ? type.tuple : []), ...['list', 'optional', 'map', 'keyed_map'].flatMap((key) => (key in type ? [(type as Record<string, Type>)[key] as Type] : []))];
-  // A record or a variant holds one in a field (B2.543), as holdsForeign reads them.
-  const unit = unitOf(model, type);
-  if (unit !== undefined && (unit.kind === 'record' || unit.kind === 'variant') && !seen.has(unit.id)) {
-    seen.add(unit.id);
-    inner.push(...(unit.fields ?? []).map((f) => f.type), ...(unit.cases ?? []).flatMap((c) => c.fields).map((f) => f.type));
-  }
-  return inner.some((t) => holdsCoreClass(model, t, seen));
+// A record or a variant holds one in a field (B2.543), as holdsForeign reads them.
+function holdsCoreClass(model: Model, type: Type): boolean {
+  return holdsAliasWhere(model, type, (alias) => alias.library === undefined && (alias.unit.out ?? []).some((row) => coreClassOf(model, row.make['go']) !== undefined));
 }
 
 // GN-13bg, GN-13e: the two sides of a Go comparison of two values of a type. Values that hold an instance of a value class
