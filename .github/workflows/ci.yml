@@ -189,12 +189,21 @@ jobs:
           name: consumers-${{ matrix.job }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: var/report/consumer-gate/
           if-no-files-found: error
+  # B2.547: the steps of make ci-release after the tag, on a fresh checkout with no tag and no write to GitHub, so a
+  # failure of them fails ci-passed and no release tags the commit.
+  release-rehearsal:
+    runs-on: ubuntu-26.04-arm
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/bootstrap
+      - name: make ci-release-rehearsal
+        run: make ci-release-rehearsal
   # The job that fails the run when any other job did not pass, so a release, which takes a successful run by its id,
   # holds every job. It runs after every other job, also after a failed, skipped or cancelled one (if: always()), and
   # make ci-passed fails unless every job of needs has the result success.
   ci-passed:
     if: ${{ always() }}
-    needs: [check, e2e, e2e-amd64, consumers]
+    needs: [check, e2e, e2e-amd64, consumers, release-rehearsal]
     runs-on: ubuntu-26.04-arm
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

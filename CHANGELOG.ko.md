@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: fa5578702e76b30c90bf33128393702e022ae8c3b965ab9f44770525318f66be -->
+<!-- source-sha256: ef0f5d1962461cbdfd3eb521818c269639150a7ea2e998016ccc9573e5165de4 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
@@ -34,6 +34,7 @@
 - 생성된 Go 시험은 계약의 value alias의 Go out row가 만드는 `core_type`을 가진 value class의 인스턴스를 담은 결과를 그 class와 property 값들로 비교한다(GN-13e, B2.543). 전에는 기대값이 그 kind의 내장 값이었다. 예를 들어 orm의 `{"kind": "int", "value": 1}`은 `int64(1)`이었고, `reflect.DeepEqual`은 그것을 member가 준 `*IntegerValue`와 결코 같다고 보지 않았다. 두 인스턴스도 handle로 비교되었을 것이다. 이제 기대값은 다른 target처럼 out row의 생성자가 만드는 인스턴스이고, 두 쪽은 그런 인스턴스를 그 class와 property들로 읽는 `foreignRead`를 거친다. 레포가 할 일: 없다. 다시 생성하면 그런 결과의 Go 시험이 통과한다. `packages/ts`의 B2.543 생성 시험으로 검증했고, 이 시험은 변경 전에 실패했다. 이 변경의 첫 형태는 Go가 interface를 줄 때만 그런 인스턴스를 읽었다. 그래서 orm의 결과처럼 `binding.Map`이 unexported field에 둔 인스턴스와 record의 field에 든 인스턴스는 여전히 handle로 비교되었다. 이제 reader는 그런 pointer를 주소에서 다시 만들고, 그런 field를 가진 record나 variant도 reader를 거쳐 비교한다. 이것이 첫 형태를 대체한다. 새 레포 `tests/e2e/ratios`의 Go e2e로 검증했다. 그 case들은 map 안, record 안, 그리고 그대로의 `Ratio`를 돌려주며, 변경 전에 실패했다.
 - 생성된 `release-wheel`은 Python package의 결합 crate로 wheel을 만든다. host package에서는 `native/Cargo.toml`이다(GN-19c, GN-3b, B2.544). 전에는 `packages/<component>/python/Cargo.toml`만 적었다. 그래서 Python package가 host package인 레포는 모든 platform에서 "manifest path ... does not exist"로 실패했다. 다른 recipe는 이미 host package를 그 `native/`로 옮겼다. host Python package를 가진 레포가 할 일: 이 binding으로 `release.mk`를 다시 생성한다. crate는 그 자리에 둔다. `packages/ts`의 B2.544 recipe 시험으로 검증했고, 이 시험은 변경 전에 실패했다.
 - 생성된 Go 시험 파일은 Go 어휘 규칙에 따라 그 code가 쓰는 package만 import한다(GN-4f, B2.546). 전에는 각 import를 text에 대한 단어 일치로 정했다. 그래서 `binding.`을 적는 주석이나 문자열이 internal/binding을 import했고, go vet이 그 파일을 "imported and not used"로 거부했다. B2.543의 `foreignRead` 주석이 orm에서 그렇게 했고, 그래서 orm의 Go 시험이 돌지 않았다. 레포가 할 일: 없다. 다시 생성하면 그 Go 시험이 go vet을 통과한다. `packages/ts`의 B2.546 시험으로 검증했고, 이 시험은 변경 전에 실패했다. `tests/e2e/ratios`와 `tests/e2e/sample`의 생성 Go에 대한 go vet으로도 검증했다.
+- binding의 CI는 job `release-rehearsal`(`make ci-release-rehearsal`, B2.547)에서 release의 tag 뒤 단계를 새 checkout에서 tag와 GitHub 쓰기 없이 돌고, `ci-passed`가 그 job을 needs에 둔다. 전에는 job check의 `release-candidate-assets`만 Rust를 함께 설치한 뒤 그 일부를 돌았다. 그래서 나머지 단계가 깨끗한 runner에서 실패하면 tag 뒤에야 보였다. 레포가 할 일: 없다. `packages/ts`의 B2.547 시험으로 검증했고, 이 시험은 변경 전에 실패했다. lane의 CI run의 job `release-rehearsal`로도 검증했다.
 
 ## 0.0.21
 

@@ -331,6 +331,16 @@ release-undraft: ## Make the draft release of TAG public
 # the runner keeps between steps. Each later step is a make of its own, which reads the Makefile of the tag. A run
 # that creates no tag ends with status 0.
 .PHONY: ci-release
+# B2.547: the job release-rehearsal runs the steps of ci-release that come after the tag, on the checkout of the run with
+# no tag and no write to GitHub: release-candidate-assets is the archive step of release-assets with no tag. Each step
+# runs after the one before passed.
+ci-release-rehearsal: ## Run the release-rehearsal job of ci.yml: the steps of ci-release after the tag, with no tag
+	$(MAKE) --no-print-directory bootstrap
+	$(MAKE) --no-print-directory install-tools TOOLS=npm
+	$(MAKE) --no-print-directory release-prepare
+	$(MAKE) --no-print-directory release-tools
+	$(MAKE) --no-print-directory release-candidate-assets
+
 ci-release: ## Run the release job of release.yml: RUN=<id of a successful CI run> [AUTO=1]; reads and writes GitHub with gh
 	@test -n "$(RUN)" || { echo 'ci-release: RUN is required, for example make ci-release RUN=123' >&2; exit 2; }
 	@env_file="$$(mktemp "$${TMPDIR:-/tmp}/binding-ci-release.XXXXXX")" || exit 1; \
