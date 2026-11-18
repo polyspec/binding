@@ -908,7 +908,8 @@ export interface GoDownload {
 // build list has its hash.
 // B2.550: the refusal of the objects that Go could not give, each with the module path and the version that Go was
 // asked for and the error of Go, since the error of Go alone names no module. undefined when Go gave every module.
-function downloadRefusal(downloads: readonly GoDownload[]): string | undefined {
+// B2.551: the go.sum of the commit of a release refuses a sibling in the same form.
+export function downloadRefusal(downloads: readonly GoDownload[]): string | undefined {
   const failed = downloads.filter((d) => d.Error !== undefined);
   if (failed.length === 0) return undefined;
   return failed.map((d) => `go mod download gave no sum of ${[d.Path, d.Version].filter((x) => x !== undefined && x !== '').join(' ')}: ${d.Error ?? ''}`).join('; ');

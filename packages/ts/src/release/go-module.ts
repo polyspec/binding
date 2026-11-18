@@ -10,7 +10,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, wri
 import { join } from 'node:path';
 import { GO_PLATFORMS, GO_TAG_GUARD_FILE, goLinkFile, goTestTagsOf } from '../generate/go.ts';
 import { isGoGenerated } from '../generate/index.ts';
-import type { GoDownload } from '../generate/packages.ts';
+import { downloadRefusal, type GoDownload } from '../generate/packages.ts';
 import { goCommand } from '../go-command.ts';
 
 export type GoPlatform = (typeof GO_PLATFORMS)[number];
@@ -195,8 +195,9 @@ export function siblingRequires(goMod: string, module: string): GoRequirement[] 
 // holds no line of a module of its own repository.
 export function goSumWith(goSum: string, downloads: readonly GoDownload[]): string {
   const lines = new Set(goSum.split('\n').filter((line) => line !== ''));
+  const refused = downloadRefusal(downloads);
+  if (refused !== undefined) throw new Error(refused);
   for (const d of downloads) {
-    if (d.Error !== undefined) throw new Error(`go mod download gave no sum: ${d.Error}`);
     if (d.Version === undefined || d.Sum === undefined || d.GoModSum === undefined) throw new Error(`go mod download gave no sum of ${d.Path} ${d.Version ?? ''}`);
     for (const [key, hash] of [[`${d.Path} ${d.Version}`, d.Sum], [`${d.Path} ${d.Version}/go.mod`, d.GoModSum]] as const) {
       const other = [...lines].find((line) => line.startsWith(`${key} `) && line !== `${key} ${hash}`);
