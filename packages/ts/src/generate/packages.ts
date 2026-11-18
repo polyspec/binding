@@ -906,11 +906,19 @@ export interface GoDownload {
 // without a release requirement. A module that Go could not give is a failure that names it, never a partial go.sum.
 // B2.488: the requirements are those of the go.mod with its lines `// indirect` (goModGraph), so every module of the
 // build list has its hash.
+// B2.550: the refusal of the objects that Go could not give, each with the module path and the version that Go was
+// asked for and the error of Go, since the error of Go alone names no module. undefined when Go gave every module.
+function downloadRefusal(downloads: readonly GoDownload[]): string | undefined {
+  const failed = downloads.filter((d) => d.Error !== undefined);
+  if (failed.length === 0) return undefined;
+  return failed.map((d) => `go mod download gave no sum of ${[d.Path, d.Version].filter((x) => x !== undefined && x !== '').join(' ')}: ${d.Error ?? ''}`).join('; ');
+}
+
 export function goSumOf(goMod: string, downloads: readonly GoDownload[]): string | undefined {
   const required = sumRequires(goMod);
   if (required.length === 0) return undefined;
-  const errors = downloads.filter((d) => d.Error !== undefined).map((d) => d.Error ?? '');
-  if (errors.length > 0) throw new Error(`go mod download gave no sum: ${errors.join('; ')}`);
+  const refused = downloadRefusal(downloads);
+  if (refused !== undefined) throw new Error(refused);
   const lines: string[] = [];
   for (const d of downloads.filter((d) => d.Version !== undefined)) {
     if (d.GoModSum === undefined) throw new Error(`go mod download gave no go.mod sum of ${d.Path} ${d.Version ?? ''}`);
@@ -975,8 +983,8 @@ export function goModGraph(goMod: string, download: (module: string) => GoDownlo
   for (let round = 0; selected.size > 0; round += 1) {
     if (round === 20) throw new Error(`go mod download gave new modules of the graph of ${own} in 20 rounds (GN-15l)`);
     downloads = download(`module ${own}\n\ngo ${go}\n\n${[...selected].map(([module, version]) => `require ${module} ${version}\n`).join('')}`);
-    const errors = downloads.filter((d) => d.Error !== undefined).map((d) => d.Error ?? '');
-    if (errors.length > 0) throw new Error(`go mod download gave no sum: ${errors.join('; ')}`);
+    const refused = downloadRefusal(downloads);
+    if (refused !== undefined) throw new Error(refused);
     const found = new Map(downloads.filter((d) => d.Version !== undefined && d.Path !== own).map((d) => [d.Path, d.Version ?? '']));
     const same = found.size === selected.size && [...found].every(([module, version]) => selected.get(module) === version);
     selected = found;
