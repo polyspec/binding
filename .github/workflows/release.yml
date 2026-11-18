@@ -3,9 +3,8 @@
 # it is the version commit of that version. A dispatch with the id of a successful CI run releases the commit of that run.
 # release-tag tags the commit with vX.Y.Z and appends TAG and VERSION to GITHUB_ENV; the later steps check the tag out,
 # install its tools, build the archives of config/release.json, create the GitHub Release of the tag as a draft and make it
-# public. The run of ci is the evidence; the release runs no test again. That run holds the job consumers, which runs
-# the consumers of config/consumers.json at their release tags with the commit (GN-14m), so a failed consumer blocks
-# the release. The job has one run step, make ci-release, which
+# public. The run of ci is the evidence; the release runs no test again. No consumer runs before the release: a consumer
+# verifies a release in its own CI after it pins it (GN-14m retired, B2.549). The job has one run step, make ci-release, which
 # reads the id of the run and AUTO from the environment of the job (AGENTS.md, B2.278), whose recipe holds the order of these steps and
 # reads TAG itself, so a maintainer runs the same call. The job runs on ubuntu-26.04-arm, the actions are pinned by
 # commit and no step has a time limit.
