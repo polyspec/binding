@@ -66,6 +66,27 @@
       }
     }
   ],
+  "rows": [
+    {
+      "id": "a_ratio_in_a_map_row_comes_back",
+      "rows": [
+        {
+          "qty": {
+            "kind": "float",
+            "value": 1.5
+          }
+        }
+      ],
+      "result": [
+        {
+          "qty": {
+            "kind": "float",
+            "value": 1.5
+          }
+        }
+      ]
+    }
+  ],
   "ratio_constructor": [
     {
       "id": "a_float_is_held",

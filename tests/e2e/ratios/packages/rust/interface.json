@@ -592,6 +592,39 @@
           "raises": [],
           "wait": "none",
           "core": "polyspec_ratios::hold"
+        },
+        {
+          "id": "ratios.rows",
+          "name": [
+            "rows"
+          ],
+          "kind": "function",
+          "visibility": "public",
+          "parameters": [
+            {
+              "name": [
+                "rows"
+              ],
+              "type": {
+                "list": {
+                  "map": {
+                    "unit": "quantity"
+                  }
+                }
+              },
+              "required": true
+            }
+          ],
+          "returns": {
+            "list": {
+              "map": {
+                "unit": "quantity"
+              }
+            }
+          },
+          "raises": [],
+          "wait": "none",
+          "core": "polyspec_ratios::rows"
         }
       ]
     }
@@ -607,6 +640,11 @@
       "member": "ratios.hold",
       "file": "contracts/cases.json",
       "group": "hold"
+    },
+    {
+      "member": "ratios.rows",
+      "file": "contracts/cases.json",
+      "group": "rows"
     },
     {
       "member": "ratio.constructor",

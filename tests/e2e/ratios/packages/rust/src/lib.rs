@@ -3,8 +3,8 @@
 //! a record and bare, and the generated Go tests compare them by what the instances hold (GN-13e, B2.543).
 
 use binding_core::{
-    Failure, FloatOut, Handle, HostText, HostValue, HostValues, Kinds, MapOut, OutValue,
-    OutValues, ValueKind,
+    Failure, FloatOut, Handle, HostText, HostValue, HostValues, Kinds, MapOut, OrderedMap,
+    OutValue, OutValues, ValueKind,
 };
 use std::fmt;
 
@@ -276,6 +276,13 @@ pub fn echo(value: &Quantity) -> Quantity {
 #[must_use]
 pub fn hold(holder: &Holder) -> Holder {
     holder.clone()
+}
+
+/// The rows themselves: a list of maps of quantities, which Go holds as maps of the binding package, whose values are
+/// in unexported fields.
+#[must_use]
+pub fn rows(rows: &[OrderedMap<Quantity>]) -> Vec<OrderedMap<Quantity>> {
+    rows.to_vec()
 }
 
 #[cfg(test)]
