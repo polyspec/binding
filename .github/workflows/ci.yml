@@ -50,7 +50,7 @@ jobs:
         include:
           - name: ts
             tools: rust
-            targets: typecheck-ts unit-ts release-coverage release-candidate-assets
+            targets: typecheck-ts unit-ts duplication-check release-coverage release-candidate-assets
           - name: rust
             tools: rust
             targets: test-rust-features test-rust-plain clippy-rust-features clippy-rust fmt-rust fmt-e2e
