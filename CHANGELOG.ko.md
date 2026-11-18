@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 408f6ecec53c9cbf5ecfe9a07425f6a7f53b6a074fecc2d9ad103fd9352a0917 -->
+<!-- source-sha256: fc7bdc8537965d2929571450b8d4504bc3d1a7365e0ac7757e3d69fb136311d5 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
@@ -39,6 +39,7 @@
 - 함수의 map을 받는 member의 PHP와 Node binding은 각 entry의 subject `<map>.<key>`를 제 사본으로 지닌다(B2.531). 0.0.22 전의 어느 release에도 없는 B2.475부터, 그 binding은 지니는 함수에 빌린 subject를 넘겼고, 그래서 생성 crate가 compile되지 않았다(clippy: lifetime may not live long enough). 레포가 할 일: 없다. 함수의 map이 있는 계약도 compile된다. B2.523의 `tests/e2e/functions` e2e로 검증했다.
 - CI의 consumer gate는 session-store를 v0.0.7로 돈다(`config/consumers.json`, B2.545). 그 v0.0.5는 php-serialization v0.0.15를 받았고, 그 alias `php_value`는 `sequence_keys`로 행을 고르면서 key 형태를 적지 않아 CK-104(B2.490, 0.0.21부터)가 거부한다. v0.0.7은 `{"keys": "int"}`를 적는 php-serialization v0.0.16을 받는다. 레포가 할 일: 없다. lane의 CI run의 job `consumers (small)`로 검증했다.
 - `binding scaffold`는 절대 경로로 준 코어의 `path` 의존의 계약을 Cargo처럼 읽는다(GN-15f, B2.548). 전에는 그 경로를 코어의 디렉터리 밑에 붙여 `interface.json`을 찾지 못했다. 그래서 그 계약이 필요한 package를 "<library>: the contract of the library is not found"로 쓰지 않은 것으로 적었다. 상대 경로는 바르게 읽혔다. 레포가 할 일: 없다. 의존 줄이 절대 경로를 적는 코어도 모든 package가 scaffold된다. `packages/ts`의 B2.548 시험으로 검증했고, 이 시험은 변경 전에 실패했다.
+- binding의 CI는 consumer를 돌리지 않는다(B2.549). consumer gate(GN-14m, 폐기)의 job `consumers`, `make ci-consumers`, `make consumer-gate`, `config/consumers.json`이 없어졌고, `ci-passed`는 더 이상 그 job을 needs에 두지 않는다. 전에는 어느 consumer가 release tag에서 실패해도 binding의 release가 막혔고, consumer마다 binding을 고치고 run을 처음부터 다시 돌았다. 각 레포는 로컬에서 스스로 검증하고 따로 release한다. consumer는 binding의 release를 pin한 뒤 자기 CI에서 그것을 검증한다. `make consumers-check`(GN-14i)는 남는다. 레포가 할 일: binding의 새 release를 pin한 뒤 자기 CI에서 검증한다. `packages/ts`의 B2.549 시험으로 검증했고, 이 시험은 변경 전에 실패했다. job `consumers`가 없는 main의 CI run으로도 검증했다.
 
 ## 0.0.21
 
