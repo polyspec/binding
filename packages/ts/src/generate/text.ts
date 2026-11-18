@@ -942,6 +942,9 @@ fn lent_receiver<'a, T, R: LentReceiver<'a, T>>(receiver: &'a T) -> R {
 // function may be named by its path, as the conversion of a unit of another library is (GN-4c).
 // B2.475: the closure of an entry of a map, which map_in calls with the subject of the entry (<map>.<key>) as
 // `entry_`; a conversion that names no subject takes it as `_`, so the generated crate has no unused binding.
+// The lines of text, each but an empty one indented by by spaces.
+export const indent = (text: string, by: number): string => text.split('\n').map((line) => (line === '' ? '' : `${' '.repeat(by)}${line}`)).join('\n');
+
 export function entryClosure(before: string[], item: string, body: (subject: string) => string): string {
   const named = body('entry_');
   return closure([...before, /\bentry_\b/.test(named) ? 'entry_' : '_', item], named);

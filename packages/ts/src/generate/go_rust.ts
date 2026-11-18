@@ -27,7 +27,7 @@ import { extensionName } from './packages.ts';
 import { raisesAssertions } from './raises.ts';
 import { type ForeignMake, type ForeignRead, type ValueRead, container, foreignReads, foreignRowClasses, outArms, valueReads } from './alias_shared.ts';
 import { classMakes } from './value_class.ts';
-import { header, closure, entryClosure, optionRef, rustString, usedHelpers, INTO_CORE, PARTS, WIDEN, CORE_FORM } from './text.ts';
+import { header, closure, entryClosure, indent, optionRef, rustString, usedHelpers, INTO_CORE, PARTS, WIDEN, CORE_FORM } from './text.ts';
 import { type Cycle, coreWalk, cycleOf, cycles, holdsCycle, walkModel, walkUnit } from './cycles.ts';
 
 // GN-17: the C symbol prefix of the static library, the PHP extension name of P-1 and one underscore,
@@ -1796,7 +1796,6 @@ ${arms(plain)}
     ret: 'return None;',
     level: (children, waiting) => `Some(OutLevel { ${walked ? `handle, ${children === 'Value' ? 'len: 0' : 'len'}, index: 0, ` : ''}waiting: ${waiting ?? 'None'}${many ? `, children: OutChildren::${children}` : ''} })`,
   };
-  const indent = (text: string, by: number): string => text.split('\n').map((line) => (line === '' ? '' : `${' '.repeat(by)}${line}`)).join('\n');
   const child = (children: { next?: string }): string => children.next ?? 'None';
   const next = !walked ? '        level.waiting.take()' : `        if let Some(waiting) = level.waiting.take() {
             return Some(waiting);

@@ -5,7 +5,7 @@ import type { Contract, Member, OutRow, Type, Unit } from '../contract.ts';
 import type { Lang } from '../contract.ts';
 import { coreCallArgs, type Fn, type KeptClass, type KeptField, type Model, nestedType, type ObjectClass, Unsupported, type ValueAlias, errorMatched, foreignAliasLibraries, langName, resolveNamedTypes, rustField, unitFn } from './model.ts';
 import { variantPattern } from '../contract.ts';
-import { rustString } from './text.ts';
+import { indent, rustString } from './text.ts';
 import { classIn, classMakes } from './value_class.ts';
 
 // The predicate methods of OutValue for a `when` of a row (binding_core::Predicate).
@@ -716,7 +716,6 @@ export const NEXT_ENTRY = `{
     Some(key)
 }`;
 
-const indent = (text: string, by: number): string => text.split('\n').map((line) => (line === '' ? '' : `${' '.repeat(by)}${line}`)).join('\n');
 
 // One statement for each variant of OutFill: a match, or a let where OutFill has one variant, whose match clippy
 // refuses as a match of one arm that cannot fail.
