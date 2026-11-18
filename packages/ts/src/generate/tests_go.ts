@@ -2725,9 +2725,14 @@ ${[...new Set(['binding', ...foreign.map((f) => f.pkg)])].map((pkg) => `		case *
 `;
 }
 
+// Whether a Go text uses the package of a name: a selector `<name>.` of it (GN-4f).
+export function goUses(text: string, name: string): boolean {
+  return new RegExp(`\\b${name}\\.`).test(text);
+}
+
 // The standard packages and the packages of the module that a test file names.
 function testImports(model: Model, module: string, text: string, scope: GoScope, extraStd: readonly { path: string; alias: string }[] = []): string {
-  const std = ['bufio', 'context', 'encoding/hex', 'errors', 'fmt', 'io', 'log', 'math', 'math/big', 'net', 'os', 'os/exec', 'path/filepath', 'reflect', 'runtime', 'slices', 'strconv', 'strings', 'sync', 'syscall', 'unsafe', 'weak'].filter((p) => new RegExp(`\\b${p.slice(p.lastIndexOf('/') + 1)}\\.`).test(text)).map((p) => `"${p}"`);
+  const std = ['bufio', 'context', 'encoding/hex', 'errors', 'fmt', 'io', 'log', 'math', 'math/big', 'net', 'os', 'os/exec', 'path/filepath', 'reflect', 'runtime', 'slices', 'strconv', 'strings', 'sync', 'syscall', 'unsafe', 'weak'].filter((p) => goUses(text, p.slice(p.lastIndexOf('/') + 1))).map((p) => `"${p}"`);
   // Owned-text helpers declare their imports without interpreting ordinary literals as code.
   std.push(...extraStd.map(({ path, alias }) => `${alias} ${goString(path)}`));
   std.push('"testing"');
@@ -2737,13 +2742,13 @@ function testImports(model: Model, module: string, text: string, scope: GoScope,
     return aPath < bPath ? -1 : aPath > bPath ? 1 : 0;
   });
   const own = [
-    ...(/\bliberrors\./.test(text) ? [`liberrors "${goImport(model.contract, 'errors')}"`] : []),
-    ...(/\bbinding\./.test(text) ? [`"${goImport(model.contract, 'internal/binding')}"`] : []),
-    ...[...scope.imports].filter((m) => m !== module && new RegExp(`\\b${goPackage(model.contract, m)}\\.`).test(text)).map((m) => `"${goImport(model.contract, m)}"`),
+    ...(goUses(text, 'liberrors') ? [`liberrors "${goImport(model.contract, 'errors')}"`] : []),
+    ...(goUses(text, 'binding') ? [`"${goImport(model.contract, 'internal/binding')}"`] : []),
+    ...[...scope.imports].filter((m) => m !== module && goUses(text, goPackage(model.contract, m))).map((m) => `"${goImport(model.contract, m)}"`),
     // GN-15f: the packages of other repositories whose records the tests name.
-    ...[...(scope.foreignImports ?? new Map<string, string>())].filter(([, name]) => new RegExp(`\\b${name}\\.`).test(text)).map(([path, name]) => (scope.foreignNamed?.has(path) === true ? `${name} "${path}"` : `"${path}"`)),
+    ...[...(scope.foreignImports ?? new Map<string, string>())].filter(([, name]) => goUses(text, name)).map(([path, name]) => (scope.foreignNamed?.has(path) === true ? `${name} "${path}"` : `"${path}"`)),
     // GN-6s, GN-15d: the packages errors of other repositories whose errors the fixtures raise.
-    ...[...(scope.foreignErrors ?? new Map<string, string>())].filter(([, name]) => new RegExp(`\\b${name}\\.`).test(text)).map(([path, name]) => `${name} "${path}"`),
+    ...[...(scope.foreignErrors ?? new Map<string, string>())].filter(([, name]) => goUses(text, name)).map(([path, name]) => `${name} "${path}"`),
   ];
   return goImportBlock(std, own);
 }
