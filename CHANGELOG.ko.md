@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: cbdb599f6636098385a329d3ed4322d43fc449298660ba240abfc25eb4af6df9 -->
+<!-- source-sha256: 889cfb341ae723a5be8cdbe99b4fde189f7e1505c67903dac14996f362080b4f -->
 # 변경 기록
 
 [English](CHANGELOG.md)
@@ -9,6 +9,7 @@
 - `go mod download`가 모듈을 주지 못하면, `binding scaffold`와 CK-19의 `go.sum` 거절은 Go의 오류와 함께 Go에 물은 모듈 path와 version을 밝힌다(B2.550, GN-15l). 전에는 Go의 오류만 주었다. crud-ui의 release 검사는 모듈을 밝히지 않는 `go mod download gave no sum: module lookup disabled by GOPROXY=off`로 실패했다. 레포가 할 일: 없다. 실패한 검사가 이제 받을 모듈을 밝힌다. `packages/ts`의 B2.550 시험으로 검증했고, 이 시험은 변경 전에 실패했다.
 - `go mod download`가 sibling 모듈을 주지 못하면, `binding release-go-module`은 release commit의 `go.sum`을 같은 꼴로, Go에 물은 모듈 path와 version과 함께 거절한다(B2.551, GN-19f). 레포가 할 일: 없다. `packages/ts`의 B2.551 시험으로 검증했고, 이 시험은 변경 전에 실패했다.
 - Python과 PHP 생성기는 모르는 scalar 타입의 결과를 `undefined(`로 써서 오류 없이 깨진 code를 만들던 것을, 이제 그 타입을 이름하는 `Unsupported`로 거절한다(B2.528). 올바른 계약은 그 길에 닿지 않으므로 생성 결과는 바뀌지 않는다. 레포가 할 일: 없다. `packages/ts`의 B2.528 시험으로 검증했다. 그 시험은 변경 뒤에 들어왔고, 변경 전의 code는 `undefined(`를 쓴다.
+- CI가 check job의 항목 `ts`에서 `make duplication-check`를 실행하므로, `packages/ts/src`나 `scripts`에 두 번 쓴 code 조각은 두 곳을 줄과 함께 이름 대며 CI를 실패시킨다(B2.515, GN-14o). 레포가 할 일: 없다. `packages/ts`의 B2.515 시험으로 검증했고, 이 시험은 변경 전에 실패했다.
 
 ## 0.0.22
 
