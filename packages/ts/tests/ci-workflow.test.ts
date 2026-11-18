@@ -437,6 +437,31 @@ test('B2.278: make ci-release tags, then checks the tag out, installs, builds, p
   assert.deepEqual(usage.calls, []);
 });
 
+// B2.547: the job release-rehearsal runs the steps of make ci-release after the tag, with no tag and no write to
+// GitHub, each after the one before passed, and ci-passed needs it, so their failure fails the run before a tag.
+test('B2.547: make ci-release-rehearsal runs the release steps after the tag with no tag, each after the one before passed', (t) => {
+  const { run } = recipes(t);
+  const steps = (calls: Call[]): string[] => calls.map((c) => (c.vars.TOOLS === undefined ? c.goal : `${c.goal} TOOLS=${c.vars.TOOLS}`));
+  const order = ['bootstrap', 'install-tools TOOLS=npm', 'release-prepare', 'release-tools', 'release-candidate-assets'];
+  const passed = run('ci-release-rehearsal', []);
+  assert.equal(passed.status, 0, passed.output);
+  assert.deepEqual(steps(passed.calls), order, passed.output);
+  for (const call of passed.calls) assert.equal(call.tag, '', `${call.goal} gets a TAG`);
+  for (const [index, goal] of order.entries()) {
+    const failed = run('ci-release-rehearsal', [], [goal.split(' ')[0] ?? goal]);
+    assert.notEqual(failed.status, 0, `make ci-release-rehearsal passes after a failed ${goal}`);
+    assert.deepEqual(steps(failed.calls), order.slice(0, index + 1), `make ci-release-rehearsal goes on after a failed ${goal}`);
+  }
+});
+
+test('B2.547: the job release-rehearsal runs make ci-release-rehearsal and ci-passed needs it', () => {
+  const all = jobs();
+  const job = all.get('release-rehearsal');
+  assert.ok(job !== undefined, 'the workflow has no job release-rehearsal');
+  assert.deepEqual(steps(job).filter((step) => runOf(step) !== undefined).map((step) => runOf(step)), ['make ci-release-rehearsal']);
+  assert.ok((all.get('ci-passed') ?? []).some((l) => /^ {4}needs: \[.*\brelease-rehearsal\b.*\]$/.test(l)), 'ci-passed does not need release-rehearsal');
+});
+
 // B2.364, GN-14j: make dist builds packages/ts with the npm of the checkout and gives the bin dist/cli.js the mode 0755,
 // which tsc does not give it, so a consumer that links this checkout runs node_modules/.bin/binding. The stand-in of npm
 // writes dist/cli.js with the mode 0644 of tsc and records its arguments.
