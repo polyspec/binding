@@ -273,7 +273,7 @@ ${generate('python')}
 	@$(call binding_release_host,${step}); \\
 	set -ex; \\
 	epoch=$$(git log -1 --format=%ct HEAD); \\
-	CARGO_TARGET_DIR=$(RELEASE_TARGET) SOURCE_DATE_EPOCH=$$epoch $(MATURIN) build --release --locked --compatibility ${MANYLINUX} --interpreter python3 --manifest-path ${base}/python/Cargo.toml --out $(RELEASE_ASSETS)/wheel
+	CARGO_TARGET_DIR=$(RELEASE_TARGET) SOURCE_DATE_EPOCH=$$epoch $(MATURIN) build --release --locked --compatibility ${MANYLINUX} --interpreter python3 --manifest-path ${place(contract, 'packages/python/Cargo.toml')} --out $(RELEASE_ASSETS)/wheel
 `);
   }
 
