@@ -1,25 +1,12 @@
 // The generated node:test module of the WASM binding (G-5): B-2, B-3, B-4, B-7 and G-7 for every function, run
 // against the subpath ./wasm of the installed package after init (P-5). The JavaScript values are those of Node.
 
-import { type Fn, type Model, awaits, categoryClass,cleanupWarning, memberName, errorUnitOfKind, hookCall, langName, unitOf, takesNull, type Arg, nativeRoundTrip, machineFunction, callsCode } from './model.ts';
-import { type CallbackHow, type Context, type MadeForm, type Receiver, raisedLines, madeBeforeArgs, aliasCases, aliasRepresentative, bytesKind, callbackArg, callbackReachingArgs, classCaseArgs, otherValue, onceArgs,expectedErrno, numberRefusesNull, fixtureValues, fixturesOf, onceRows, fromJson, isPlain, judgesCallbackResult, madeLines, callArgs, caseRefusal, callables, caseValue, expectedText, nodeTokens, tokenForms, isNumber, resultCases, placeholder, raisingCases, refusedKeyMap, unsafeKeyMap, samePairs, sampleReceiver, primitiveCases, refusesNull, stringCases, textKind, wrapText, functionFixturesOf, type After, FIXTURE_RAISED, callbackCases, stepExpected, jsMade, jsCause, convertedCause } from './samples.ts';
+import { type Model, langName, nativeRoundTrip } from './model.ts';
+import { callArgs, placeholder, nodeTokens } from './samples.ts';
 import { header, jsString } from './text.ts';
-import { jsArguments, jsDeclaredMember, placeTests, refusedJs } from './callback_arguments.ts';
 import { wasmGlue } from './wasm.ts';
 import { isHost } from './packages.ts';
-import { linuxOnlyTests, NODE_CASE_FILE, NODE_CASE_LISTENER, NODE_CASE_PATH, NODE_FIXTURE, nodeFixture, nodeFixtureChecks, NODE_SETTLED,awaitedTest, nodeOutcome, nodeCaseFileLines, scoped, nodeCaseImports, nodeOrdered, nodeValueClasses, nodeCaseTextScope, nodeCaseTextProof, NODE_CASE_TEXT } from './tests_node.ts';
-import { foreignReaders, foreignClassNames, holdsForeign, nodeForeignRead } from './value_class.ts';
-import type { Unit } from '../contract.ts';
-
-// B-2: the numbers that break the rule of each number type (kind invalid_number), and the values of another type than
-// the number that the place takes (kind invalid_argument_type, GN-12a), a null only where it is no absent value.
-const BAD_NUMBERS: Record<string, string[]> = {
-  uint: ['NaN', 'Infinity', '-Infinity', '1.5', '-1', '2 ** 53'],
-  int: ['NaN', 'Infinity', '-Infinity', '1.5', '2 ** 53', '-(2 ** 53)'],
-};
-const OTHER_TYPES: Record<string, string[]> = { uint: ['true', "'7'", '7n'], int: ['true', "'7'", '7n'], int64: ['true', "'7'"], float: ['true', "'7'", '7n'] };
-
-const jsBase = (category: string): string => ({ value: 'RangeError', type: 'TypeError' })[category] ?? 'Error';
+import { NODE_CASE_FILE, NODE_CASE_LISTENER, NODE_CASE_PATH, NODE_CASE_TEXT, NODE_FIXTURE, NODE_OUTCOME, NODE_SETTLED, awaitedTest, jsTests, nodeCaseImports } from './tests_shared.ts';
 
 // G-5: the target of WASM has no errno (binding_core::errno::value gives none, and an arming that names a symbol is
 // refused, GN-8a), so the faults of a case are armed without their errno.
@@ -30,500 +17,41 @@ export function wasmTests(model: Model): string {
   const npm = (model.contract.packages['node'] as { package: string }).package;
   // L-2a: the tests of a host package import the generated entry beside them; the package's exports are the host's.
   const entry = isHost(model.contract, 'node') ? '../index.mjs' : `${npm}/wasm`;
-  const foreignModules = new Set<string>();
-  const ctx: Context = { lang: 'node', target: 'wasm', listenerPort: 'caseListenerPort', enumRef: (_name, value) => jsString(value),
-    // GN-6aq: an AbortSignal that was aborted before the call, or one whose controller never aborts it.
-    cancelNew: (fired) => (fired ? 'AbortSignal.abort()' : 'new AbortController().signal'),
-    // GN-6x: a class of another repository, through the subpath ./wasm of the owner's package.
-    foreignClass: (library, unit) => {
-      foreignModules.add(library);
-      return `foreign_${library.replaceAll('-', '_')}.${langName('wasm', unit.name, 'class')}`;
-    },
-    // GN-6s: an error unit of the owner of a callback unit of another repository, through the subpath ./wasm of its package.
-    errorNew: (unit, kind, message, library) => {
-      if (library !== undefined) foreignModules.add(library);
-      return `new ${library === undefined ? 'pkg' : `foreign_${library.replaceAll('-', '_')}`}.${langName('wasm', unit.name, 'class')}(${jsString(message)}, ${jsString(kind)})`;
-    },
-    // B2.489 (GN-7a): an instance of a class of another library with values, by the internal maker of its module.
-    madeNew: (made, properties) => {
-      foreignModules.add(made.library);
-      return jsMade(made, properties, 'wasm', `foreign_${made.library.replaceAll('-', '_')}`);
-    },
-    recordNew: (unit, fields) => `{ ${(unit.fields ?? []).map((f, i) => `${langName('wasm', f.name, 'variable')}: ${fields[i] ?? ''}`).join(', ')} }`,
-    // GN-6v: a case is an object of its tag and its fields, as for Node.
-    variantNew: (variant, kase, fields) => `{ ${[`${langName('wasm', variant.unit.tag ?? [], 'variable')}: ${jsString(kase.value)}`, ...(kase.unit.fields ?? []).map((f, i) => `${langName('wasm', f.name, 'variable')}: ${fields[i] ?? ''}`)].join(', ')} }`,
-    // U-3: a callback object, as for Node.
-    callbackNew: (unit, how) => {
-      if ('missing' in how) return '{}';
-      // GN-6bu: each member declares the arguments that the binding calls it with.
-      const body = (count: number): string => `(${jsArguments(count)}) => ${'raise' in how ? `{ throw ${how.raise}; }` : how.returns === 'wrong' ? 'Symbol()' : 'null'}`;
-      return `{ ${(unit.members ?? []).filter((m) => m.default === undefined).map((m) => `${langName('wasm', m.name, 'callable')}: ${body((m.parameters ?? []).length)}`).join(', ')} }`;
-    },
-  };
-  const cls = (category: string): string => categoryClass(model, category);
-  // E-2, B-4: the exact class of a failure of a case: the class of the error unit of its kind, or of its category.
-  const exactClass = (raises: { kind: string; category: string }): string => {
-    const unit = errorUnitOfKind(model, raises.kind);
-    return unit === undefined ? cls(raises.category) : langName('wasm', unit.unit.name, 'class');
-  };
-  const out: string[] = [];
-  const textPaths = nodeCaseTextScope(ctx, out);
-  const emit = textPaths.emit;
-  let usesOutcome = false;
   let usesGlue = false;
   let usesStepGlue = false;
-  let usesOrdered = false;
-  let usesBound = false;
-  let usesTokens = false;
-  let usesFixture = false;
-  // GN-13bi: the count of the rows once of the fixtures written so far, and the check of the end of a case, as for Node.
-  let onceMade = 0;
-  const answered = (since: number): string => (onceMade === since ? '' : '\n  assert.deepEqual(unanswered(), []);');
-  // GN-6n: a call of a member that waits is awaited where it is made, as for Node.
-  const invoke = (fn: Fn, args: string, receiver: string): string => textPaths.derive(awaits(fn) ? `(await ${called(fn, args, receiver)})` : called(fn, args, receiver), [args, receiver]);
-  // T-5: a member of a class is called as JavaScript calls it; a stringify and a to_json as the language runs the hook.
-  const called = (fn: Fn, args: string, receiver: string): string => {
-    const hook = hookCall('node', fn, receiver);
-    if (hook !== undefined) return hook;
-    const member = langName('wasm', fn.member.name, 'callable');
-    // GN-6s, GN-13f: a member of another repository that an instance value names, through the subpath ./wasm of the
-    // owner's package.
-    if (fn.library !== undefined) foreignModules.add(fn.library);
-    const prefix = fn.library === undefined ? 'pkg' : `foreign_${fn.library.replaceAll('-', '_')}`;
-    const unit = `${prefix}.${langName('wasm', fn.unit.name, 'class')}`;
-    if (fn.kind === 'function') return `${prefix}.${member}(${args})`;
-    if (fn.kind === 'constructor') return `new ${unit}(${args})`;
-    if (fn.kind === 'static') return `${unit}.${member}(${args})`;
-    if (fn.kind === 'property') return `${receiver}.${member}`;
-    return `${receiver}.${member}(${args})`;
-  };
-  ctx.objectNew = (factory, args) => invoke(factory, args, '');
-
-  // GN-13f: the statements that make the receiver of a case, each on a line of the test, and its expression.
-  const form: MadeForm = {
-    ctx,
-    invoke,
-    bind: (local, expr) => { textPaths.bind(local, expr); return `const ${local} = ${expr};`; },
-    name: (local) => local,
-    run: (expr) => `${expr};`,
-    fails: (expr, kind, what) => {
-      usesOutcome = true;
-      return `assert.equal((${nodeOutcome(expr)}).kind, ${jsString(kind)}, ${jsString(`G-5: ${what}`)});`;
-    },
-    pick: (expr, step) => 'present' in step ? expr : textPaths.derive('field' in step ? `${expr}.${langName('wasm', step.field.split('_'), 'variable')}` : `${expr}[${'index' in step ? step.index : step.tuple}]`, [expr]),
-    // G-5: a call of then arms through the module that the hook before loads, because the instance values are made in
-    // calls that do not wait.
-    arm: (local, member, faults) => {
-      usesGlue = true;
-      usesStepGlue = true;
-      return `const ${local} = stepGlue.__armFaults(${jsString(member)}, ${jsString(withoutErrno(faults))});`;
-    },
-    left: (local, what) => `assert.deepEqual(stepGlue.__faultLeft(${local}), [], ${jsString(`G-5: ${what}`)});`,
-  };
-  const receiverOfCase = (receiver: Receiver | undefined): { lines: string; expr: string } => {
-    if (receiver === undefined) return { lines: '', expr: '' };
-    const built = madeLines(model, form, receiver);
-    return { lines: built.lines.map((line) => `\n  ${line}`).join(''), expr: built.expr };
-  };
-  // GN-13f: a receiver as one expression; an instance value is made in a function that the expression calls.
-  const made = (receiver: Receiver): string => {
-    const make = (): string => {
-      if (isPlain(receiver)) return invoke(receiver.factory, callArgs(model, ctx, receiver.factory, (arg) => caseValue(model, ctx, arg, receiver.args)), '');
-      const built = madeLines(model, form, receiver);
-      const body = `${built.lines.join(' ')} return ${built.expr};`;
-      // GN-6m: a receiver that a call that waits makes is awaited, as in Node; an await in a function that is not
-      // async is a syntax error that stops the whole file from loading.
-      return /\bawait /.test(body) ? `(await (async () => { ${body} })())` : `(() => { ${body} })()`;
-    };
-    return ctx.caseTextExpression === undefined ? make() : ctx.caseTextExpression(make);
-  };
-  ctx.instanceNew = made;
-  // GN-6ae: the function of a function fixture, as for Node: each step calls a method on one of its arguments; it then
-  // returns its result, throws the instance of an error unit, or throws the exception that the test of the case holds.
-  // A function whose step calls a member that waits is async, so it returns a promise, which the member awaits.
-  // GN-13n: the arguments that function fixtures keep by name, in the store of the module, which the calls of after
-  // read after the function returned (GN-13o).
-  ctx.boundValue = (name) => {
-    usesBound = true;
-    return `bound.${name}`;
-  };
-  ctx.boundSet = (name, expr) => `${ctx.boundValue?.(name) ?? ''} = ${expr};`;
-  ctx.machineFunctionNew = (fixture) => {
-    const kept = fixture.names.map((name, i) => `${ctx.boundValue?.(name) ?? ''} = arg${i}; `).join('');
-    const steps = kept + fixture.steps.map((step, i) => {
-      const call = invoke(step.fn, step.args, typeof step.on === 'number' ? `arg${step.on}` : (ctx.boundValue?.(step.on) ?? ''));
-      // GN-13o: a step that names raises fails with that kind.
-      if (step.raises !== undefined) return `${form.fails(call, step.raises, `step ${i} fails with ${step.raises}`)} `;
-      // CK-22: a step that names a result requires it, by an assertion whose failure is an exception of the function.
-      if (step.expected === undefined) return `${call}; `;
-      if ('refused' in step.expected) return `assert.fail(${jsString(step.expected.refused)}); `;
-      usesOrdered = true;
-      return `assert.deepStrictEqual(ordered(${call}), ordered(${step.expected.text})); `;
-    }).join('');
-    const end = 'result' in fixture.end ? `return ${fixture.end.result};` : 'raise' in fixture.end ? `throw ${fixture.end.raise};` : 'throw raised;';
-    // CK-22: a fixture with awaits is an async function, whose promise the member awaits; so is a function whose step
-    // awaits the call of a member that waits. GN-6bu: the function declares the arguments that the machine calls it with.
-    return `${fixture.awaits || /\bawait /.test(steps) ? 'async ' : ''}(${jsArguments(fixture.parameters)}) => { ${steps}${end} }`;
-  };
-  // GN-6ae: after a case of a member that takes a callback or a function, the table of the crate keeps nothing that
-  // was thrown, which the entry point of thrown-count-test counts.
-  const kept = (fn: Fn): string => {
-    if (!callsCode(model, fn)) return '';
+  // G-5: a call of then arms through the module that the hook before loads, because the instance values are made in
+  // calls that do not wait.
+  const stepGlue = (): string => {
     usesGlue = true;
     usesStepGlue = true;
-    return '\n  assert.equal(stepGlue.__thrownCount(), 0);';
+    return 'stepGlue';
   };
-  // GN-6ae: the calls of after of a case, each on the receiver of the case, with the result that the case names.
-  const afterChecks = (after: After[] | undefined, receiver: string): string =>
-    (after ?? []).map((call, i) => {
-      // GN-13o: a call on an argument that a function fixture kept, and a call that fails with a kind.
-      const on = call.on === undefined ? receiver : (ctx.boundValue?.(call.on) ?? '');
-      if (call.raises !== undefined) {
-        // B2.509: an instance value of the args is made before the outcome of the call, which holds the call alone.
-        const before = madeBeforeArgs(model, ctx, call.fn, call.args, (n) => `after${i}_${n}`, (name, value) => `const ${name} = ${value};`);
-        return [...before.lines, form.fails(invoke(call.fn, before.args, on), call.raises, `after ${i} fails with ${call.raises}`)].map((line) => `\n  ${line}`).join('');
-      }
-      const made = invoke(call.fn, callArgs(model, ctx, call.fn, (arg) => caseValue(model, ctx, arg, call.args)), on);
-      const expected = stepExpected(model, ctx, call.fn, call.result);
-      if ('refused' in expected) return `\n  assert.fail(${jsString(expected.refused)});`;
-      usesOrdered = true;
-      return `\n  assert.deepStrictEqual(ordered(${made}), ordered(${expected.text}));`;
-    }).join('');
-  // GN-6ae: a case with after holds its receiver, which the calls of after observe.
-  const heldReceiver = (receiverMade: { lines: string; expr: string }, after: After[] | undefined): { lines: string; expr: string } =>
-    after === undefined || receiverMade.expr === '' ? receiverMade : { lines: `${receiverMade.lines}\n  const receiver = ${receiverMade.expr};`, expr: 'receiver' };
-  // GN-6aa: a callback value inside another value is the object of a fixture, whose unexpected call throws.
-  ctx.fixtureNew = (values) => {
-    usesFixture = true;
-    onceMade += onceRows(values.rows);
-    usesOrdered ||= values.foreign;
-    return `${nodeFixture(values)}.object`;
-  };
-  // GN-6z: a function value inside another value is the call of a fixture, whose unexpected call throws.
-  ctx.functionMember = 'call';
-  ctx.functionNew = (rows, parameters, foreign) => {
-    usesFixture = true;
-    onceMade += onceRows(rows);
-    usesOrdered ||= foreign;
-    return `${nodeFixture({ members: [jsDeclaredMember("'call'", parameters)], rows, foreign })}.object.call`;
-  };
-  // G-5: the fixtures of a case: a callback parameter is the object of a fixture, and a function value (GN-6z) the call
-  // of a fixture whose one member is the call; the test reads the record of each after the call.
-  const fixturesAt = (fn: Fn, id: string, args: Map<Arg, unknown>): { fixture: { arg: Arg }; name: string; values: { members: string[]; rows: string[][]; calls: string[][] | undefined; foreign: boolean }; use: string }[] => [
-    ...fixturesOf(model, fn, id, args).map((fixture, i) => ({ fixture, name: `fixture${i}`, values: fixtureValues(model, ctx, fixture), use: `fixture${i}.object` })),
-    ...functionFixturesOf(model, ctx, fn, id, args, 'call').map((f, i) => ({ fixture: { arg: f.arg }, name: `function${i}`, values: { members: f.members, rows: f.rows, calls: undefined, foreign: f.foreign }, use: `function${i}.object.call` })),
-  ];
+  const js = jsTests(model, {
+    lang: 'wasm',
+    ctx: { target: 'wasm' },
+    form: {},
+    paths: false,
+    stepArm: (member, faults) => `${stepGlue()}.__armFaults(${jsString(member)}, ${jsString(withoutErrno(faults))})`,
+    stepLeft: (local) => `stepGlue.__faultLeft(${local})`,
+    thrownCount: () => `${stepGlue()}.__thrownCount()`,
+    caseGlue: () => {
+      usesGlue = true;
+      return { open: '\n  const glue = await glueModule();', ref: 'glue' };
+    },
+    faults: withoutErrno,
+    errno: (errno) => (errno === null || 'symbol' in errno ? 'null' : String(errno.value)),
+    serviceStart: () => '',
+    serviceEnd: () => '',
+  });
+  const { emit, invoke, cls } = js;
   // GW-7: a call after the panic, of the first function with its placeholder arguments: kind internal when the panic
   // trapped, a call that works when the module unwinds.
   const [firstFn] = model.functions;
   const laterCall = firstFn === undefined ? '' : `
-  const later = () => pkg.${langName('wasm', firstFn.member.name, 'callable')}(${callArgs(model, ctx, firstFn, (arg) => placeholder(model, ctx, arg.type))});
+  const later = () => pkg.${langName('wasm', firstFn.member.name, 'callable')}(${callArgs(model, js.ctx, firstFn, (arg) => placeholder(model, js.ctx, arg.type))});
   if (state.broken()) assert.throws(later, internal);
   else assert.doesNotThrow(() => { try { later(); } catch (error) { if (internal(error)) throw error; } });`;
-  for (const fn of callables(model)) {
-    const name = fn.kind === 'function' ? langName('wasm', fn.member.name, 'callable') : `${langName('wasm', fn.unit.name, 'class')}.${fn.kind === 'constructor' ? 'constructor' : langName('wasm', fn.member.name, 'callable')}`;
-    const sample = fn.receiver === undefined ? undefined : sampleReceiver(model, fn);
-    const recv = sample === undefined ? '' : made(sample);
-    const target = (args: string): string => invoke(fn, args, recv);
-    // GN-13t: an argument of a class is the case value of a case of the member, where one gives it.
-    const classGiven = classCaseArgs(model, fn);
-    const call = (override: Map<unknown, string>): string =>
-      target(callArgs(model, ctx, fn, (arg) => override.get(arg) ?? otherValue(model, ctx, arg, classGiven)));
-    // A method is tested on an instance, which a case of the class gives (GN-13).
-    const reachable = fn.receiver === undefined || sample !== undefined;
-    // GN-6z: a value of a function type that is not a function is refused as it enters.
-    const functionArg = fn.args.find((a) => typeof a.type === 'object' && 'function' in a.type && !machineFunction(a.type));
-    if (functionArg !== undefined && reachable) {
-      emit(`
-test('GN-6z: ${name} refuses a ${langName('wasm', functionArg.name, 'variable')} that is not a function', () => {
-  assert.throws(() => ${target(callArgs(model, ctx, fn, (arg) => (arg === functionArg ? '0' : otherValue(model, ctx, arg, classGiven))))}, (error) => error.constructor === pkg.${cls('type')} && error.kind === 'invalid_argument_type');
-});`);
-    }
-    for (const arg of reachable ? fn.args : []) {
-      const argName = langName('wasm', arg.name, 'variable');
-      const number = isNumber(arg.type);
-      if (number !== undefined) {
-        emit(`
-test('GN-12a: ${name} refuses a ${argName} of another type than ${number}', () => {
-  for (const bad of [${[...(OTHER_TYPES[number] ?? []), ...(numberRefusesNull(arg) ? ['null'] : [])].join(', ')}]) {
-    assert.throws(() => ${call(new Map([[arg, 'bad']]))}, (error) => error.constructor === pkg.${cls('type')} && error.kind === 'invalid_argument_type', String(bad));
-  }
-});`);
-      }
-      if (number !== undefined && BAD_NUMBERS[number] !== undefined) {
-        emit(`
-test('B-2: ${name} refuses a ${argName} that is not ${number}', () => {
-  for (const bad of [${BAD_NUMBERS[number].join(', ')}]) {
-    assert.throws(() => ${call(new Map([[arg, 'bad']]))}, (error) => error.constructor === pkg.${cls('value')} && error.kind === 'invalid_number', String(bad));
-  }
-});`);
-      }
-      const refused = refusedKeyMap(model, ctx, arg.type);
-      if (refused !== undefined) {
-        emit(`
-test('T-2: ${name} refuses a ${refused.kind} key in ${argName}', () => {
-  assert.throws(() => ${call(new Map([[arg, refused.value]]))}, (error) => error.constructor === pkg.${cls('type')} && error.kind === 'invalid_argument_type');
-});`);
-      }
-      const unsafeKey = unsafeKeyMap(model, ctx, arg.type);
-      if (unsafeKey !== undefined) {
-        emit(`
-test('B-2: ${name} refuses a key outside the safe integers in ${argName}', () => {
-  assert.throws(() => ${call(new Map([[arg, unsafeKey]]))}, (error) => error.constructor === pkg.${cls('value')} && error.kind === 'invalid_number');
-});`);
-      }
-      // GN-13d: an optional or a value type takes null as a value, so only another type refuses it.
-      if (refusesNull(arg) && !takesNull(model, arg.type)) {
-        emit(`
-test('U-2: ${name} takes null in ${argName} as a value', () => {
-  assert.throws(() => ${call(new Map([[arg, 'null']]))}, (error) => ['invalid_argument_type', 'invalid_number', 'invalid_text'].includes(error.kind));
-});`);
-      }
-      const bytes = bytesKind(arg.type);
-      if (bytes !== undefined) {
-        emit(`
-test('T-7: ${name} refuses a ${argName} that is not ${bytes === 'source' ? 'a string or a Uint8Array' : 'a Uint8Array'}', () => {
-  for (const bad of [1, new Uint16Array(1), [1]${bytes === 'source' ? '' : ", 'a'"}]) {
-    assert.throws(() => ${call(new Map([[arg, 'bad']]))}, (error) => error.constructor === pkg.${cls('type')} && error.kind === 'invalid_argument_type');
-  }
-});`);
-      }
-      if (bytes === 'source') {
-        emit(`
-test('B-3: ${name} refuses an unpaired surrogate in ${argName}', () => {
-  assert.throws(() => ${call(new Map([[arg, "'\\uD800'"]]))}, (error) => error instanceof pkg.${cls('value')} && error.kind === 'invalid_text');
-});`);
-      }
-      // U-7: a kind of an alias's in function reaches the caller of a member that takes the alias.
-      const refusedValue = aliasRepresentative(model, ctx, arg.type);
-      if (refusedValue !== undefined) {
-        emit(`
-test('U-7: ${name} gives the kind of ${refusedValue.kase.alias.unit.id} in ${argName}', () => {
-  assert.throws(() => ${call(new Map([[arg, refusedValue.value]]))}, (error) => error.constructor === pkg.${exactClass(refusedValue.kase)} && error.kind === ${jsString(refusedValue.kase.kind)});
-});`);
-      }
-      const text = textKind(arg.type);
-      if (text !== undefined) {
-        const bad = text === 'latin1' ? "'\\u0100'" : "'\\uD800'";
-        emit(`
-test('B-3: ${name} refuses ${text === 'latin1' ? 'a character above U+00FF' : 'an unpaired surrogate'} in ${argName}', () => {
-  assert.throws(() => ${call(new Map([[arg, wrapText(arg.type, bad)]]))}, (error) => error instanceof pkg.${cls('value')} && error.kind === 'invalid_text');
-});`);
-      }
-    }
-    // GN-6ae: a parameter of a function type takes a function, and any other value is kind invalid_callback.
-    for (const arg of reachable ? fn.args.filter((a) => machineFunction(a.type)) : []) {
-      emit(`
-test('GN-6ae: ${name} refuses a ${langName('wasm', arg.name, 'variable')} that is no function', () => {
-  assert.throws(() => ${call(new Map([[arg, '1']]))}, (error) => error.constructor === pkg.${cls('type')} && error.kind === 'invalid_callback');
-});`);
-    }
-    for (const pair of reachable ? samePairs(model, ctx, fn) : []) {
-      usesOutcome = true;
-      const argName = langName('wasm', pair.arg.name, 'variable');
-      // GN-13bg: two results that hold an instance of a value class of another repository are compared through
-      // ordered, which reads the instance by its in row; assert.deepStrictEqual compares two instances by no property.
-      const read = pair.computed === undefined && holdsForeign(model, fn.returns);
-      usesOrdered ||= read;
-      const outcomeOf = (expr: string): string => (pair.computed !== undefined ? nodeOutcome(`void ${expr}`) : read ? `ordered(${nodeOutcome(expr)})` : nodeOutcome(expr));
-      emit(`
-test('${pair.computed !== undefined ? `U-2: ${name} without ${argName} leaves its value to the core (${pair.computed})` : pair.rule === 'U-2' ? `U-2: ${name} without ${argName} is the call with its default` : `T-1: ${name} takes a text in ${argName} as its UTF-8 bytes`}', () => {
-  assert.deepStrictEqual(${outcomeOf(target(callArgs(model, ctx, fn, pair.left)))}, ${outcomeOf(target(callArgs(model, ctx, fn, pair.right)))});
-});`);
-    }
-    for (const kase of raisingCases(model, fn)) {
-      const since = onceMade;
-      const refusal =caseRefusal(model, ctx, fn, kase, receiverOfCase);
-      if (refusal !== undefined) {
-        emit(`
-test('B-4: ${name} ${kase.id}', () => {
-  assert.fail(${jsString(refusal)});
-});`);
-        continue;
-      }
-      // G-5: a callback parameter is the fixture of the case, whose record of calls the test reads after the call.
-      const fixtures = fixturesAt(fn, kase.id, kase.args);
-      usesFixture ||= fixtures.length > 0;
-      onceMade += fixtures.reduce((count, f) => count + onceRows(f.values.rows), 0);
-      const caseArg =(arg: Fn['args'][number]): string | undefined => {
-        const found = fixtures.find((f) => f.fixture.arg === arg);
-        return found === undefined ? caseValue(model, ctx, arg, kase.args) : found.use;
-      };
-      // GN-13f: the receiver is made before the call that must throw, so a receiver that cannot be made fails the test: a
-      // receiver that no line made yet is held.
-      // A receiver whose factory raises the kind of the case is made inside, since the case may fail there.
-      const receiverBuilt = receiverOfCase(kase.receiver);
-      const receiverMade = kase.faults === undefined ? heldReceiver(receiverBuilt, kase.after ?? (receiverBuilt.lines === '' && kase.receiverFails === undefined ? [] : undefined)) : receiverBuilt;
-      const made_ = receiverMade.expr;
-      // G-5: a case that arms faults makes its receiver and arguments first, so no call but the one under test runs
-      // between the arming and that call, and requires every armed fault to have fired.
-      const locals = kase.faults === undefined ? [] : [...(made_ === '' ? [] : [['receiver', made_]]), ...fn.args.flatMap((arg, i) => { const value = caseArg(arg); return value === undefined ? [] : [[`arg${i}`, value]]; })];
-      const arming = kase.faults === undefined ? '' : `\n  const glue = await glueModule();${locals.map(([local, value]) => `\n  const ${local} = ${value};`).join('')}\n  const armed = glue.__armFaults(${jsString(fn.member.id)}, ${jsString(withoutErrno(kase.faults))});`;
-      const args = callArgs(model, ctx, fn, kase.faults === undefined ? caseArg : (arg) => (caseArg(arg) === undefined ? undefined : `arg${fn.args.indexOf(arg)}`));
-      const receiver = kase.faults === undefined || made_ === '' ? made_ : 'receiver';
-      const errno = expectedErrno(kase);
-      usesGlue ||= kase.faults !== undefined;
-      usesOrdered ||= fixtures.some((f) => f.values.foreign);
-      const before = fixtures.map((f) => `\n  const ${f.name} = ${nodeFixture(f.values)};`).join('');
-      const after = fixtures.map((f) => nodeFixtureChecks(f.name, f.values)).join('');
-      emit(`
-test('B-4: ${name} ${kase.id}', ${kase.faults === undefined ? '' : 'async '}() => {${nodeCaseFileLines(kase.files, kase.listener)}${receiverMade.lines}${raisedLines('node', kase.args)}${before}${arming}
-  assert.throws(() => ${invoke(fn, args, receiver)}, (error) =>
-    error.constructor === pkg.${exactClass(kase.raises)} &&
-    error instanceof pkg.${cls(kase.raises.category)} &&
-    error instanceof ${jsBase(kase.raises.category)} &&
-    error.kind === ${jsString(kase.raises.kind)} &&
-${kase.raises.status === undefined ? '' : `    error.status === ${kase.raises.status === null ? 'null' : String(kase.raises.status)} &&\n`}    error.errno === ${errno === null || 'symbol' in errno ? 'null' : String(errno.value)}${jsCause(convertedCause(model, kase.args), 'wasm')});${kase.faults === undefined ? '' : '\n  assert.deepEqual(glue.__faultLeft(armed), []);'}${after}${afterChecks(kase.after, 'receiver')}${answered(since)}${kept(fn)}
-});`);
-    }
-    // GN-6ae: a case whose function fixture raises an exception of the language gets the same object.
-    for (const kase of callbackCases(model, fn)) {
-      const since = onceMade;
-      const refusal =caseRefusal(model, ctx, fn, kase, receiverOfCase);
-      if (refusal !== undefined) {
-        emit(`
-test('GN-6ae: ${name} ${kase.id}', () => {
-  assert.fail(${jsString(refusal)});
-});`);
-        continue;
-      }
-      const receiverMade = heldReceiver(receiverOfCase(kase.receiver), kase.after ?? []);
-      const args = callArgs(model, ctx, fn, (arg) => caseValue(model, ctx, arg, kase.args));
-      emit(`
-test('GN-6ae: ${name} ${kase.id}', () => {${nodeCaseFileLines(kase.files, kase.listener)}${receiverMade.lines}${raisedLines('node', kase.args, true)}
-  assert.throws(() => ${invoke(fn, args, receiverMade.expr)}, (error) => error === raised);${afterChecks(kase.after, 'receiver')}${answered(since)}${kept(fn)}
-});`);
-    }
-    // GN-13e: every case that does not raise runs, and its result is compared with the value that the case gives.
-    for (const kase of resultCases(model, fn)) {
-      const since = onceMade;
-      if (kase.refused !== undefined) {
-        emit(`
-test('GN-13e: ${name} ${kase.id}', () => {
-  assert.fail(${jsString(kase.refused)});
-});`);
-        continue;
-      }
-      const refusal = caseRefusal(model, ctx, fn, kase, receiverOfCase);
-      if (refusal !== undefined) {
-        emit(`
-test('GN-13e: ${name} ${kase.id}', () => {
-  assert.fail(${jsString(refusal)});
-});`);
-        continue;
-      }
-      const fixtures = fixturesAt(fn, kase.id, kase.args);
-      usesFixture ||= fixtures.length > 0;
-      onceMade += fixtures.reduce((count, f) => count + onceRows(f.values.rows), 0);
-      usesOrdered ||= fixtures.some((f) => f.values.foreign);
-      const before = fixtures.map((f) => `\n  const ${f.name} = ${nodeFixture(f.values)};`).join('');
-      const after = fixtures.map((f) => nodeFixtureChecks(f.name, f.values)).join('');
-      const args = callArgs(model, ctx, fn, (arg) => {
-        const found = fixtures.find((f) => f.fixture.arg === arg);
-        return found === undefined ? caseValue(model, ctx, arg, kase.args) : found.use;
-      });
-      const receiverMade = heldReceiver(receiverOfCase(kase.receiver), kase.after);
-      const call = invoke(fn, args, receiverMade.expr);
-      const expected = kase.expected === undefined ? undefined : expectedText(model, ctx, fn, kase.expected.value);
-      usesOrdered ||= expected !== undefined && 'text' in expected;
-      usesTokens ||= expected !== undefined && 'tokens' in expected;
-      const round = expected !== undefined && 'round' in expected && expected.round !== undefined;
-      usesGlue ||= round;
-      const check = expected === undefined
-        ? `\n  ${call};`
-        : 'refused' in expected
-          ? `\n  assert.fail(${jsString(expected.refused)});`
-          : 'tokens' in expected
-            ? expected.round === undefined
-              ? `\n  assert.deepStrictEqual(tokens(${call}), JSON.parse(${jsString(expected.tokens)}));`
-              : `\n  const glue = await glueModule();\n  const result = ${call};\n  const expected = JSON.parse(${jsString(expected.tokens)});\n  assert.deepStrictEqual(tokens(result), expected);\n  assert.deepStrictEqual(tokens(glue.__aliasRound${langName('wasm', expected.round, 'class')}(result)), expected);`
-            : `\n  assert.deepStrictEqual(ordered(${call}), ordered(${expected.text}));`;
-      emit(`
-test('GN-13e: ${name} ${kase.id}', ${round ? 'async ' : ''}() => {${nodeCaseFileLines(kase.files, kase.listener)}${receiverMade.lines}${before}${check}${after}${afterChecks(kase.after, 'receiver')}${answered(since)}${kept(fn)}
-});`);
-    }
-    // K-2: a member that takes a callback, as for Node.
-    const callback = callbackArg(model, fn);
-    // GN-13y: the other arguments of a case that reaches the callback, where one exists.
-    const reaching = callbackReachingArgs(model, fn);
-    const cbUnit = callback === undefined ? undefined : unitOf(model, callback.type);
-    if (callback !== undefined && cbUnit !== undefined && reachable) {
-      const with_ = (how: CallbackHow): string =>
-        target(callArgs(model, ctx, fn, (arg) => (arg === callback ? ctx.callbackNew(cbUnit, how) : reaching === undefined ? otherValue(model, ctx, arg, classGiven, true) : caseValue(model, ctx, arg, reaching))));
-      emit(`
-test('K-2: ${name} refuses a callback without its members', () => {
-  assert.throws(() => ${with_({ missing: true })}, (error) => error.constructor === pkg.${cls('type')} && error.kind === 'invalid_callback');
-});${!fn.failure ? '' : `
-
-test('K-2: ${name} lets the exception of a callback through', () => {
-  const raised = new Error('raised by the callback');
-  assert.throws(() => ${with_({ raise: 'raised' })}, (error) => error === raised);
-});`}${fn.failure && judgesCallbackResult(model, callback.type) ? `
-
-test('K-2: ${name} refuses a callback result of another type', () => {
-  assert.throws(() => ${with_({ returns: 'wrong' })}, (error) => ['invalid_argument_type', 'invalid_number', 'invalid_text'].includes(error.kind));
-});` : ''}`);
-    }
-    // GN-6bu: a callback that names none of the arguments that the binding calls it with is refused before the member
-    // runs: it is never called, and an arming of the member stays for the next call (GN-8a).
-    for (const place of reachable ? placeTests(model, 'wasm', fn) : []) {
-      const given = (value: string): string =>
-        target(callArgs(model, ctx, fn, (arg) => (arg === place.arg ? value : place.form === 'unit' && reaching !== undefined ? caseValue(model, ctx, arg, reaching) : otherValue(model, ctx, arg, classGiven, place.form === 'unit'))));
-      if (place.armed !== undefined) {
-        usesGlue = true;
-        usesStepGlue = true;
-      }
-      emit(`
-test('GN-6bu: ${name} refuses a ${langName('wasm', place.arg.name, 'variable')} that takes no argument', () => {
-  const calls = [];${place.armed === undefined ? '' : `\n  const armed = stepGlue.__armFaults(${jsString(fn.member.id)}, ${jsString(withoutErrno(place.armed.faults))});`}
-  assert.throws(() => ${given(refusedJs(place, 'none'))}, (error) => error.constructor === pkg.${cls('type')} && error.kind === 'invalid_callback' && error.message.includes(${jsString(place.given)}));
-  assert.deepEqual(calls, []);${place.armed === undefined ? '' : `
-  // GN-8a: the refused call did not reach the core, so the next call takes the arming.
-  assert.throws(() => ${given(placeholder(model, ctx, place.arg.type, true))}, (error) => error.constructor === pkg.${cls(place.armed.category)} && error.kind === ${jsString(place.armed.kind)});
-  assert.deepEqual(stepGlue.__faultLeft(armed), []);`}
-});`);
-    }
-    for (const kase of primitiveCases(model, ctx, fn)) {
-      const instance = receiverOfCase(kase.receiver);
-      const number = invoke(fn, '', instance.expr);
-      emit(`
-test('N-4: ${name} ${kase.id}', () => {${instance.lines}
-  ${kase.result === undefined ? `${number};` : `assert.strictEqual(${number}, ${kase.result});`}
-});`);
-    }
-    for (const kase of stringCases(model, fn)) {
-      emit(`
-test('N-4: ${name} ${kase.id}', () => {${receiverOfCase(kase.receiver).lines}
-  assert.equal(${invoke(fn, '', receiverOfCase(kase.receiver).expr)}, ${jsString(kase.result)});
-});`);
-    }
-    // N-4: a hook takes the arguments of the language's protocol, so it has no G-7 test.
-    if (fn.kind === 'property' || fn.special !== undefined || !reachable) continue;
-    // G-7: the receiver is made once, as a local, and every call of the test runs on it: a receiver that holds state
-    // cannot be made twice in one case folder (orm: StepRunner.run, "table owner already exists").
-    const built = receiverOfCase(sample);
-    // A receiver that one factory call makes is an expression, which the test keeps as a local too.
-    const once = built.expr === '' || built.lines !== '' ? built : { lines: `\n  const receiver = ${built.expr};`, expr: 'receiver' };
-    const onOnce = (args: string): string => invoke(fn, args, once.expr);
-    // GN-13t: an argument of a class of the G-7 test is the case value of a case of the member, where one gives it.
-    const values = (arg: Fn['args'][number]): string => otherValue(model, ctx, arg, classGiven);
-    // B2.508: each argument of a class is made once too, as a local, and every call takes it.
-    const given = onceArgs(model, fn, values, (local, expr) => `\n  const ${local} = ${expr};`, (local) => local);
-    const record = fn.record;
-    const recordTests = record === undefined ? '' : `
-  const fields = { ${(record.unit.fields ?? []).map((f) => `${langName('wasm', f.name, 'variable')}: ${placeholder(model, ctx, f.type)}`).join(', ')} };
-  const positional = [${fn.args.filter((a) => !a.field).map(given.value).join(', ')}];
-  assert.throws(() => ${onOnce('...positional, { ...fields, notAMember: 1 }')}, (error) => error.constructor === TypeError && /no member notAMember/.test(error.message));
-  for (const field of [${(record.unit.fields ?? []).filter((f) => f.default === undefined).map((f) => jsString(langName('wasm', f.name, 'variable'))).join(', ')}]) {
-    const lacking = { ...fields, [field]: undefined };
-    assert.throws(() => ${onOnce('...positional, lacking')}, (error) => error.constructor === TypeError && /lacks the member/.test(error.message), field);
-  }`;
-    emit(`
-test('G-7: ${name} counts and names its arguments', () => {${once.lines}${given.lines}${fn.params.every((p) => p.default !== undefined) ? '' : `
-  assert.throws(() => ${onOnce('')}, (error) => error.constructor === TypeError && /takes/.test(error.message));`}
-  assert.throws(() => ${onOnce([callArgs(model, ctx, fn, given.value), 'null'].filter((a) => a !== '').join(', '))}, (error) => error.constructor === TypeError && /takes/.test(error.message));${recordTests}
-});`);
-  }
+  js.callableTests();
   // GN-6u: an object goes through the native row and back as the same object, and the binding releases its Native.
   // WASM drops a Native at once, so the test awaits nothing from the first count to the second: an await there lets
   // the FinalizationRegistry release objects of earlier tests, whose Natives would change the count.
@@ -543,96 +71,21 @@ test('GN-6u: ${langName('wasm', roundFn.member.name, 'callable')} gives back the
   assert.equal(glue.__nativeCount(), before);
 });`);
   }
-  // U-7: the cases of an alias run its in function alone, through the entry point of the feature codec-test.
-  for (const kase of aliasCases(model)) {
-    const errno = expectedErrno(kase);
-    usesGlue = true;
-    emit(`
-test('U-7: ${kase.alias.unit.id} in ${kase.id}', async () => {
-  const glue = await glueModule();
-  assert.throws(() => glue.__aliasIn${langName('wasm', kase.alias.unit.name, 'class')}(${fromJson(model, ctx, { unit: kase.alias.unit.id }, kase.value)}), (error) => error.constructor === pkg.${exactClass(kase)} && error.kind === ${jsString(kase.kind)}${kase.raises.status === undefined ? '' : ` && error.status === ${kase.raises.status === null ? 'null' : String(kase.raises.status)}`} && error.errno === ${errno === null || 'symbol' in errno ? 'null' : String(errno.value)});
-});`);
-  }
-  // GN-6o: a method with the receiver self leaves its object consumed, whatever the call gives.
-  for (const fn of callables(model).filter((f) => f.receiver === 'self')) {
-    const sample = sampleReceiver(model, fn);
-    if (sample === undefined) continue;
-    const args = callArgs(model, ctx, fn, (arg) => placeholder(model, ctx, arg.type));
-    emit(`
-test('GN-6o: ${langName('wasm', fn.unit.name, 'class')}.${langName('wasm', fn.member.name, 'callable')} consumes its object', () => {
-  const held = ${made(sample)};
-  ${nodeOutcome(invoke(fn, args, 'held'))};
-  assert.throws(() => ${invoke(fn, args, 'held')}, (error) => error.constructor === pkg.${cls('type')} && error.kind === 'consumed');
-});`);
-  }
-  // GN-6b: a direct construction of a class without a constructor (U-1 constructible) is kind direct_construction.
-  for (const object of model.objects.filter((o) => !o.constructible)) {
-    const label = langName('wasm', object.unit.name, 'class');
-    emit(`
-test('GN-6b: new ${label}() is kind direct_construction', () => {
-  assert.throws(() => new pkg.${label}(), (error) => error.constructor === pkg.${cls('type')} && error.kind === 'direct_construction' && error.message === ${jsString(`${label} has no public constructor`)});
-});`);
-  }
-  // GN-6p, B-10: an instance collected without its cleanup call warns as the Node binding does; the test turns on gc()
-  // and awaits the warning event of the process.
-  let usesGc = false;
-  for (const object of model.objects) {
-    const cleanup = object.cleanup;
-    const sample = cleanup === undefined ? undefined : sampleReceiver(model, cleanup);
-    if (cleanup === undefined || sample === undefined) continue;
-    usesGc = true;
-    const label = langName('wasm', object.unit.name, 'class');
-    emit(`
-test('B-10: ${label} warns when it is destroyed without ${memberName('wasm', cleanup)}()', async () => {
-  const expected = ${jsString(cleanupWarning(label, memberName('wasm', cleanup)))};
-  const warned = new Promise((resolve) => {
-    const listener = (warning) => {
-      if (warning.name !== 'ResourceWarning' || warning.message !== expected) return;
-      process.off('warning', listener);
-      resolve(warning);
-    };
-    process.on('warning', listener);
-  });
-  ${scoped(made(sample))}
-  gc();
-  assert.equal((await warned).message, expected);
-});`);
-  }
+  js.aliasTests();
+  js.objectTests();
   // GN-6n: a test that calls a member that waits is an async function, as for Node.
   // Only a call of such a member is written `(await ...)`; the import of the glue of a case is awaited in any test.
   // A block may hold several tests, each of which is judged alone.
-  const usesCaseText = textPaths.used();
-  if (usesCaseText) nodeCaseTextProof(ctx, emit);
-  const blocks = out.map((block) => linuxOnlyTests(block).split(/(?=\ntest\()/).map((one) => (one.includes('(await ') ? awaitedTest(one) : one)).join(''));
-  usesOutcome = blocks.some((block) => block.includes('outcome('));
-  const usesSettled = blocks.some((block) => block.includes('settled('));
-  // GN-13i: the files of a case are written with node:fs of the Node.js that runs the tests, as in Node.
-  const usesCaseFile = usesCaseText || blocks.some((block) => block.includes('caseFile(') || block.includes('caseByteFile('));
-  // GN-13r: the listener of a case, a Worker of the Node.js that runs the tests, as in Node.
-  const usesListener = blocks.some((block) => block.includes('\n  caseListener();'));
-  // GN-13e, B2.121: ordered reads an instance of a value class of another repository through its in row.
-  const readers = usesOrdered ? foreignReaders(model, 'wasm') : [];
-  const foreignClass = ctx.foreignClass as (library: string, unit: Unit) => string;
-  const ordered = nodeOrdered(foreignClassNames(readers, foreignClass), nodeForeignRead(readers, 'wasm', foreignClass), usesOrdered ? nodeValueClasses(model, 'wasm') : []);
-  // GN-13e, GN-6ar: the classes that a result of an alias holds; a class of another repository is read through the
-  // package of its owner, which the test imports.
-  const forms = usesTokens ? tokenForms(model, 'node') : [];
-  for (const form of forms) if (form.library !== undefined) foreignModules.add(form.library);
+  const done = js.finish((one) => (one.includes('(await ') ? awaitedTest(one) : one));
+  const { usesCaseFile, usesCaseText, usesListener } = done;
+  const usesGc = js.uses.gc;
   return `${header('//')}
 import assert from 'node:assert/strict';
-import test${usesStepGlue || usesCaseFile || usesListener ? `, { ${[...(usesStepGlue ? ['before'] : []), ...(usesCaseFile || usesListener ? ['afterEach'] : [])].join(', ')} }` : ''} from 'node:test';${usesCaseFile ? `${nodeCaseImports(true, usesCaseText)}\nimport { dirname, join } from 'node:path';` : ''}${usesListener ? "\nimport { Worker } from 'node:worker_threads';" : ''}${usesGc ? "\nimport { setFlagsFromString } from 'node:v8';\nimport { runInNewContext } from 'node:vm';" : ''}${usesFixture ? "\nimport { isDeepStrictEqual } from 'node:util';" : ''}
+import test${usesStepGlue || usesCaseFile || usesListener ? `, { ${[...(usesStepGlue ? ['before'] : []), ...(usesCaseFile || usesListener ? ['afterEach'] : [])].join(', ')} }` : ''} from 'node:test';${usesCaseFile ? `${nodeCaseImports(true, usesCaseText)}\nimport { dirname, join } from 'node:path';` : ''}${usesListener ? "\nimport { Worker } from 'node:worker_threads';" : ''}${usesGc ? "\nimport { setFlagsFromString } from 'node:v8';\nimport { runInNewContext } from 'node:vm';" : ''}${js.uses.fixture ? "\nimport { isDeepStrictEqual } from 'node:util';" : ''}
 import * as pkg from ${jsString(entry)};
-${[...foreignModules].map((library) => `import * as foreign_${library.replaceAll('-', '_')} from ${jsString(`${(model.foreign.get(library)?.packages['node'] as { package: string } | undefined)?.package ?? library}/wasm`)};\n`).join('')}
-${roundFn === undefined ? '' : '\n// GN-6u: the subject of the round-trip test, an object that only the test makes.\nclass Subject {}\n'}${usesGc ? "\n// GN-6p: gc() of V8, which the B-10 tests call to collect an instance.\nsetFlagsFromString('--expose-gc');\nconst gc = runInNewContext('gc');\n" : ''}${usesFixture ? NODE_FIXTURE : ''}${usesCaseFile ? `${NODE_CASE_PATH}${NODE_CASE_FILE}` : ''}${usesCaseText ? NODE_CASE_TEXT : ''}${usesListener ? NODE_CASE_LISTENER : ''}${usesOrdered ? ordered : ''}${usesBound ? '\n// GN-13n: the arguments that the function fixtures of the test in progress keep by name.\nconst bound = {};\n' : ''}${usesTokens ? nodeTokens(forms) : ''}${usesOutcome ? `
-// G-5: what a call gives: its result, or the class and the kind of its failure.
-function outcome(call) {
-  try {
-    return { result: call() };
-  } catch (error) {
-    return { error: error.constructor, kind: error.kind };
-  }
-}
-` : ''}${usesGlue ? `
+${done.foreignImports}
+${roundFn === undefined ? '' : '\n// GN-6u: the subject of the round-trip test, an object that only the test makes.\nclass Subject {}\n'}${usesGc ? "\n// GN-6p: gc() of V8, which the B-10 tests call to collect an instance.\nsetFlagsFromString('--expose-gc');\nconst gc = runInNewContext('gc');\n" : ''}${js.uses.fixture ? NODE_FIXTURE : ''}${usesCaseFile ? `${NODE_CASE_PATH}${NODE_CASE_FILE}` : ''}${usesCaseText ? NODE_CASE_TEXT : ''}${usesListener ? NODE_CASE_LISTENER : ''}${js.uses.ordered ? done.ordered : ''}${js.uses.bound ? '\n// GN-13n: the arguments that the function fixtures of the test in progress keep by name.\nconst bound = {};\n' : ''}${js.uses.tokens ? nodeTokens(done.forms) : ''}${done.usesOutcome ? `
+// G-5: what a call gives: its result, or the class and the kind of its failure.${NODE_OUTCOME}` : ''}${usesGlue ? `
 // G-5: the module that wasm-bindgen writes, whose test entry points arm the faults of a case.
 const glueModule = () => import(new URL('./${wasmGlue(model)}.js', import.meta.resolve(${jsString(entry)})).href);
 ` : ''}${usesStepGlue ? `
@@ -641,7 +94,7 @@ let stepGlue;
 before(async () => {
   stepGlue = await glueModule();
 });
-` : ''}${usesSettled ? NODE_SETTLED : ''}${blocks.join('\n')}
+` : ''}${done.usesSettled ? NODE_SETTLED : ''}${done.blocks.join('\n')}
 
 // Last (GW-7): a module built with panic=abort traps here, and every later call is kind internal.
 test('B-7: a panic is kind internal, and a trap breaks the instance for every later call', async () => {

@@ -25,7 +25,7 @@ import {
   goOrder, goTestTag, goBuildConstraint, GO_TAG_GUARD_FILE,
 } from './go.ts';
 import {
-  type Arg, type CallbackUnit, type Fn, type Model, type ObjectClass, Unsupported, aliasOf, aliasesWithKinds, cleanupWarning, errorUnitOfKind, factoryOf, heldParam, makerOf, kindText, langName, poisoned, objectUnit, places, pointName, pointed, unitOf, variantOf, interfaceOf, implementorsOf, type KeptClass, type ValueAlias,
+  type Arg, type CallbackUnit, type Fn, type Model, type ObjectClass, Unsupported, aliasOf, aliasesWithKinds, cleanupWarning, errorUnitOfKind, factoryOf, makerOf, langName, poisoned, objectUnit, pointed, unitOf, variantOf, interfaceOf, implementorsOf, type KeptClass, type ValueAlias,
   nativeRoundTrip,
   caseName,
   callsCode,
@@ -36,6 +36,7 @@ import {
   caseTextParts, BYTE_NAME_LINUX, caseListenerOf, CASE_JSON_STRING_GOLDENS,
   fixtureType, ROW_EXCEPTION, notAFunctionValue, outsideI64, CLASSED_KINDS,
 } from './samples.ts';
+import { heldMembers } from './tests_shared.ts';
 
 interface Values {
   model: Model;
@@ -1882,8 +1883,6 @@ function goCause(v: Values, made: MadeRaise | undefined): string[] {
 // Each test is one body, so that the locals of its calls are distinct.
 function heldTests(v: Values, out: Out, objects: ObjectClass[]): void {
   const model = v.model;
-  const objectOf = (fn: Fn): ObjectClass | undefined => model.objects.find((o) => o.unit === fn.unit);
-  const takes = (fn: Fn, object: ObjectClass): Arg | undefined => fn.args.find((a) => !a.field && heldParam(model, a.type)?.unit === object.unit);
   const callables = callablesOf(model).filter((m) => m.kind !== 'iterate' && m.special === undefined && m.module === v.module);
   // A call in a block of its own, which requires err to be of the type with the kind, or nil.
   // GN-13t: an instance of the class is made from the first case of the class that does not raise, because the core
@@ -1914,41 +1913,26 @@ function heldTests(v: Values, out: Out, objects: ObjectClass[]): void {
     const after = expect === undefined ? ['\tif err != nil {', '\t\tt.Fatalf("B-5c: the refused call left a lock: %v", err)', '\t}'] : expectKind(...expect).map((l) => `\t${l}`);
     b.lines.push('{', `\t${callLine(fn, call)}`, ...after, '}');
   };
-  // A member whose only place is its receiver: a call that fails for the receiver alone.
-  const onReceiver = (object: ObjectClass): Fn | undefined =>
-    object.members.find((m) => m.kind === 'property' && m.receiver !== undefined) ??
-    object.members.find((m) => m.kind === 'method' && m.special === undefined && places(model, m).length === 1);
   for (const object of objects) {
     if (!poisoned(model, object)) continue;
     const name = goName(object.unit.name);
-    const receiverFn = onReceiver(object);
-    const paramFn = callables.find((fn) => {
-      if (takes(fn, object) === undefined) return false;
-      const owner = objectOf(fn);
-      return fn.receiver === undefined || (owner !== undefined && factoryOf(model, owner) !== undefined);
-    });
+    const members = heldMembers(model, object, callables, (owner) => factoryOf(model, owner) !== undefined);
+    const receiverFn = members.receiver;
     const internal: [string, string, string] = [categoryType(model, 'internal'), 'internal', 'B-5c'];
     const b = new Body();
     const held = instanceOf(b, object);
     b.lines.push(`if err := binding.PanicTestHeld(${model.objects.indexOf(object)}, ${held}.handle()); err == nil {`, '\tt.Fatal("B-5c: the poison entry point did not panic")', '}');
     if (receiverFn !== undefined) check(b, receiverFn, held, undefined, held, internal);
-    if (paramFn !== undefined) {
-      const owner = objectOf(paramFn);
+    if (members.param !== undefined) {
+      const { fn: paramFn, arg, owner } = members.param;
       const receiver = paramFn.receiver === undefined || owner === undefined ? '' : instanceOf(b, owner);
-      check(b, paramFn, receiver, takes(paramFn, object), held, internal);
+      check(b, paramFn, receiver, arg, held, internal);
     }
     out.held.push(`
 func TestB5c${name}RefusesAPoisonedObject(t *testing.T) {
 ${indent(b.lines, 1)}
 }`);
-    for (const fn of object.members) {
-      const arg = takes(fn, object);
-      if (arg === undefined || !places(model, fn).some((p) => p.param === undefined && p.write)) continue;
-      // GN-8a: a point that fills one kind of its category, by an injection that needs no value.
-      const point = model.faults.find((p) => p.place === fn.corePath && p.fills.length === 1 && p.inject.some((i) => i !== 'short'));
-      const filled = point === undefined ? undefined : model.kinds.find((k) => k.unit === undefined && kindText(k.variant) === point.fills[0]);
-      const inject = point?.inject.find((i) => i !== 'short');
-      const armed = point === undefined || filled === undefined || inject === undefined ? undefined : { faults: JSON.stringify([{ point: pointName(model, point), kind: inject }]), kind: kindText(filled.variant), category: filled.category };
+    for (const { fn, arg, armed } of members.busy) {
       const c = new Body();
       if (armed !== undefined) c.lines.push('runtime.LockOSThread()', 'defer runtime.UnlockOSThread()');
       const instance = instanceOf(c, object);

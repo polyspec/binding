@@ -6,8 +6,7 @@
 // module throws again unchanged and never unwinds through the WebAssembly frames.
 
 import { type KeptClass, type KeptField, type Model, type ValueAlias, convertedLibraries, ownerRecognizedUnits, langName, rustField, rustIdent, aliasFn, aliasFailureFn, foreignAliasLibraries, Unsupported, errorMatched } from './model.ts';
-import { type Fill, type ForeignMake, type Walk, type WalkShape, NEXT_ENTRY, PUT_ENTRY, container, foreignReads, foreignRowClasses, outArms, readAsVariants, readValue, valueReads, walkRust } from './alias_shared.ts';
-import { foreignClasses } from './alias_node.ts';
+import { type Fill, type ForeignMake, type Walk, type WalkShape, NEXT_ENTRY, PUT_ENTRY, addEntriesFill, builtinScalar, keptDescribeJs, foreignHostOf, hostWithoutReads, addItemsFill, classIndex, foreignClasses, foreignClassParts, foreignRowIndex, foreignClassOut, foreignFailureRust, readAsOf, container, foreignReads, foreignRowClasses, outArms, readAsVariants, readValue, valueReads, walkRust } from './alias_shared.ts';
 import { classIn, classMakes, type ReadCase } from './value_class.ts';
 import { jsString, rustString } from './text.ts';
 import { type Member, type Unit, variantPattern } from '../contract.ts';
@@ -33,6 +32,8 @@ const WASM_MADE = { name: 'made', type: '&mut BTreeMap<u64, JsValue>' };
 
 // The JavaScript value of a built-in form, made from the content of the matched OutValue.
 function builtin(alias: ValueAlias, form: string, kind: string, { put, leaf, level }: Walk): string {
+  const scalar = builtinScalar(form, kind, 'js_literal_number', 'js_utf8');
+  if (scalar !== undefined) return leaf(scalar);
   switch (form) {
     case 'null':
       return put('JsValue::NULL');
@@ -44,15 +45,6 @@ function builtin(alias: ValueAlias, form: string, kind: string, { put, leaf, lev
     case 'bigint':
       if (kind === 'number') return leaf('js_literal_bigint(&value)');
       return leaf(kind === 'int64' ? 'js_bigint(value)' : 'js_bigint(value.value())');
-    case 'float':
-      if (kind === 'number') return leaf('js_literal_number(&value)');
-      if (kind === 'float') return leaf('float_out(value.value())');
-      // An integer as the nearest double, by its decimal text: R-1 refuses an as conversion.
-      return leaf(`js_literal_number(&${kind === 'int64' ? 'value' : 'value.value()'}.to_string())`);
-    case 'text':
-      return leaf(kind === 'bytes' ? 'js_utf8(value.value())' : 'text_out(value)');
-    case 'bytes':
-      return leaf(kind === 'text' ? 'bytes_out(value.as_bytes())' : 'bytes_out(value.value())');
     case 'list': {
       const parts = container(alias, kind, form);
       // U-7 (c): a list form takes the items of a list, or the values of the entries of a map or an object.
@@ -85,13 +77,7 @@ function builtin(alias: ValueAlias, form: string, kind: string, { put, leaf, lev
   }
 }
 
-// GN-6x: the classes of other repositories that the module calls, in the order of foreignClasses.
-const classIndex = (model: Model, unit: Unit): number => foreignClasses(model).findIndex((c) => c.unit === unit);
-
-// GN-6ar: the position of a class of the owner that a row of a value alias of another repository names, after the
-// classes of GN-6x in the list that the JavaScript entry hands over.
-const rowIndex = (model: Model, library: string, unit: Unit): number =>
-  foreignClasses(model).length + foreignRowClasses(model, 'wasm').findIndex((c) => c.library === library && c.unit.id === unit.id);
+const rowIndex = (model: Model, library: string, unit: Unit): number => foreignRowIndex(model, 'wasm', library, unit);
 
 // GN-6x: the JavaScript call of a member of the owner on an object: a property read or a method call.
 function jsCall(member: Member, object: string, args: string[]): string {
@@ -109,13 +95,8 @@ function jsCall(member: Member, object: string, args: string[]): string {
 // HostValue::Value, which the owner's in function reads through the read members of its in row; a core value leaves as
 // the instance that the owner's members of its out rows make.
 function valueClassWasm(model: Model, alias: ValueAlias, name: string, core: string, failure: string): string {
-  const label = langName('wasm', alias.unit.name, 'class');
-  const own = classIndex(model, alias.unit);
-  // GN-6as: the list and the map class of the owner take their made children, and the member of the out row makes the
-  // instance from them when the last child is made.
-  const fills: Fill[] = [];
-  const closes = new Map<string, string>();
-  const arms = (walk: Walk): string => classMakes(alias, 'wasm').map((make) => {
+  const { label, own, makes, fills, closes } = foreignClassParts(model, alias, 'wasm');
+  const arms = (walk: Walk): string => makes.map((make) => {
     if (make.form === 'content') {
       if (make.kind === 'null') return `        OutValue::Null => ${walk.put(jsCall(make.member, '&class', []))},`;
       if (make.kind === 'text16') {
@@ -129,13 +110,13 @@ function valueClassWasm(model: Model, alias: ValueAlias, name: string, core: str
       return `        OutValue::${variant}(value) => ${walk.put(jsCall(make.member, '&class', [arg]))},`;
     }
     if (make.form === 'list') {
-      if (!fills.some((fill) => fill.name === 'Items')) fills.push({ name: 'Items', doc: 'The array of the made items of a list.', type: 'Array', pattern: 'OutFill::Items(items)', put: 'items.push(&value);\nlevel.index = level.index.saturating_add(1);', next: 'Some(source.item(level.handle, level.index))' });
+      addItemsFill(fills, 'The array of the made items of a list.', 'Array', 'items.push(&value);\nlevel.index = level.index.saturating_add(1);');
       closes.set('Items', `Ok(${jsCall(make.member, '&class', ['&items'])})`);
       return `        OutValue::List { handle, len } => ${walk.level({ walks: true, fill: 'OutFill::Items(Array::new())' })},`;
     }
     const insert = `let insert: Function = Reflect::get(map, &JsValue::from_str(${rustString(langName('wasm', make.insert.name, 'callable'))})).and_then(JsCast::dyn_into).map_err(js_fail)?;
         insert.call2(map, &key, &value).map_err(js_fail)?;`;
-    if (!fills.some((fill) => fill.name === 'Entries')) fills.push({ name: 'Entries', doc: 'The instance of the map class of the owner, with the made key of the entry whose value is made next.', type: 'JsValue, Option<JsValue>', pattern: 'OutFill::Entries(map, key)', put: PUT_ENTRY(insert), next: NEXT_ENTRY });
+    addEntriesFill(fills, 'JsValue, Option<JsValue>', insert);
     closes.set('Entries', `Ok(${jsCall(make.member, '&class', ['&map'])})`);
     return `        OutValue::Map(value) => {
             let handle = value.handle();
@@ -158,22 +139,11 @@ fn in_${name}(value: &JsValue, subject: &str) -> Result<${core}, Fail> {
     let described = host.describe(value).map_err(js_fail)?;
     ${alias.coreIn}(&mut host, described).map_err(|failure: ${failure}| ${aliasFailureFn(alias)}(failure))
 }
-
-/// GN-6x: a core value of ${label} leaves as the instance that the members of its owner make.
-fn out_${name}(value: impl Borrow<${core}>) -> Result<JsValue, Fail> {
-    let (root, mut source) = ${alias.coreOut}(value.borrow());
-    make_${name}(root, &mut source)
-}
-${walkRust(WASM_WALK, name, fills, arms, 'other => Err(binding_error(BindingError::Internal { detail: format!("GN-6x: no out row of the kind {}", other.kind().as_str()) })),', opened, undefined, { head: ownClass, of: (fill) => closes.get(fill.name) ?? '' })}`;
+${foreignClassOut(WASM_WALK, alias, name, core, label, { fills, arms, opened, head: ownClass, closes })}`;
 }
 
-// GN-6x: the ReadAs of an in case: its code units for the kind text16 (B2.81), a text or the code units that its units
-// member gives (B2.89), or the content.
-function readAs(kase: ReadCase): string {
-  if (kase.kind === 'Text16') return 'ReadAs::Units';
-  if (kase.units === undefined) return 'ReadAs::Content';
-  return `ReadAs::TextOr(${rustString(langName('wasm', kase.units.name, 'callable'))}, ${String(kase.units.kind !== 'property')})`;
-}
+// GN-6x: the ReadAs of an in case, by the name of the member of JavaScript.
+const readAs = (kase: ReadCase): string => readAsOf(kase, (units) => ({ name: langName('wasm', units.name, 'callable'), call: units.kind !== 'property' }));
 
 // GN-6x: the registry of the classes of other repositories and the description of their instances by the in rows.
 function valueClassesWasmHost(model: Model): string {
@@ -707,29 +677,7 @@ fn js_fail(error: JsValue) -> Fail {
 // status and errno are the owner's; its class is this repository's class of the category that the owner's E-1 gives
 // the variant. An exception that JavaScript code raised while the owner's core walked the value is thrown again.
 export function foreignFailureWasm(model: Model, rest: string): string {
-  return foreignAliasLibraries(model).map((alias) => {
-    const library = (alias.library ?? '').replaceAll('-', '_');
-    const error = alias.error ?? { path: '', kinds: [] };
-    const arms = error.kinds.map((k) => `        ${variantPattern(k.variant)} => ${model.classes.findIndex((c) => c.category === k.category)},`).join('\n');
-    return `
-/// U-7 (a'): a kind of ${alias.library ?? ''} in the class of its category here.
-#[allow(clippy::unneeded_struct_pattern, reason = "I-2")]
-fn error_of_${library}(error: ${error.path}) -> Fail {
-    let class: usize = match ${errorMatched({ codeOf: error.code }, 'error')} {
-${arms}
-    };
-    Fail { class, message: error.to_string(), kind: Kinds::kind(&error), status: Kinds::status(&error), errno: Kinds::errno(&error)${rest} }
-}
-
-fn failure_of_${library}(failure: binding_core::Failure<${error.path}>) -> Fail {
-    match failure {
-        binding_core::Failure::Kind(error) => error_of_${library}(error),
-        binding_core::Failure::Raised(raised) => failure_error(binding_core::Failure::Raised(raised)),
-        binding_core::Failure::Callback(error) => failure_error(binding_core::Failure::Callback(error)),
-    }
-}
-`;
-  }).join('');
+  return foreignFailureRust(model, `Fail { class, message: error.to_string(), kind: Kinds::kind(&error), status: Kinds::status(&error), errno: Kinds::errno(&error)${rest} }`);
 }
 
 // B-1, GN-6af: the JsHost of a model, as for Node (nodeHost): an instance of a class without core_type, whose prototype
@@ -743,13 +691,11 @@ export function wasmHost(model: Model): string {
   // instance read by its content has one handle within the walk, which the Map seen keeps.
   const foreign = model.aliases.some((a) => a.owner !== undefined) || foreignRowClasses(model, 'wasm').length > 0;
   const seen = foreignReads(model, 'wasm').some((row) => row.as === 'Content');
-  const foreignHeld = foreign ? "\n    Foreign(JsValue, Option<(&'static str, bool, ReadAs)>)," : '';
-  const foreignDescribe = foreign ? '\n        if let Some(described) = self.value_class(value)? {\n            return Ok(described);\n        }' : '';
-  const foreignRead = 'self.read_value(value).map_err(js_raised)';
+  const parts = foreignHostOf(foreign, 'JsValue', 'value', 'self.read_value(value).map_err(js_raised)');
+  const { held: foreignHeld, describe: foreignDescribe, read: foreignRead } = parts;
   const foreignHost = foreign ? valueClassesWasmHost(model) : '';
   if (reads.length === 0) {
-    return WASM_HOST.replace('/*HELD*/', foreignHeld).replace('/*SEEN*/', seen ? '\n    seen: Option<js_sys::Map>,' : '').replace('/*NEW*/', seen ? ', seen: None' : '').replace('/*IDENTITY*/', '').replace('/*DESCRIBE*/', foreignDescribe).replace('/*READ*/', foreign ? 'value: Handle' : '_value: Handle')
-      .replace('/*READS*/', foreign ? foreignRead : 'Err(raised_binding("B-1: no value class is read"))') + foreignHost;
+    return hostWithoutReads(WASM_HOST, { SEEN: seen ? '\n    seen: Option<js_sys::Map>,' : '', NEW: seen ? ', seen: None' : '', IDENTITY: '' }, parts, 'Err(raised_binding("B-1: no value class is read"))') + foreignHost;
   }
   const kept = reads.some((r) => r.kept !== undefined);
   const describe = reads.map((r, index) => {
@@ -932,32 +878,7 @@ export function keptExportsWasm(model: Model): string {
   const checks = model.kept.map((kept) => {
     const js = langName('wasm', kept.unit.name, 'class');
     const variable = (f: KeptField): string => rustIdent(langName('wasm', f.name, 'variable'));
-    const describe = (f: KeptField, value: string): string => {
-      const subject = rustString(langName('wasm', f.name, 'variable'));
-      const type = f.type;
-      if (typeof type === 'object' && 'keyed_map' in type) {
-        const tags = (['int', 'bytes', 'text'] as const).map((kind, tag) => (type.key.includes(kind) ? String(tag) : '')).filter((t) => t !== '');
-        return `{
-                let given = keyed_map_in(${value}, ${subject}, &[${tags.join(', ')}], ${rustString(`a Map whose keys are ${type.key.map((k) => ({ int: 'safe integers', text: 'strings', bytes: 'Uint8Array' })[k] ?? k).join(' or ')}`)}, |item| Ok(item.clone()))?;
-                let mut described = binding_core::KeyedMap::new();
-                for (key, item) in given {
-                    described.insert(key, host.describe(&item).map_err(js_fail)?);
-                }
-                Ok(described)
-            }`;
-      }
-      if (typeof type === 'object' && 'list' in type) {
-        return `{
-                let given = list_in(${value}, ${subject}, |item| Ok(item.clone()))?;
-                let mut described = Vec::new();
-                for item in given {
-                    described.push(host.describe(&item).map_err(js_fail)?);
-                }
-                Ok(described)
-            }`;
-      }
-      return `host.describe(${value}).map_err(js_fail)`;
-    };
+    const describe = (f: KeptField, value: string): string => keptDescribeJs('wasm', f, value, '|item| Ok(item.clone())', '&item');
     const lines = kept.fields.map((f) => {
       const v = variable(f);
       return f.default === undefined ? `        let ${v} = ${describe(f, `&${v}`)}?;` : `        let ${v} = default_in(&${v}, |value| ${describe(f, 'value')})?;`;

@@ -5,7 +5,7 @@
 // an alias takes is its core's.
 
 import { type KeptClass, type KeptField, type Model, type ValueAlias, langName, rustField, rustIdent, aliasFn, aliasFailureFn, foreignAliasLibraries, Unsupported, errorMatched } from './model.ts';
-import { type Fill, type ForeignMake, type Walk, type WalkShape, NEXT_ENTRY, PUT_ENTRY, foreignReads, foreignRowClasses, container, outArms, ownedNatives, readAsVariants, readValue, valueReads, walkRust } from './alias_shared.ts';
+import { type Fill, type ForeignMake, type Walk, type WalkShape, NEXT_ENTRY, PUT_ENTRY, addEntriesFill, keptDescribeJs, foreignHostOf, hostWithoutReads, addItemsFill, classIndex, foreignClasses, foreignClassParts, foreignRowIndex, foreignClassOut, foreignFailureRust, readAsOf, foreignReads, foreignRowClasses, container, outArms, ownedNatives, readAsVariants, readValue, valueReads, walkRust } from './alias_shared.ts';
 import { classIn, classMakes, type ReadCase } from './value_class.ts';
 import { jsString, rustString } from './text.ts';
 import { type Member, type Unit, variantPattern } from '../contract.ts';
@@ -83,21 +83,7 @@ function builtin(alias: ValueAlias, form: string, kind: string, { leaf, level }:
   }
 }
 
-// GN-6x: the classes of other repositories that the generated code calls: each value class of another repository and
-// the classes of its owner that its read members give, in this order, which the JavaScript entry hands over.
-export function foreignClasses(model: Model): { alias: ValueAlias; unit: Unit }[] {
-  return model.aliases.filter((a) => a.owner !== undefined).flatMap((alias) => [
-    { alias, unit: alias.unit },
-    ...classIn(alias, 'node').maps.map((map) => ({ alias, unit: map.unit })),
-  ]);
-}
-
-const classIndex = (model: Model, unit: Unit): number => foreignClasses(model).findIndex((c) => c.unit === unit);
-
-// GN-6ar: the position of a class of the owner that a row of a value alias of another repository names, after the
-// classes of GN-6x in the list that the JavaScript entry hands over.
-const rowIndex = (model: Model, library: string, unit: Unit): number =>
-  foreignClasses(model).length + foreignRowClasses(model, 'node').findIndex((c) => c.library === library && c.unit.id === unit.id);
+const rowIndex = (model: Model, library: string, unit: Unit): number => foreignRowIndex(model, 'node', library, unit);
 
 // GN-6ar: an instance of a class of the owner made from the content of an out row, through the constructor that the
 // JavaScript entry handed over: the content of the kind; the Map of the entries, which the instance keeps (GN-6af) and
@@ -151,13 +137,8 @@ function jsCall(member: Member, object: string, args: string, types: string): st
 // the owner's in function reads through the read members of its in row; a core value leaves as the instance that the
 // owner's members of its out rows make.
 function valueClassNode(model: Model, alias: ValueAlias, name: string, core: string, failure: string): string {
-  const label = langName('node', alias.unit.name, 'class');
-  const own = classIndex(model, alias.unit);
-  // GN-6as: the list and the map class of the owner take their made children, and the member of the out row makes the
-  // instance from them when the last child is made.
-  const fills: Fill[] = [];
-  const closes = new Map<string, string>();
-  const arms = (walk: Walk): string => classMakes(alias, 'node').map((make) => {
+  const { label, own, makes, fills, closes } = foreignClassParts(model, alias, 'node');
+  const arms = (walk: Walk): string => makes.map((make) => {
     if (make.form === 'content') {
       if (make.kind === 'null') return `        OutValue::Null => ${walk.put(jsCall(make.member, 'class', '', ''))},`;
       if (make.kind === 'text16') {
@@ -171,7 +152,7 @@ function valueClassNode(model: Model, alias: ValueAlias, name: string, core: str
       return `        OutValue::${variant}(value) => ${walk.put(jsCall(make.member, 'class', 'value', type))},`;
     }
     if (make.form === 'list') {
-      if (!fills.some((fill) => fill.name === 'Items')) fills.push({ name: 'Items', doc: 'The array of the made items of a list.', type: "Array<'env>", pattern: 'OutFill::Items(items)', put: PUT_INDEXED('items'), next: 'Some(source.item(level.handle, level.index))' });
+      addItemsFill(fills, 'The array of the made items of a list.', "Array<'env>", PUT_INDEXED('items'));
       closes.set('Items', `let items = items.to_unknown();
 Ok(${jsCall(make.member, 'class', 'items', "Unknown<'env>")})`);
       return `        OutValue::List { handle, len } => {
@@ -182,7 +163,7 @@ Ok(${jsCall(make.member, 'class', 'items', "Unknown<'env>")})`);
     const insert = `map.get_named_property::<Function<'env, FnArgs<(Unknown<'env>, Unknown<'env>)>, Unknown<'env>>>(${rustString(langName('node', make.insert.name, 'callable'))})
             .and_then(|insert| insert.apply(*map, FnArgs::from((key, value))))
             .map_err(js_fail)?;`;
-    if (!fills.some((fill) => fill.name === 'Entries')) fills.push({ name: 'Entries', doc: 'The instance of the map class of the owner, with the made key of the entry whose value is made next.', type: "Object<'env>, Option<Unknown<'env>>", pattern: 'OutFill::Entries(map, key)', put: PUT_ENTRY(insert), next: NEXT_ENTRY });
+    addEntriesFill(fills, "Object<'env>, Option<Unknown<'env>>", insert);
     closes.set('Entries', `let map = map.to_unknown();
 Ok(${jsCall(make.member, 'class', 'map', "Unknown<'env>")})`);
     return `        OutValue::Map(value) => {
@@ -208,22 +189,11 @@ fn in_${name}<'env>(env_: &'env Env, value: Unknown<'env>, subject: &str) -> Res
     let described = host.describe(value).map_err(js_fail)?;
     ${alias.coreIn}(&mut host, described).map_err(|failure: ${failure}| ${aliasFailureFn(alias)}(failure))
 }
-
-/// GN-6x: a core value of ${label} leaves as the instance that the members of its owner make.
-fn out_${name}<'env>(env_: &'env Env, value: impl Borrow<${core}>) -> Result<Unknown<'env>, Fail> {
-    let (root, mut source) = ${alias.coreOut}(value.borrow());
-    make_${name}(env_, root, &mut source)
-}
-${walkRust(NODE_WALK, name, fills, arms, 'other => Err(binding_error(BindingError::Internal { detail: format!("GN-6x: no out row of the kind {}", other.kind().as_str()) })),', opened, undefined, { head: ownClass, of: (fill) => closes.get(fill.name) ?? '' })}`;
+${foreignClassOut(NODE_WALK, alias, name, core, label, { fills, arms, opened, head: ownClass, closes })}`;
 }
 
-// GN-6x: the ReadAs of an in case: its code units for the kind text16 (B2.81), a text or the code units that its units
-// member gives (B2.89), or the content.
-function readAs(kase: ReadCase): string {
-  if (kase.kind === 'Text16') return 'ReadAs::Units';
-  if (kase.units === undefined) return 'ReadAs::Content';
-  return `ReadAs::TextOr(${rustString(langName('node', kase.units.name, 'callable'))}, ${String(kase.units.kind !== 'property')})`;
-}
+// GN-6x: the ReadAs of an in case, by the name of the member of JavaScript.
+const readAs = (kase: ReadCase): string => readAsOf(kase, (units) => ({ name: langName('node', units.name, 'callable'), call: units.kind !== 'property' }));
 
 // GN-6x: the registry of the classes of other repositories and the description of their instances by the in rows.
 function valueClassesNodeHost(model: Model): string {
@@ -763,29 +733,7 @@ fn js_fail(error: napi::Error) -> Fail {
 // its class is this repository's class of the category that the owner's E-1 gives the variant, by a match without a
 // wildcard (I-2 (3)). An exception that language code raised while the owner's core walked the value is thrown again.
 export function foreignFailureNode(model: Model): string {
-  return foreignAliasLibraries(model).map((alias) => {
-    const library = (alias.library ?? '').replaceAll('-', '_');
-    const error = alias.error ?? { path: '', kinds: [] };
-    const arms = error.kinds.map((k) => `        ${variantPattern(k.variant)} => ${model.classes.findIndex((c) => c.category === k.category)},`).join('\n');
-    return `
-/// U-7 (a'): a kind of ${alias.library ?? ''} in the class of its category here.
-#[allow(clippy::unneeded_struct_pattern, reason = "I-2")]
-fn error_of_${library}(error: ${error.path}) -> Fail {
-    let class: usize = match ${errorMatched({ codeOf: error.code }, 'error')} {
-${arms}
-    };
-    library_error(class, error.to_string(), Kinds::kind(&error), Kinds::status(&error), Kinds::errno(&error))
-}
-
-fn failure_of_${library}(failure: binding_core::Failure<${error.path}>) -> Fail {
-    match failure {
-        binding_core::Failure::Kind(error) => error_of_${library}(error),
-        binding_core::Failure::Raised(raised) => failure_error(binding_core::Failure::Raised(raised)),
-        binding_core::Failure::Callback(error) => failure_error(binding_core::Failure::Callback(error)),
-    }
-}
-`;
-  }).join('');
+  return foreignFailureRust(model, 'library_error(class, error.to_string(), Kinds::kind(&error), Kinds::status(&error), Kinds::errno(&error))');
 }
 
 // B-1, GN-6af: the JsHost of a model. An instance of a class that an in row of a value alias names is HostValue::Value
@@ -798,13 +746,11 @@ export function nodeHost(model: Model): string {
   const rows = foreignReads(model, 'node');
   const rowSeen = rows.some((row) => row.as === 'Content');
   const foreign = rows.length > 0 || model.aliases.some((a) => a.owner !== undefined);
-  const foreignHeld = foreign ? "\n    Foreign(Object<'env>, Option<(&'static str, bool, ReadAs)>)," : '';
-  const foreignDescribe = foreign ? '\n        if let Some(described) = self.value_class(value, object)? {\n            return Ok(described);\n        }' : '';
-  const foreignRead = 'self.read_value(value).map_err(js_raised)';
+  const parts = foreignHostOf(foreign, "Object<'env>", 'value, object', 'self.read_value(value).map_err(js_raised)');
+  const { held: foreignHeld, describe: foreignDescribe, read: foreignRead } = parts;
   const foreignHost = foreign ? valueClassesNodeHost(model) : '';
   if (reads.length === 0) {
-    return NODE_HOST.replace('/*HELD*/', foreignHeld).replace('/*SEEN*/', rowSeen ? "\n    foreign_seen: Option<Object<'env>>," : '').replace('/*NEW*/', rowSeen ? ', foreign_seen: None' : '').replace('/*DESCRIBE*/', foreignDescribe).replace('/*READ*/', foreign ? 'value: Handle' : '_value: Handle')
-      .replace('/*READS*/', foreign ? foreignRead : 'Err(raised_binding("B-1: no value class is read"))') + foreignHost;
+    return hostWithoutReads(NODE_HOST, { SEEN: rowSeen ? "\n    foreign_seen: Option<Object<'env>>," : '', NEW: rowSeen ? ', foreign_seen: None' : '' }, parts, 'Err(raised_binding("B-1: no value class is read"))') + foreignHost;
   }
   const kept = reads.some((r) => r.kept !== undefined);
   const describe = reads.map((r, index) => {
@@ -967,32 +913,7 @@ export function keptCheckNode(kept: KeptClass): string {
   const js = langName('node', kept.unit.name, 'class');
   const variable = (f: KeptField): string => rustIdent(langName('node', f.name, 'variable'));
   const params = kept.fields.map((f) => `, ${variable(f)}: Unknown<'env>`).join('');
-  const describe = (f: KeptField, value: string): string => {
-    const subject = rustString(langName('node', f.name, 'variable'));
-    const type = f.type;
-    if (typeof type === 'object' && 'keyed_map' in type) {
-      const tags = (['int', 'bytes', 'text'] as const).map((kind, tag) => (type.key.includes(kind) ? String(tag) : '')).filter((t) => t !== '');
-      return `{
-                let given = keyed_map_in(${value}, ${subject}, &[${tags.join(', ')}], ${rustString(`a Map whose keys are ${type.key.map((k) => ({ int: 'safe integers', text: 'strings', bytes: 'Uint8Array' })[k] ?? k).join(' or ')}`)}, Ok)?;
-                let mut described = binding_core::KeyedMap::new();
-                for (key, item) in given {
-                    described.insert(key, host.describe(item).map_err(js_fail)?);
-                }
-                Ok(described)
-            }`;
-    }
-    if (typeof type === 'object' && 'list' in type) {
-      return `{
-                let given = list_in(${value}, ${subject}, Ok)?;
-                let mut described = Vec::new();
-                for item in given {
-                    described.push(host.describe(item).map_err(js_fail)?);
-                }
-                Ok(described)
-            }`;
-    }
-    return `host.describe(${value}).map_err(js_fail)`;
-  };
+  const describe = (f: KeptField, value: string): string => keptDescribeJs('node', f, value, 'Ok', 'item');
   const lines = kept.fields.map((f) => {
     const v = variable(f);
     return f.default === undefined
