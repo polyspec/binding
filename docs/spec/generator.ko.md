@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 3d516d3e7a2f79f60dbf8a15b4297a377a11a77c7bdb251292ef0c1925158b86 -->
+<!-- source-sha256: 207b7262debf8c9b3a6f15ef2d9600add0e25103d3d149a55d82b5cbe003e667 -->
 # 생성기
 
 [English](generator.md)
@@ -2284,7 +2284,8 @@
   Go를 시작하지 않는다. hash는 그 requirement의 모듈에 대해 `GOWORK=off`와 환경의
   `GOPROXY`, `GOFLAGS`, 모듈 cache로 실행한 `go mod download -json all`이 주는 `Sum`과 `GoModSum`이다: Go가 내려받을 때 checksum
   database와 대조하는 hash이므로 binding은 스스로 계산하지 않고, offline(`GOPROXY=off`)이면 Go는 모듈 cache만 읽는다. Go가 줄 수
-  없는 모듈은 offline이든 없든 Go의 오류와 함께 `go.sum`을 거부한다: scaffold는 `go.sum`을 쓰지 않고 쓰지 않았다고 이름하며,
+  없는 모듈은 offline이든 없든 Go에 물은 모듈 path와 version, 그리고 Go의 오류와 함께 `go.sum`을 거부한다(B2.550: crud-ui의
+  release 검사가 모듈을 밝히지 않는 Go의 오류만으로 실패해서, 그 모듈을 `go.mod`에서 손으로 읽어야 했다): scaffold는 `go.sum`을 쓰지 않고 쓰지 않았다고 이름하며,
   CK-19도 쓰지 않았다고 이름한다. 비거나 일부인 `go.sum`은 결코 쓰지 않는다. Why: requirement가 있는 `go.mod`는 그 sum이 있어야만
   빌드되고, 생성된 모듈은 레포의 `go.work` 밖에서 검사되고 release된다(GN-14i). template과 crud-ui는 생성된 `go.mod` 옆에
   `go.sum`을 손으로 commit해야 했고, `go.mod`가 php-serialization을 require하는 session-store에는 없어서 그 모듈이 홀로

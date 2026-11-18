@@ -2772,7 +2772,9 @@ the design ids are those of the binding design.
   `go mod download -json all` gives for a module of those requirements, run with `GOWORK=off` and the `GOPROXY`,
   `GOFLAGS` and module cache of the environment: they are the hashes that Go verifies against the checksum database
   when it downloads, so binding computes none of its own, and offline (`GOPROXY=off`) Go reads the module cache alone.
-  A module that Go cannot give, offline or missing, refuses the `go.sum` with the error of Go: scaffold writes no
+  A module that Go cannot give, offline or missing, refuses the `go.sum` with the module path and the version that
+  Go was asked for and the error of Go (B2.550: crud-ui's release check failed with the error of Go alone, which named
+  no module, so the module had to be read from the `go.mod` by hand): scaffold writes no
   `go.sum` and names it as not written, and CK-19 names it as not written, never an empty or partial `go.sum`. Why: a
   `go.mod` with a requirement builds only with its sums, and the generated module is checked and released outside the
   `go.work` of its repository (GN-14i); template and crud-ui had to commit a `go.sum` by hand beside the generated
