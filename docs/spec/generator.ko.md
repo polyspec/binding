@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 90e999965d8d997d47365c8ceb0f6d8f2ef6c1d39e2d0a1065ca5a8a9819437a -->
+<!-- source-sha256: fa721e2f6f29d58f3206c2ecfc52ed0dcb2f54763f08aee6d8db3b740a60b846 -->
 # 생성기
 
 [English](generator.md)
@@ -3525,6 +3525,14 @@
   `ci.yml`의 check job의 항목 `ts`가 `unit-ts` 뒤에 이 target을 실행하며, 다른 항목은 실행하지 않는다. `packages/ts/tests/duplication-check.test.ts`는 임시 사본에서 이 target을
   실행하여, 중복 없는 사본은 통과하고 `packages/ts/src`에 조각을 두 번 둔 사본은 실패함을 보인다. 이유: 두 번 쓴
   규칙(B2.509의 Go test 이름 읽기 둘처럼)은 읽어서만 발견되었고, 기준선은 오늘의 중복을 영구히 허용한다.
+- **GN-14p** 실행은 자기 임시 디렉터리를 `TMPDIR`에 남기지 않는다(B2.529, HR-87). 임시 디렉터리 아래에 디렉터리를 만드는
+  binding 명령은 프로세스를 끝내는 거부를 포함해 모든 출구에서 그것을 지운다. `go mod download`의 디렉터리(GN-15l)는 go
+  명령을 찾은 뒤에야 만들므로, go를 찾지 못한 실행은 그것을 만들지 않는다. `make unit-ts`는 `node --test`를
+  `scripts/unit-ts.mts`로 실행하며, 이것은 시험에 실행의 디렉터리를 `TMPDIR`로 주고, 시험이 끝날 때, 실패할 때, SIGINT와
+  SIGTERM에서 시험의 프로세스 그룹이 끝난 뒤에 그것을 지운다. 그래서 `finally` 전에 멈춘 시험도 실행의 `TMPDIR`에 아무것도
+  남기지 않는다. 이유: 실행들이 빈 `binding-go-sum-*` 디렉터리 45개를 남겼는데, 각각은 그것을 지우는 `finally`의 `try` 안에서
+  프로세스를 끝낸 거부의 것이었고, `e2e-work.test.ts`의 시험 하나가 `finally` 전에 프로세스가 끝나 `binding-checkout-*` 하나를
+  남겼다.
 
 ## 바인딩을 가진 레포의 release
 
