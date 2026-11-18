@@ -8,7 +8,7 @@
     { "repo": "polyspec/php-serialization", "tag": "v0.0.16", "job": "small" },
     {
       "repo": "polyspec/session-store",
-      "tag": "v0.0.5",
+      "tag": "v0.0.7",
       "job": "small",
       "install": ["install-tools TOOLS=npm", "install-rust", "install-tools", "install-php-tools", "install-python-packages", "install-deps", "install-bay", "setup-bay", "redis-image"],
       "path": ["var/tools/bay"]
