@@ -7,7 +7,7 @@
 import type { Name, Type, Unit } from '../contract.ts';
 import { variantPattern } from '../contract.ts';
 import { defaultAsserts } from './defaults.ts';
-import { goErrorTypes, goName, goSubject } from './go.ts';
+import { callbackOf, goErrorTypes, goName, goSubject } from './go.ts';
 import {
   type Arg, type CallbackUnit, type Fn, type Model, type ObjectClass, type ValueAlias, Unsupported, aliasFailureFn, aliasFn, aliasKindsRust, aliasOf, aliasesWithKinds, argType, boxed, armedCall, borrowedItem, coreCallArgs, errorProperties, propertyValue, faultRust, foreignAliasLibraries, heldNew, heldParam, heldType, langName, libraryOf, lockLines, narrowed, narrows, nativeRoundTrip, objectUnit, pointed, poisoned, recordFn, resultLet, rustField, rustType, rustVariant, takesObject, unitOf, cleanupAsserts, cleanupMade, DRIVEN, drivenCall, waitsAsync, machineFunction, unitFn, libraryBlocks, type KeptClass, type KeptField, countsThrown,
   type Variant, caseFields, caseRead, caseStruct, caseType, caseValue, caseWritten, UNIT_CASE_ALLOW,
@@ -22,7 +22,7 @@ import {
   anchorCalls,
   takenCallbacks,
   lentCallbacks,
-  absentInits, byValue } from './model.ts';
+  absentInits, byValue, holdsFunction, traitParam as sharedTraitParam } from './model.ts';
 import { extensionName } from './packages.ts';
 import { raisesAssertions } from './raises.ts';
 import { type ForeignMake, type ForeignRead, type ValueRead, container, foreignReads, foreignRowClasses, outArms, valueReads } from './alias_shared.ts';
@@ -71,13 +71,6 @@ export const releaseSymbol = (model: Model, unit: Unit): string => `${prefix(mod
 // T-5: the Go name of a class in the message of kind busy, of a poisoned object and of a refused handle.
 export const classLabel = (object: ObjectClass): string => goName(object.unit.name);
 
-const callbackOf = (model: Model, type: Type): CallbackUnit | undefined => {
-  const library = libraryOf(type);
-  // GN-6s: a callback unit of another repository, which a parameter takes.
-  if (library !== undefined) return model.foreignCallbacks.find((c) => c.library === library && c.unit.id === (type as { unit: string }).unit);
-  const unit = unitOf(model, type);
-  return unit === undefined ? undefined : model.callbacks.find((c) => c.unit === unit);
-};
 
 // U-3, GN-6s: the callback units that the crate wraps, of this repository and of others.
 // GN-6d: the callback units that a member of the contract takes without keeps; a unit that only a class implements
@@ -811,17 +804,7 @@ function recordRust(model: Model, unit: Unit, library?: string): string {
   const units = new Map(model.contract.units.map((u) => [u.id, u]));
   const entersOnly = fields.some((f) => holdsCallback(units, f.type));
   // GN-6bm: a function only enters (GN-6z), so a record whose field holds one, in an optional, a list, a map or a
-  // tuple too, has no output conversion; its core type keeps no lifetime of the call.
-  const holdsFunction = (type: Type): boolean => {
-    if (typeof type === 'string') return false;
-    if ('function' in type) return true;
-    if ('list' in type) return holdsFunction(type.list);
-    if ('optional' in type) return holdsFunction(type.optional);
-    if ('map' in type) return holdsFunction(type.map);
-    if ('keyed_map' in type) return holdsFunction(type.keyed_map);
-    if ('tuple' in type) return type.tuple.some(holdsFunction);
-    return false;
-  };
+  // tuple too (holdsFunction), has no output conversion; its core type keeps no lifetime of the call.
   const writesOut = !entersOnly && !fields.some((f) => holdsFunction(f.type));
   const cycle = library === undefined ? cycleOf(goCycles(model), unit) : undefined;
   if (cycle !== undefined) {
@@ -1342,17 +1325,9 @@ function functionRust(model: Model, fn: Fn): string {
 
 // ---- callbacks (U-3) ----
 
-// T-1: the type of a trait method parameter: a type with two forms is borrowed, a Copy type by value.
-function traitParam(model: Model, type: Type): string {
-  if (typeof type === 'string') {
-    const borrowed: Record<string, string> = { text: '&str', latin1: '&[u8]', bytes: '&[u8]', source: '&[u8]', path: '&std::path::Path' };
-    return borrowed[type] ?? rustType(model, type);
-  }
-  if ('optional' in type && typeof type.optional === 'string' && ['text', 'latin1', 'bytes'].includes(type.optional)) return `Option<${traitParam(model, type.optional)}>`;
-  if ('list' in type) return `&[${rustType(model, type.list)}]`;
-  if (typeof type === 'object' && 'unit' in type && unitOf(model, type)?.kind === 'enum') return rustType(model, type);
-  return `&${rustType(model, type)}`;
-}
+// T-1: the type of a trait method parameter: a type with two forms is borrowed, a Copy type by value; of the types
+// that are no string only an enum goes by value.
+const traitParam = (model: Model, type: Type): string => sharedTraitParam(model, type, (m, t) => typeof t === 'object' && 'unit' in t && unitOf(m, t)?.kind === 'enum');
 
 // U-3: a callback is a struct that names the Go object of the call that received it (the call and the index of the
 // callback in it) and implements the core trait; each member calls into Go, which runs the method of the object.

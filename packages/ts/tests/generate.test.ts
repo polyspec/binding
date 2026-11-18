@@ -12,8 +12,9 @@ import type { Lang } from '../src/contract.ts';
 import { caseTestTargets, generate as generateTargets, isGoGenerated, type Inputs } from '../src/generate/index.ts';
 import { generateOnStack } from '../src/generate/stack.ts';
 import { checkContract } from '../src/index.ts';
-import { carriers, categoryClass } from '../src/generate/model.ts';
-import { foreignPhpClass } from '../src/generate/php.ts';
+import { carriers, categoryClass, collectModel, forLanguage, Refusals } from '../src/generate/model.ts';
+import { foreignPhpClass, php } from '../src/generate/php.ts';
+import { python } from '../src/generate/python.ts';
 import { CASE_JSON_STRING_GOLDENS, caseFilesOf, casePathOf, caseTextParts, fromJson } from '../src/generate/samples.ts';
 import { closure, featureItems, INTO_CORE, PARTS, jsString, phpText, pyString, usedHelpers, WIDEN } from '../src/generate/text.ts';
 import { categoryType, goString } from '../src/generate/go.ts';
@@ -14851,4 +14852,26 @@ test('B2.543: Go makes the expected value of an alias by the constructor of its 
   // The reader reads an instance of Ratio as its class and the value of its property.
   const reader = tests.slice(tests.indexOf(`\nfunc ${compared[1]}(`), tests.indexOf('\n}\n', tests.indexOf(`\nfunc ${compared[1]}(`)) + 3);
   assert.match(reader, /\n\t+case \*Ratio:\n[\s\S]*?found\.Value\(\)[\s\S]*?\[\]any\{"ratio", /, reader);
+});
+
+test('B2.528: the Python and PHP generators refuse a result of a scalar they do not know with Unsupported, naming it, and write no undefined(', () => {
+  const contract = JSON.parse(readFileSync(fileURLToPath(new URL('../../../tests/e2e/functions/packages/rust/interface.json', import.meta.url)), 'utf8'));
+  // The model refuses such a type before a generator (T-2), so the result of the one function is set in the model.
+  for (const [lang, generator, shown] of [['python', python, 'Python'], ['php', php, 'PHP']] as const) {
+    const model = forLanguage(collectModel(contract, '0.0.0', 'x', new Map(), new Map(), new Map(), new Refusals()), lang);
+    const fn = model.functions[0];
+    assert.ok(fn !== undefined, 'tests/e2e/functions has a function');
+    (fn as { returns: unknown }).returns = 'decimal';
+    const files = new Map<string, string>();
+    let thrown: unknown;
+    try {
+      generator(model, files);
+    } catch (error) {
+      thrown = error;
+    }
+    const written = [...files].flatMap(([path, text]) => text.split('\n').filter((line) => line.includes('undefined(')).map((line) => `${path}: ${line.trim()}`));
+    assert.deepEqual(written, [], `${lang} writes undefined(`);
+    assert.ok(thrown instanceof Error && thrown.constructor.name === 'Unsupported', `${lang} throws no Unsupported`);
+    assert.match(thrown.message, new RegExp(`no ${shown} output conversion for decimal`));
+  }
 });

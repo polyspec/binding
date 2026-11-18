@@ -4,6 +4,7 @@
 import type { Type, Unit } from '../contract.ts';
 import { variantPattern } from '../contract.ts';
 import { raisesAssertions } from './raises.ts';
+import { type FunctionType, convertingFns, poisonArms, recognizesAny, constantAsserts, resultUnits, convertsFailure, recognizing, functionClosureHead, containerIn, containerOut, fieldInit, iterateItems, keptFunctionIn, resultCycles, scalarIn, scalarOut } from './bindings_shared.ts';
 import { conversionsOf, convertedFn, ownerErrorClasses } from './model.ts';
 import { TAKES_PYTHON, functionGiven, givenRust, memberGiven, placeSubject } from './callback_arguments.ts';
 import { type Files, header, pyHeader, pyString, rustString, closure, entryClosure, optionRef, withUsedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
@@ -393,19 +394,10 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Given<'py> {
 `;
 
 function convertIn(model: Model, type: Type, value: string, subject: string): string {
-  if (typeof type === 'string') {
-    const fn: Record<string, string> = { text: 'text_in', latin1: 'latin1_in', bool: 'bool_in', uint: 'uint_in', int: 'int_in', int64: 'int64_in', bytes: 'bytes_in', source: 'source_in', float: 'float_in', path: 'path_in', cancel: 'cancel_in' };
-    return `${fn[type]}(py_, ${value}, ${subject})`;
-  }
-  if ('list' in type) return `list_in(py_, ${value}, ${subject}, ${closure(['py_', 'item'], boxed(model, type.list, convertIn(model, type.list, 'item', subject)))})`;
-  if ('map' in type) return `map_in(py_, ${value}, ${subject}, ${entryClosure(['py_'], 'item', (entry) => convertIn(model, type.map, 'item', entry))})`;
-  if ('keyed_map' in type) {
-    const tags = (['int', 'bytes', 'text'] as const).map((kind, tag) => (type.key.includes(kind) ? String(tag) : '')).filter((t) => t !== '');
-    return `keyed_map_in(py_, ${value}, ${subject}, &[${tags.join(', ')}], ${rustString(`a dict whose keys are ${type.key.map((k) => ({ int: 'int', bytes: 'bytes', text: 'str' })[k] ?? k).join(' or ')}`)}, ${closure(['py_', 'item'], convertIn(model, type.keyed_map, 'item', subject))})`;
-  }
-  if ('optional' in type) return `optional_in(${value}, ${closure(['value'], boxed(model, type.optional, convertIn(model, type.optional, 'value', subject)))})`;
-  if ('function' in type) return functionIn(model, type.function, value, subject);
-  if ('tuple' in type) return tupleIn(type.tuple, `tuple_in(py_, ${value}, ${subject})`, (part, name) => convertIn(model, part, `&${name}`, subject));
+  if (typeof type === 'string') return scalarIn(type, value, subject, 'Python', 'py_, ');
+  const keyNames = { int: 'int', bytes: 'bytes', text: 'str' };
+  const container = containerIn(model, type, value, subject, { lead: 'py_, ', item: ['py_', 'item'], keyed: 'a dict whose keys are', keyNames, part: (name) => `&${name}`, convert: convertIn, functionIn });
+  if (container !== undefined) return container;
   const unit = unitOf(model, type);
   if (unit?.kind === 'enum' || unit?.origin === 'callback' || objectUnit(model, type) !== undefined || aliasOf(model, type) !== undefined || interfaceOf(model, type) !== undefined) {
     return `${unitFn('in', unit ?? { name: [] }, aliasOf(model, type)?.library)}(py_, ${value}, ${subject})`;
@@ -418,23 +410,18 @@ function convertIn(model: Model, type: Type, value: string, subject: string): st
 
 // GN-6z: a function holds the callable that entered; a call converts the arguments out and the result in, and an
 // exception of the Python code, or a failure of the binding in the call, goes to the core as a Raised.
-function functionIn(model: Model, type: { parameters: Type[]; returns: Type; async_allowed?: boolean },value: string, subject: string): string {
-  const result = type.returns === 'none' ? '()' : rustType(model, type.returns);
-  const names = type.parameters.map((_p, i) => `argument_${String(i)}`);
-  const params = type.parameters.map((p, i) => `${names[i] ?? ''}: ${traitParam(model, p)}`);
-  const outs = type.parameters.map((p, i) => `${convertOut(model, p, names[i] ?? '')}?`);
-  const returned = type.returns === 'none' ? 'Ok(())' : convertIn(model, type.returns, '&returned', subject.startsWith('"') ? `${subject.slice(0, -1)} returns"` : '"the function returns"');
-  return `kept_function_in(py_, ${value}, ${subject}, ${givenRust(functionGiven(type))}).map(|object| -> ${rustType(model, keptFunctionType(type))} {
-            Box::new(move |${params.join(', ')}| -> Result<${result}, binding_core::Failure<${model.coreError ?? '()'}>> {
-                Python::attach(|py_| {
+function functionIn(model: Model, type: FunctionType, value: string, subject: string): string {
+  return keptFunctionIn(model, type, value, subject, 'py_, ', 'object', ({ result, names, returns }) => {
+    const outs = type.parameters.map((p, i) => `${convertOut(model, p, names[i] ?? '')}?`);
+    const returned = type.returns === 'none' ? 'Ok(())' : convertIn(model, type.returns, '&returned', returns);
+    return `                Python::attach(|py_| {
                     let call = || -> PyResult<${result}> {
                         let returned = object.bind(py_).call1((${outs.join(', ')}${outs.length === 1 ? ',' : ''}))?;
                         ${type.returns === 'none' ? "let _returned: Bound<'_, PyAny> = returned;\n                        " : ''}${returned}
                     };
                     call().map_err(|error| thrown(py_, error))
-                })
-            })
-        })`;
+                })`;
+  });
 }
 
 const FUNCTION_IN = `
@@ -450,22 +437,9 @@ fn kept_function_in(py_: Python<'_>, value: &Bound<'_, PyAny>, subject: &str, gi
 `;
 
 function convertOut(model: Model, type: Type, value: string): string {
-  if (typeof type === 'string') {
-    const fn: Record<string, string> = { text: 'text_out', latin1: 'latin1_out', bool: 'bool_out', uint: 'uint_out', int: 'int_out', int64: 'int_out', bytes: 'bytes_out', float: 'float_out', path: 'path_out', none: 'none_out' };
-    // T-2 never: the core's Infallible has no value, so the call has failed before.
-    if (type === 'never') return `match ${value} {}`;
-    return type === 'none' ? 'none_out(py_)' : `${fn[type]}(py_, ${value})`;
-  }
-  // GN-6ae: a result passthrough leaves the table of the binding as the value that the function returned.
-  if ('passthrough' in type) return `passed_out(py_, ${value})`;
-  if ('list' in type) return `list_out(py_, ${value}, ${closure(['py_', 'item'], convertOut(model, type.list, 'item'))})`;
-  // The value of a keyed map is a reference of any lifetime, which a closure takes and a generic function item does not.
-  if ('keyed_map' in type) return `keyed_map_out(py_, ${value}, |py_, item| ${convertOut(model, type.keyed_map, 'item')})`;
-  if ('map' in type) return `map_out(py_, ${value}, |py_, item| ${convertOut(model, type.map, 'item')})`;
-  if ('optional' in type) return `optional_out(py_, ${optionRef(value)}, ${closure(['py_', 'value'], convertOut(model, type.optional, 'value'))})`;
-  if ('tuple' in type) {
-    return tupleOut(type.tuple, value, (t, name) => convertOut(model, t, name), (parts) => `tuple_out(py_, vec![${parts.join(', ')}])`);
-  }
+  if (typeof type === 'string') return scalarOut(type, value, 'Python', 'none_out(py_)', 'py_, ', { int64: 'int_out' });
+  const container = containerOut(model, type, value, { env: 'py_', tuple: (parts) => `tuple_out(py_, vec![${parts.join(', ')}])`, convert: convertOut });
+  if (container !== undefined) return container;
   const unit = unitOf(model, type);
   if (unit?.kind === 'enum') return `out_${rustField(unit.name)}(py_, ${value})`;
   const leaf = cycleLeaf(model, PYTHON_CYCLE, type, value, '');
@@ -573,7 +547,7 @@ const PYTHON_CYCLE: CycleHost = {
 };
 
 // GN-6bt: the cycles of the records and variants whose conversions the crate holds.
-const pythonCycles = (model: Model): Cycle[] => cycles(model, [...model.resultRecords, ...model.variants.map((v) => v.unit)]);
+const pythonCycles = resultCycles;
 
 // T-9, GN-6v: a value of a variant is an instance of the dataclass of one of its cases, whose fields are judged as they
 // enter (T-8); a value leaves as the instance of the class of its case, by a match without a wildcard.
@@ -633,14 +607,11 @@ ${arms.join('\n')}
   };
 }
 
-const fieldInit = (field: string, variable: string): string => (field === variable ? field : `${field}: ${variable}`);
-
 // N-4 iterate: __iter__ gives the items, or the keys of the entries with items() for the pairs, as a dict does; the
 // items are converted when the iteration starts, a snapshot of the class's value.
 function iterateRust(model: Model, fn: Fn): string {
-  const yields = fn.yields ?? { value: 'none' };
+  const { yields, item } = iterateItems(model, fn, convertOut);
   const call = armedCall(model, fn, `${fn.corePath}(${coreCallArgs(model, fn, () => '', 'self.inner').join(', ')})`);
-  const item = (type: Type, value: string): string => `${convertOut(model, type, borrowedItem(model, type, value))}?`;
   const iter = (body: string): string => `
         guard(py_, || {${locks(model, fn).map((l) => `\n    ${l}`).join('')}
             let items = PyList::empty(py_);
@@ -1030,9 +1001,8 @@ function callbackRust(model: Model, cb: CallbackUnit): string {
   }).join('\n');
   // GN-6s: the error units of a callback unit of another repository are classes of <owner root>._errors.
   const errorsModule = cb.library === undefined ? 'None' : `Some(${rustString(`${(model.foreign.get(cb.library)?.packages['python'] as { module: string }).module}._errors`)})`;
-  const recognizing = cb.members.filter((m) => m.recognized !== undefined).map((m) => `
-/// U-3: an exception of ${m.member.id}: an instance of an error unit that it recognizes, with one of the kinds of that
-/// unit, is the core error of the kind (GN-6d); any other exception goes back to the caller as it is.
+  const recognized = recognizing(cb, (m, doc) => `
+${doc} goes back to the caller as it is.
 fn ${recognizedFn(cb, m)}(py_: Python<'_>, error: PyErr) -> ${failure} {
     let core = kind_of_recognized(py_, &error, ${errorsModule}, &[${(m.recognized?.units ?? []).map((u) => rustString(langName('python', u.unit.name, 'class'))).join(', ')}]).and_then(|(kind, message)| ${recognizedMatch(m, '    ')});
     match core {
@@ -1040,7 +1010,7 @@ fn ${recognizedFn(cb, m)}(py_: Python<'_>, error: PyErr) -> ${failure} {
         None => thrown(py_, error),
     }
 }
-`).join('');
+`);
   const checks = cb.members.map((m) => {
     const method = langName('python', m.member.name, 'callable');
     // GN-6d: a member with a default may be left out, which the call answers with the default.
@@ -1072,7 +1042,7 @@ ${checks}
 
 impl ${cb.unit.core ?? ''} for ${struct} {${methods}
 }
-${recognizing}`;
+${recognized}`;
 }
 
 // U-3, GN-6d: the kind and the message of an exception that is an instance of one of the error classes, for the
@@ -1112,11 +1082,9 @@ fn read_kind_of_recognized(py_: Python<'_>, error: &PyErr, module: Option<&str>,
 // argument, a class argument as a new instance of its class, and gives what the callable returned as a Passthrough, or
 // its exception as a Raised.
 function functionClosure(model: Model, type: Type & { function: unknown }, name: string, subject: string): string[] {
-  const parts = (type as { function: { parameters: Type[] } }).function.parameters;
-  const failure = `binding_core::Failure<${model.coreError ?? '()'}>`;
+  const { parts, head } = functionClosureHead(model, type, name, `py_, ${name}`, subject);
   return [
-    `        let ${name} = callable_in(py_, ${name}, ${subject}, ${givenRust(functionGiven({ parameters: parts }))})?;`,
-    `        let ${name} = move |${parts.map((part, i) => `arg${i}: ${rustType(model, part)}`).join(', ')}| -> Result<binding_core::Passthrough, ${failure}> {`,
+    ...head,
     '            Python::attach(|py_| {',
     '                let call = || -> PyResult<binding_core::Passthrough> {',
     `                    let returned = ${name}.bind(py_).call1((${parts.map((part, i) => `${convertOut(model, part, `arg${i}`)}?,`).join(' ')}))?;`,
@@ -1244,9 +1212,8 @@ fn settled<'py>(py_: Python<'py>, value: binding_core::Passthrough, event_loop: 
 // another library's package: the row of its kind gives the class, the message, the status, the errno and the
 // forwarded properties are read from the exception, and the exception is the __cause__ of the converted one.
 function convertedRust(model: Model): string {
-  const fns = [...model.functions, ...model.objects.flatMap((o) => o.members)].filter((fn) => conversionsOf(model, fn).length > 0);
+  const { fns, failure } = convertingFns(model);
   if (fns.length === 0) return '';
-  const failure = `binding_core::Failure<${model.coreError ?? '()'}>`;
   const tables = fns.map((fn) => {
     const conversions = conversionsOf(model, fn);
     const lookups = conversions.map((c) => {
@@ -1327,7 +1294,7 @@ fn read_converted(py_: Python<'_>, exception: &Bound<'_, PyAny>, module: &str, c
 // E-1c, U-3: the exceptions that callbacks raised, kept under the handles of their Raised until the generated caller
 // throws them again; and the failure of a core that calls back, as the error of its kind or that exception.
 function failureRust(model: Model): string {
-  if (!model.functions.some((f) => f.failure) && !model.objects.some((o) => o.members.some((f) => f.failure)) && model.aliases.length === 0) return '';
+  if (!convertsFailure(model)) return '';
   // E-1c, GN-6w: a library whose only Failure comes from a trait that a class implements runs no Python code that
   // raises, so it keeps no table, and a Raised that the core gives is a failure of kind internal.
   if (!keepsThrown(model) && model.aliases.length === 0 && !countsThrown(model.contract, model.foreign)) return `
@@ -1406,15 +1373,13 @@ fn failure_error(py_: Python<'_>, failure: binding_core::Failure<${model.coreErr
 
 // GN-5, GN-6h: the poison entry point of the B-5c test: a panic while the write guard of the instance is held.
 function poisonRust(model: Model): string {
-  const written = model.objects.filter((o) => o.lock?.writes === true);
-  if (written.length === 0) return '';
-  const arms = written.map((o) => {
-    const pyClass = langName('python', o.unit.name, 'class');
+  const arms = poisonArms(model, 'python', (_o, pyClass) => {
     return `        if let Ok(object) = object.cast::<Py${pyClass}>() {
             let _held = object.get().inner.write(${rustString(pyClass)}).map_err(|error| binding_error(py_, error))?;
             panic!("panic-test");
         }`;
   }).join('\n');
+  if (arms === '') return '';
   return `/// B-5c: the entry point of the generated poison test, which panics while it holds the write guard of the instance.
 #[allow(clippy::panic, reason = "B-7: the entry point of the panic test panics on purpose, which its guard turns into kind internal")]
 #[cfg(feature = "panic-test")]
@@ -1478,14 +1443,10 @@ ${propertyArms}
 
 function libRust(model: Model, layout: PythonLayout): string {
   const classOf = (category: string): string => categoryClass(model, category);
-  const constants = model.constants
-    .map((c) => `const _: () = assert!(${c.member.core as string} == ${String(c.member.value)});`)
-    .join('\n') + defaultAsserts(model);
+  const constants = constantAsserts(model);
   const functions = model.functions.map((fn) => functionRust(model, fn)).join('');
   const enums = [
-    ...model.enums.map((u) => enumRust(model, u)),
-    ...model.resultRecords.map((u) => recordRust(model, u)),
-    ...model.variants.map((v) => variantRust(model, v)),
+    ...resultUnits(model, (u) => enumRust(model, u), recordRust, variantRust),
     ...model.aliases.filter((a) => a.library === undefined).map((a) => aliasPython(model, a)),
     model.aliases.length > 0 ? pythonHost(model) : '',
     // GN-6bp: the failure conversions of the owners, used as far as a conversion into the core uses them.
@@ -1496,7 +1457,7 @@ function libRust(model: Model, layout: PythonLayout): string {
   // The constructor wraps the value itself, so a class that no code gives has none (the lints deny dead code).
   // GN-6z: a function that the core may keep; the function parameter of a member with machine has its own helper (GN-6ae).
   const takesFunction = [...model.functions, ...model.objects.flatMap((o) => o.members)].some((fn) => fn.args.some((a) => holdsFunction(a.type) && !machineFunction(a.type)));
-  const recognizes = takenCallbacks(model).some((c) => c.members.some((m) => m.recognized !== undefined));
+  const recognizes = recognizesAny(model);
   const rest = takenCallbacks(model).map((c) => callbackRust(model, c)).join('') + model.interfaces.map((i) => interfaceRust(model, i)).join('') + (takesFunction ? FUNCTION_IN : '') + (recognizes ? RECOGNIZED_KIND : '') + failureRust(model) + convertedRust(model) + passingRust(model, layout);
   const draft = (functions + enums + model.objects.map((o) => objectRust(model, layout, o, true)).join('') + rest).replace(/\/\/[^\n]*/g, '');
   const givesOut = (o: ObjectClass): boolean => new RegExp(`(?<!fn |::)\\bout_${rustField(o.unit.name)}\\b`).test(draft);

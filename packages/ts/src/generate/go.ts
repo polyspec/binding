@@ -1082,27 +1082,24 @@ ${cases.join('\n')}
 
 // A Go interpreted string literal of UTF-8 text, with only printable ASCII in the source.
 export function goString(text: string): string {
-  let out = '"';
-  for (const char of text) {
-    const code = char.codePointAt(0) ?? 0;
-    if (char === '"' || char === '\\') out += `\\${char}`;
-    else if (code >= 0x20 && code < 0x7f) out += char;
-    else if (code <= 0xffff) out += `\\u${code.toString(16).padStart(4, '0')}`;
-    else out += `\\U${code.toString(16).padStart(8, '0')}`;
-  }
-  return `${out}"`;
+  return goQuoted([...text].map((char) => char.codePointAt(0) ?? 0), (code) => (code <= 0xffff ? `\\u${goHex(code, 4)}` : `\\U${goHex(code, 8)}`));
 }
 
 // A Go interpreted string literal whose bytes are the given bytes (T-1 latin1 in Go, B-8).
 export function goBytes(bytes: Iterable<number>): string {
-  let out = '"';
-  for (const byte of bytes) {
-    const char = String.fromCharCode(byte);
-    if (char === '"' || char === '\\') out += `\\${char}`;
-    else if (byte >= 0x20 && byte < 0x7f) out += char;
-    else out += `\\x${byte.toString(16).padStart(2, '0')}`;
-  }
-  return `${out}"`;
+  return goQuoted([...bytes], (byte) => `\\x${goHex(byte, 2)}`);
+}
+
+const goHex = (code: number, width: number): string => code.toString(16).padStart(width, '0');
+
+// A Go interpreted string literal of code points: a quote and a backslash escaped, printable ASCII as is, and any other
+// by its escape.
+function goQuoted(codes: number[], escape: (code: number) => string): string {
+  const one = (code: number): string => {
+    if (code === 0x22 || code === 0x5c) return `\\${String.fromCodePoint(code)}`;
+    return code >= 0x20 && code < 0x7f ? String.fromCodePoint(code) : escape(code);
+  };
+  return `"${codes.map(one).join('')}"`;
 }
 
 // The import block of a file: the standard library first, then the packages of the module, as gofmt groups them.

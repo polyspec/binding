@@ -1382,9 +1382,9 @@ export function places(model: Model, fn: Fn): Place[] {
   return out;
 }
 
-// GN-6h: whether a conversion in of each form is written for a class: the handle of a parameter that is a place
-// (held_<class>), and the clone of a value inside another type (in_<class>).
-export function takesNested(model: Model, object: ObjectClass): boolean {
+// T-5: whether a type names a class, itself, by a generated interface it implements, or by a field of a record of this
+// repository; a function type names it by what it returns when returns holds, else not at all.
+function namesClass(model: Model, object: ObjectClass, returns: boolean): (value: unknown) => boolean {
   const seen = new Set<string>();
   const names = (value: unknown): boolean => {
     if (Array.isArray(value)) return value.some(names);
@@ -1399,10 +1399,17 @@ export function takesNested(model: Model, object: ObjectClass): boolean {
       seen.add(unit.id);
       return names(unit.fields ?? []);
     }
-    // GN-6ae: the parameters of a function type go out to the function; only what it returns comes in.
-    if (typeof record['function'] === 'object' && record['function'] !== null) return names((record['function'] as Record<string, unknown>)['returns']);
-    return Object.entries(record).some(([key, item]) => key !== 'name' && names(item));
+    if (returns && typeof record['function'] === 'object' && record['function'] !== null) return names((record['function'] as Record<string, unknown>)['returns']);
+    return Object.entries(record).some(([key, item]) => key !== 'name' && (returns || key !== 'function') && names(item));
   };
+  return names;
+}
+
+// GN-6h: whether a conversion in of each form is written for a class: the handle of a parameter that is a place
+// (held_<class>), and the clone of a value inside another type (in_<class>).
+export function takesNested(model: Model, object: ObjectClass): boolean {
+  // GN-6ae: the parameters of a function type go out to the function; only what it returns comes in.
+  const names = namesClass(model, object, true);
   const fns = [...model.functions, ...model.objects.flatMap((o) => o.members)];
   const place = (arg: Arg): boolean => !arg.field && heldParam(model, arg.type) !== undefined;
   return fns.some((fn) => fn.args.some((a) => !place(a) && names(a.type))) || model.callbacks.some((c) => c.members.some((m) => names(m.returns)));
@@ -1638,22 +1645,32 @@ const keptParams = (model: Model): Type[] =>
 // GN-6aa: whether a member takes a parameter with keeps.
 export const keepsAny = (model: Model): boolean => keptParams(model).length > 0;
 
-// GN-6aa: the callback units that a parameter with keeps holds, itself, in a list or in an optional, in contract order.
-export function keptCallbacks(model: Model): CallbackUnit[] {
+// U-3: the callback units that the types a visit is given hold, itself, in a list, an optional or a field of a record
+// of this repository, and when deep also in a map or a tuple.
+function callbacksIn(model: Model, deep: boolean): { found: Set<Unit>; visit: (type: Type | undefined) => void } {
   const found = new Set<Unit>();
   const seen = new Set<string>();
-  const visit = (type: Type): void => {
-    if (typeof type === 'string') return;
+  const visit = (type: Type | undefined): void => {
+    if (type === undefined || typeof type === 'string') return;
     if ('list' in type) return visit(type.list);
     if ('optional' in type) return visit(type.optional);
+    if (deep && 'map' in type) return visit(type.map);
+    if (deep && 'keyed_map' in type) return visit(type.keyed_map);
+    if (deep && 'tuple' in type) return type.tuple.forEach(visit);
     const unit = libraryOf(type) === undefined ? unitOf(model, type) : undefined;
     if (unit?.origin === 'callback') found.add(unit);
-    // GN-6aa: the callbacks of the fields of a record parameter with keeps are kept with it.
     if (unit?.kind === 'record' && !seen.has(unit.id)) {
       seen.add(unit.id);
       (unit.fields ?? []).forEach((f) => visit(f.type));
     }
   };
+  return { found, visit };
+}
+
+// GN-6aa: the callback units that a parameter with keeps holds, itself, in a list or in an optional, in contract order.
+export function keptCallbacks(model: Model): CallbackUnit[] {
+  // GN-6aa: the callbacks of the fields of a record parameter with keeps are kept with it.
+  const { found, visit } = callbacksIn(model, false);
   keptParams(model).forEach(visit);
   return model.callbacks.filter((c) => found.has(c.unit));
 }
@@ -1664,22 +1681,7 @@ export function keptCallbacks(model: Model): CallbackUnit[] {
 // callback unit that only a class implements (GN-6w), or that only another repository takes, has no wrapper and no
 // conversion in this crate, because no code of the crate would call them.
 export function takenCallbacks(model: Model): CallbackUnit[] {
-  const found = new Set<Unit>();
-  const seen = new Set<string>();
-  const visit = (type: Type | undefined): void => {
-    if (type === undefined || typeof type === 'string') return;
-    if ('list' in type) return visit(type.list);
-    if ('optional' in type) return visit(type.optional);
-    if ('map' in type) return visit(type.map);
-    if ('keyed_map' in type) return visit(type.keyed_map);
-    if ('tuple' in type) return type.tuple.forEach(visit);
-    const unit = libraryOf(type) === undefined ? unitOf(model, type) : undefined;
-    if (unit?.origin === 'callback') found.add(unit);
-    if (unit?.kind === 'record' && !seen.has(unit.id)) {
-      seen.add(unit.id);
-      (unit.fields ?? []).forEach((f) => visit(f.type));
-    }
-  };
+  const { found, visit } = callbacksIn(model, true);
   for (const fn of [...model.functions, ...model.objects.flatMap((o) => o.members)]) fn.params.forEach((p) => visit(p.type));
   for (const record of model.records) (record.fields ?? []).forEach((f) => visit(f.type));
   return [...model.callbacks.filter((c) => found.has(c.unit)), ...model.foreignCallbacks];
@@ -1692,22 +1694,7 @@ export function takenCallbacks(model: Model): CallbackUnit[] {
 // WASM a unit of keptUnits is called through the kept wrapper at a place without keeps as well, so it is no lent unit
 // there.
 export function lentCallbacks(model: Model): CallbackUnit[] {
-  const found = new Set<Unit>();
-  const seen = new Set<string>();
-  const visit = (type: Type | undefined): void => {
-    if (type === undefined || typeof type === 'string') return;
-    if ('list' in type) return visit(type.list);
-    if ('optional' in type) return visit(type.optional);
-    if ('map' in type) return visit(type.map);
-    if ('keyed_map' in type) return visit(type.keyed_map);
-    if ('tuple' in type) return type.tuple.forEach(visit);
-    const unit = libraryOf(type) === undefined ? unitOf(model, type) : undefined;
-    if (unit?.origin === 'callback') found.add(unit);
-    if (unit?.kind === 'record' && !seen.has(unit.id)) {
-      seen.add(unit.id);
-      (unit.fields ?? []).forEach((f) => visit(f.type));
-    }
-  };
+  const { found, visit } = callbacksIn(model, true);
   for (const fn of [...model.functions, ...model.objects.flatMap((o) => o.members)]) fn.params.filter((p) => p.keeps !== true).forEach((p) => visit(p.type));
   return [...model.callbacks.filter((c) => found.has(c.unit) && model.keptUnits?.has(c.unit.id) !== true), ...model.foreignCallbacks];
 }
@@ -1734,15 +1721,16 @@ export function usesNative(model: Model): boolean {
 }
 
 // T-1: the type of a parameter of a callback member or of a function type: a type with two forms is borrowed, a Copy
-// type by value, a list as a slice, and any other type by reference.
-export function traitParam(model: Model, type: Type): string {
+// type by value, a list as a slice, and any other type by reference. copied tells the types that go by value; Go takes
+// only an enum so.
+export function traitParam(model: Model, type: Type, copied: (model: Model, type: Type) => boolean = byValue): string {
   if (typeof type === 'string') {
     const borrowed: Record<string, string> = { text: '&str', latin1: '&[u8]', bytes: '&[u8]', source: '&[u8]', path: '&std::path::Path' };
     return borrowed[type] ?? rustType(model, type);
   }
-  if ('optional' in type && typeof type.optional === 'string' && ['text', 'latin1', 'bytes'].includes(type.optional)) return `Option<${traitParam(model, type.optional)}>`;
+  if ('optional' in type && typeof type.optional === 'string' && ['text', 'latin1', 'bytes'].includes(type.optional)) return `Option<${traitParam(model, type.optional, copied)}>`;
   if ('list' in type) return `&[${rustType(model, type.list)}]`;
-  if (byValue(model, type)) return rustType(model, type);
+  if (copied(model, type)) return rustType(model, type);
   return `&${rustType(model, type)}`;
 }
 
@@ -1968,24 +1956,9 @@ export const objectUnit = (model: Model, type: Type): ObjectClass | undefined =>
 // field of a record in them names it. Only then does an emitter write the conversion in, which copies the value the
 // class holds, so a class that never comes in needs neither the conversion nor Clone.
 export function takesObject(model: Model, object: ObjectClass): boolean {
-  const seen = new Set<string>();
-  const names = (value: unknown): boolean => {
-    if (Array.isArray(value)) return value.some(names);
-    if (typeof value !== 'object' || value === null) return false;
-    const record = value as Record<string, unknown>;
-    if (typeof record['unit'] === 'string' && record['library'] === undefined) {
-      if (record['unit'] === object.unit.id) return true;
-      // GN-6ap: a value of a generated interface is an instance of a class that implements it.
-      if (model.interfaces.some((i) => i.id === record['unit']) && (object.unit.implements ?? []).some((ref) => ref.library === undefined && ref.unit === record['unit'])) return true;
-      const unit = model.contract.units.find((u) => u.id === record['unit']);
-      if (unit?.kind !== 'record' || seen.has(unit.id)) return false;
-      seen.add(unit.id);
-      return names(unit.fields ?? []);
-    }
-    // GN-6ae: the arguments of a function parameter leave to language code and its result is a passthrough, so a
-    // class that a function type names does not come in by it.
-    return Object.entries(record).some(([key, item]) => key !== 'name' && key !== 'function' && names(item));
-  };
+  // GN-6ae: the arguments of a function parameter leave to language code and its result is a passthrough, so a
+  // class that a function type names does not come in by it.
+  const names = namesClass(model, object, false);
   const fns = [...model.functions, ...model.objects.flatMap((o) => o.members)];
   return fns.some((fn) => fn.args.some((a) => names(a.type))) || model.callbacks.some((c) => c.members.some((m) => names(m.returns)));
 }
@@ -2653,11 +2626,9 @@ export function ownerErrorClasses(owner: Contract, lang: Lang): { category: Cate
   return [...categories, ...units];
 }
 
-// GN-5, GN-6ae: whether the crates of a contract keep a table of what was thrown, whose entries the entry point of
-// thrown-count-test counts: a member takes a callback unit, of this contract or of another, or a function type, or the
-// contract has a value alias with core, whose walk keeps what the language code threw. The contract and the contracts
-// that it names decide it, so that the manifest and the crate agree.
-export function countsThrown(contract: Contract, foreign: ReadonlyMap<string, Contract> = new Map()): boolean {
+// GN-6ae: whether a type calls language code: a function type, or a unit that callback tells, at any place of a list,
+// an optional, a map or a tuple.
+function callsBy(callback: (type: { unit: string; library?: string }) => boolean): (type: Type) => boolean {
   const called = (type: Type): boolean => {
     if (typeof type === 'string') return false;
     if ('function' in type) return true;
@@ -2667,9 +2638,20 @@ export function countsThrown(contract: Contract, foreign: ReadonlyMap<string, Co
     if ('keyed_map' in type) return called(type.keyed_map);
     if ('tuple' in type) return type.tuple.some(called);
     if (!('unit' in type)) return false;
+    return callback(type);
+  };
+  return called;
+}
+
+// GN-5, GN-6ae: whether the crates of a contract keep a table of what was thrown, whose entries the entry point of
+// thrown-count-test counts: a member takes a callback unit, of this contract or of another, or a function type, or the
+// contract has a value alias with core, whose walk keeps what the language code threw. The contract and the contracts
+// that it names decide it, so that the manifest and the crate agree.
+export function countsThrown(contract: Contract, foreign: ReadonlyMap<string, Contract> = new Map()): boolean {
+  const called = callsBy((type) => {
     const owner = type.library === undefined ? contract : foreign.get(type.library);
     return owner?.units.some((unit) => unit.id === type.unit && unit.origin === 'callback') === true;
-  };
+  });
   return contract.units.some((unit) =>
     (unit.kind === 'alias' && unit.origin === 'value' && typeof unit.core === 'object')
     || (unit.origin !== 'callback' && (unit.members ?? []).some((member) => (member.parameters ?? []).some((parameter) => called(parameter.type)))));
@@ -2678,17 +2660,7 @@ export function countsThrown(contract: Contract, foreign: ReadonlyMap<string, Co
 // GN-6ae: whether a member takes a callback unit or a function type, so that its call may keep what the language code
 // threw; the generated test of each of its cases reads the count of thrown-count-test after the call.
 export function callsCode(model: Model, fn: Fn): boolean {
-  const called = (type: Type): boolean => {
-    if (typeof type === 'string') return false;
-    if ('function' in type) return true;
-    if ('list' in type) return called(type.list);
-    if ('optional' in type) return called(type.optional);
-    if ('map' in type) return called(type.map);
-    if ('keyed_map' in type) return called(type.keyed_map);
-    if ('tuple' in type) return type.tuple.some(called);
-    if (!('unit' in type)) return false;
-    return [...model.callbacks, ...model.foreignCallbacks].some((callback) => callback.unit.id === type.unit && callback.library === type.library);
-  };
+  const called = callsBy((type) => [...model.callbacks, ...model.foreignCallbacks].some((callback) => callback.unit.id === type.unit && callback.library === type.library));
   return countsThrown(model.contract, model.foreign) && fn.args.some((arg) => called(arg.type));
 }
 

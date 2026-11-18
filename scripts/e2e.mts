@@ -999,16 +999,7 @@ if (targets.includes('go')) {
     // skipped.
     const what = `the generated tests${goCases && i === 0 ? ' and the contract cases' : ''}${of} on go test`;
     stepOf(['go'], what, () => {
-      const overlay = scoped();
-      process.stdout.write(`$ ${goTool} test -json -count=1 ${[...overlay, './...'].join(' ')}\n`);
-      const goTest = spawnSync(goTool, ['test', '-json', '-count=1', ...overlay, './...'], { cwd: goModule, encoding: 'utf8', maxBuffer: 1 << 28, env: { ...process.env, ...gitDependency, CARGO_TARGET_DIR: target, ...goEnv } });
-      const read = readGoTestEvents(goTest.stdout);
-      process.stdout.write(read.printed);
-      process.stdout.write(goTest.stderr);
-      const failure = goPackageFailure(read, goTest.status);
-      if (failure !== undefined) throw new Error(failure);
-      const { counts, packageFailures } = read;
-      judgedCount('go', what, counts.pass.length, withRun(goFailures(read), goTest.status, goTest.stderr), counts.fail.length + (goTest.status !== 0 && counts.fail.length === 0 && packageFailures.length === 0 ? 1 : 0), counts.skip.length, counts.skip);
+      goTestJudged(goTool, what, [...scoped(), './...'], goModule, { ...process.env, ...gitDependency, CARGO_TARGET_DIR: target, ...goEnv });
     });
     // GN-13bf: a run with the build tag of before GN-13ba compiles none of the tagged generated tests, so it must fail
     // on the guard of the tags and name a missing tag. One run of the first module of tests/e2e/sample stands for the
@@ -1205,6 +1196,21 @@ function goCarry(carried: readonly CarriedCopy[], platform: string): Required[] 
 }
 // The consumer of the released form: a module that requires each module of the repository at its tag and nothing
 // else; its test and the tests of every fetched module of `carried` run from the module cache of the run.
+// GN-14a: a run of go test -json, which prints its command and its output, fails at a package that failed without a
+// failed test, and judges the count of the tests that passed, failed and were skipped. It stands after the stop of a
+// lint run, which runs no test before it (B2.432).
+function goTestJudged(goTool: string, what: string, args: string[], cwd: string, env: NodeJS.ProcessEnv): void {
+  process.stdout.write(`$ ${goTool} test -json -count=1 ${args.join(' ')}\n`);
+  const goTest = spawnSync(goTool, ['test', '-json', '-count=1', ...args], { cwd, encoding: 'utf8', maxBuffer: 1 << 28, env });
+  const read = readGoTestEvents(goTest.stdout);
+  process.stdout.write(read.printed);
+  process.stdout.write(goTest.stderr);
+  const failure = goPackageFailure(read, goTest.status);
+  if (failure !== undefined) throw new Error(failure);
+  const { counts, packageFailures } = read;
+  judgedCount('go', what, counts.pass.length, withRun(goFailures(read), goTest.status, goTest.stderr), counts.fail.length + (goTest.status !== 0 && counts.fail.length === 0 && packageFailures.length === 0 ? 1 : 0), counts.skip.length, counts.skip);
+}
+
 function goConsumer(required: readonly Required[], carried: readonly CarriedCopy[], what: string = released): void {
   const consumer = join(goRoot, 'consumer');
   mkdirSync(consumer, { recursive: true });
@@ -1221,15 +1227,7 @@ function goConsumer(required: readonly Required[], carried: readonly CarriedCopy
   const unpinned = carried.filter((c) => !sums.includes(`${c.module} ${c.version} h1:`)).map((c) => `${c.module} ${c.version}`);
   if (unpinned.length > 0) throw new Error(`the go.sum of the consumer does not pin ${unpinned.join(', ')} (GN-15g)`);
   const tested = ['.', ...carried.map((c) => `${c.module}/...`)];
-  process.stdout.write(`$ ${goTool} test -json -count=1 ${tested.join(' ')}\n`);
-  const goTest = spawnSync(goTool, ['test', '-json', '-count=1', ...tested], { cwd: consumer, encoding: 'utf8', maxBuffer: 1 << 28, env: { ...process.env, ...consumerEnv } });
-  const read = readGoTestEvents(goTest.stdout);
-  process.stdout.write(read.printed);
-  process.stdout.write(goTest.stderr);
-  const failure = goPackageFailure(read, goTest.status);
-  if (failure !== undefined) throw new Error(failure);
-  const { counts, packageFailures } = read;
-  judgedCount('go', what, counts.pass.length, withRun(goFailures(read), goTest.status, goTest.stderr), counts.fail.length + (goTest.status !== 0 && counts.fail.length === 0 && packageFailures.length === 0 ? 1 : 0), counts.skip.length, counts.skip);
+  goTestJudged(goTool, what, tested, consumer, { ...process.env, ...consumerEnv });
   // GN-14f: the downloads of the module cache are the layout of a module proxy, so make go-musl-check reads the
   // same modules, which go.sum of the consumer pins, from <work>/go-release/proxy without Git.
   if (muslTriple !== undefined) execFileSync('cp', ['-R', join(goModcache, 'cache/download'), join(goRoot, 'proxy')]);

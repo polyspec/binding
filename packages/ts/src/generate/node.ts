@@ -13,7 +13,8 @@ import { addonName, NODE_PLATFORM_JS } from './packages.ts';
 import { nodeTests } from './tests_node.ts';
 import { type Cycle, type CycleHost, cycleLeaf, cycleOf, cycles, cycleUnitRust, holdsCycle } from './cycles.ts';
 import { raisesAssertions } from './raises.ts';
-import { type Files, header, jsString, rustString, closure, entryClosure, optionRef, withUsedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
+import { type FunctionType, JS_CONTAINERS, callbackNames, convertedTables, poisonArms, categoryIndex, constantAsserts, resultUnits, tsType as jsTsType, countCheck, recordMembers, keptClass, jsErrorBase, declarations, typeParameters, convertsFailure, recognizesAny, argIn, recordParamLines, recognizedClassIndex, callbackSignature, callbackImpl, holdsNative, recognizing, keptMethods, passes, passesAny, functionClosureHead, containerIn, containerOut, fieldInit, iterateItems, keptFunctionIn, type RecordForm, type VariantForm, recordFns, recordParts, resultCycles, variantFns, variantParts, scalarIn, scalarOut } from './bindings_shared.ts';
+import { type Files, header, jsString, rustString, closure, optionRef, withUsedHelpers, WIDEN, INTO_CORE, PARTS, CORE_FORM } from './text.ts';
 
 const ROOT = 'packages/ts/generated';
 
@@ -22,21 +23,9 @@ export const addonBase = (model: Model): string => addonName(model.contract);
 // ---- Rust ----
 
 function convertIn(model: Model, type: Type, value: string, subject: string): string {
-  if (typeof type === 'string') {
-    const fn: Record<string, string> = { text: 'text_in', latin1: 'latin1_in', bool: 'bool_in', uint: 'uint_in', int: 'int_in', int64: 'int64_in', float: 'float_in', bytes: 'bytes_in', source: 'source_in', path: 'path_in', cancel: 'cancel_in' };
-    const name = fn[type];
-    if (name === undefined) throw new Unsupported(`no Node input conversion for ${type}`);
-    return `${name}(${value}, ${subject})`;
-  }
-  if ('list' in type) return `list_in(${value}, ${subject}, ${closure(['item'], boxed(model, type.list, convertIn(model, type.list, 'item', subject)))})`;
-  if ('map' in type) return `map_in(${value}, ${subject}, ${entryClosure([], 'item', (entry) => convertIn(model, type.map, 'item', entry))})`;
-  if ('keyed_map' in type) {
-    const tags = (['int', 'bytes', 'text'] as const).map((kind, tag) => (type.key.includes(kind) ? String(tag) : '')).filter((t) => t !== '');
-    return `keyed_map_in(${value}, ${subject}, &[${tags.join(', ')}], ${rustString(`a Map whose keys are ${type.key.map((k) => ({ int: 'safe integers', text: 'strings' })[k] ?? k).join(' or ')}`)}, ${closure(['item'], convertIn(model, type.keyed_map, 'item', subject))})`;
-  }
-  if ('optional' in type) return `optional_in(${value}, ${closure(['value'], boxed(model, type.optional, convertIn(model, type.optional, 'value', subject)))})`;
-  if ('function' in type) return functionIn(model, type.function, value, subject);
-  if ('tuple' in type) return tupleIn(type.tuple, `tuple_in(${value}, ${subject})`, (part, name) => convertIn(model, part, name, subject));
+  if (typeof type === 'string') return scalarIn(type, value, subject, 'Node');
+  const container = containerIn(model, type, value, subject, { ...JS_CONTAINERS, part: (name) => name, convert: convertIn, functionIn });
+  if (container !== undefined) return container;
   const unit = unitOf(model, type);
   if (unit?.kind === 'enum') return `in_${rustField(unit.name)}(${value}, ${subject})`;
   // GN-6aa: a callback of a parameter with keeps, and any callback of a unit that one holds, is held as a Native of its
@@ -54,21 +43,13 @@ function convertIn(model: Model, type: Type, value: string, subject: string): st
 // GN-6z, GN-6u: a function holds the JavaScript function as a Native; a call runs on the owner thread in the env_ of the
 // owner table, converts the arguments out and the result in, and an exception of the JavaScript code, or a failure of the
 // binding in the call (kind wrong_thread on another thread), goes to the core as a Raised.
-function functionIn(model: Model, type: { parameters: Type[]; returns: Type; async_allowed?: boolean },value: string, subject: string): string {
-  const result = type.returns === 'none' ? '()' : rustType(model, type.returns);
-  const names = type.parameters.map((_p, i) => `argument_${String(i)}`);
-  const params = type.parameters.map((p, i) => `${names[i] ?? ''}: ${traitParam(model, p)}`);
-  const outs = type.parameters.map((p, i) => `${convertOut(model, p, names[i] ?? '')}.map_err(Thrown::Binding)?`);
+function functionIn(model: Model, type: FunctionType, value: string, subject: string): string {
   // GN-6z: napi has no FnArgs of no arguments; a function without arguments takes (), which it calls with none.
   const argsType = type.parameters.length === 0 ? '()' : `FnArgs<(${type.parameters.map(() => "Unknown<'_>").join(', ')}${type.parameters.length === 1 ? ',' : ''})>`;
-  const returned = type.returns === 'none' ? "let _returned: Unknown<'_> = returned;\n                    Ok(())" : `${convertIn(model, type.returns, 'returned', subject.startsWith('"') ? `${subject.slice(0, -1)} returns"` : '"the function returns"')}.map_err(Thrown::Binding)`;
-  // B2.531: the kept function lives for static, so a subject that is not a literal, such as the borrowed entry_ of an
-  // entry of a map (B2.475), is copied into it.
-  const held = subject.startsWith('"') ? '' : `\n            let subject_ = String::from(${subject});`;
-  const named = subject.startsWith('"') ? subject : '&subject_';
-  return `kept_function_in(env_, ${value}, ${subject}, ${givenRust(functionGiven(type))}).map(|native| -> ${rustType(model, keptFunctionType(type))} {${held}
-            Box::new(move |${params.join(', ')}| -> Result<${result}, binding_core::Failure<${model.coreError ?? '()'}>> {
-                let env_ = match native_env(&native, ${named}) {
+  return keptFunctionIn(model, type, value, subject, 'env_, ', 'native', ({ result, names, returns, held }) => {
+    const outs = type.parameters.map((p, i) => `${convertOut(model, p, names[i] ?? '')}.map_err(Thrown::Binding)?`);
+    const returned = type.returns === 'none' ? "let _returned: Unknown<'_> = returned;\n                    Ok(())" : `${convertIn(model, type.returns, 'returned', returns)}.map_err(Thrown::Binding)`;
+    return `                let env_ = match native_env(&native, ${held}) {
                     Ok(env_) => env_,
                     Err(error) => return Err(thrown_elsewhere(error)),
                 };
@@ -79,31 +60,14 @@ ${type.parameters.length === 0 ? '' : `                    let args: ${argsType}
 `}                    let returned = function.call(${type.parameters.length === 0 ? '()' : 'args'}).map_err(Thrown::Js)?;
                     ${returned}
                 };
-                call().map_err(thrown)
-            })
-        })`;
+                call().map_err(thrown)`;
+  }, true);
 }
 
 function convertOut(model: Model, type: Type, value: string): string {
-  if (typeof type === 'string') {
-    // T-2 never: the core's Infallible has no value, so the call has failed before.
-    if (type === 'never') return `match ${value} {}`;
-    if (type === 'none') return 'none_out(env_)';
-    const fn: Record<string, string> = { text: 'text_out', latin1: 'latin1_out', bool: 'bool_out', uint: 'uint_out', int: 'int_out', int64: 'int64_out', float: 'float_out', bytes: 'bytes_out', path: 'path_out' };
-    const name = fn[type];
-    if (name === undefined) throw new Unsupported(`no Node output conversion for ${type}`);
-    return `${name}(env_, ${value})`;
-  }
-  // GN-6ae: a result passthrough leaves the table of the binding as the value that the function returned.
-  if ('passthrough' in type) return `passed_out(env_, ${value})`;
-  if ('list' in type) return `list_out(env_, ${value}, ${closure(['env_', 'item'], convertOut(model, type.list, 'item'))})`;
-  // The value of a keyed map is a reference of any lifetime, which a closure takes and a generic function item does not.
-  if ('map' in type) return `map_out(env_, ${value}, |env_, item| ${convertOut(model, type.map, 'item')})`;
-  if ('keyed_map' in type) return `keyed_map_out(env_, ${value}, |env_, item| ${convertOut(model, type.keyed_map, 'item')})`;
-  if ('optional' in type) return `optional_out(env_, ${optionRef(value)}, ${closure(['env_', 'value'], convertOut(model, type.optional, 'value'))})`;
-  if ('tuple' in type) {
-    return tupleOut(type.tuple, value, (t, name) => convertOut(model, t, name), (parts) => `tuple_out(env_, vec![${parts.join(', ')}])`);
-  }
+  if (typeof type === 'string') return scalarOut(type, value, 'Node', 'none_out(env_)', 'env_, ');
+  const container = containerOut(model, type, value, { env: 'env_', tuple: (parts) => `tuple_out(env_, vec![${parts.join(', ')}])`, convert: convertOut });
+  if (container !== undefined) return container;
   const unit = unitOf(model, type);
   if (unit?.kind === 'enum') return `out_${rustField(unit.name)}(env_, ${value})`;
   // GN-6bt: the made value takes the env_ of a closure of a list or an optional, which the lints deny unused.
@@ -570,42 +534,19 @@ const envParam = (model: Model, unit: Unit, library: string | undefined): string
 // T-4: the result form of a record, a plain object with a member per field.
 function recordRust(model: Model, unit: Unit, library?: string): string {
   const cycle = library === undefined ? cycleOf(nodeCycles(model), unit) : undefined;
-  if (cycle !== undefined) return cycleUnitRust(model, nodeCycleHost(model, cycle.units), unit, cycle, 'Fail', (typed, mode) => recordParts(typed, unit, mode));
-  const name = recordFn(unit);
-  const core = unit.core_type ?? '';
-  const { ins, outs } = recordParts(model, unit, 'in');
-  return `
-/// T-4: a value of the record ${langName('node', unit.name, 'class')} is an object with a member per field, judged as it enters (T-8).
-fn in_${name}(${envParam(model, unit, library)}value: Unknown<'_>, subject: &str) -> Result<${core}, Fail> {
-${ins}
+  if (cycle !== undefined) return cycleUnitRust(model, nodeCycleHost(model, cycle.units), unit, cycle, 'Fail', (typed, mode) => recordParts(typed, unit, mode, NODE_RECORD));
+  return recordFns('node', unit, `${envParam(model, unit, library)}value: Unknown<'_>`, `<'env>(env_: &'env Env, value: impl Borrow<${unit.core_type ?? ''}>) -> Result<Unknown<'env>, Fail>`, recordParts(model, unit, 'in', NODE_RECORD));
 }
 
-fn out_${name}<'env>(env_: &'env Env, value: impl Borrow<${core}>) -> Result<Unknown<'env>, Fail> {
-${outs}
-}
-`;
-}
-
-// The bodies of the conversions of a record: in, or the walk of the places of units of its cycle (kids, GN-6bt), and
-// out.
-function recordParts(model: Model, unit: Unit, mode: 'in' | 'kids'): { ins: string; outs: string } {
-  const core = unit.core_type ?? '';
-  const fields = unit.fields ?? [];
-  const kids = mode === 'kids';
-  const reads = fields.map((f) => {
-    const member = langName('node', f.name, 'variable');
-    // GN-6a: a field that may be left out is null when its member is missing or undefined.
-    const read = caseLeftOut(f) ? `default_in(member(value, ${rustString(member)}, subject)?, |value| ${convertIn(model, f.type, 'value', rustString(member))}).map(Option::flatten)` : convertIn(model, f.type, `member(value, ${rustString(member)}, subject)?`, rustString(member));
-    const local = `${kids ? '_' : ''}${recordLocal(f.name)}`;
-    const held = kids && model.cycleWalk !== undefined && holdsCycle(model, model.cycleWalk, f.type);
-    return `    let ${local}${held ? '' : `: ${rustType(model, f.type)}`} = ${read}?;${narrows(f.type) && !kids ? `\n    ${narrowed(local, rustString(member), 'binding_error')}` : ''}`;
-  });
-  const writes = fields.map((f) => `    object.set_named_property(${rustString(langName('node', f.name, 'variable'))}, ${convertOut(model, f.type, `${byValue(model, f.type) ? "" : "&"}value.${rustField(f.name)}`)}?).map_err(internal)?;`);
-  return {
-    ins: `${reads.join('\n')}\n    ${kids ? 'Ok(())' : `Ok(${core} { ${fields.map((f) => recordInit(f.name)).join(', ')}${absentInits(unit)} })`}`,
-    outs: `    let value = value.borrow();\n    let mut object = Object::new(env_).map_err(internal)?;\n${writes.join('\n')}\n    Ok(object.to_unknown())`,
-  };
-}
+// T-4: a record in Node reads its fields from the members of an object and sets them as its named properties.
+const NODE_RECORD: RecordForm = {
+  lang: 'node',
+  place: (member) => `member(value, ${rustString(member)}, subject)?`,
+  convert: convertIn,
+  write: (model, f) => `    object.set_named_property(${rustString(langName('node', f.name, 'variable'))}, ${convertOut(model, f.type, `${byValue(model, f.type) ? "" : "&"}value.${rustField(f.name)}`)}?).map_err(internal)?;`,
+  object: 'let mut object = Object::new(env_).map_err(internal)?;',
+  made: 'Ok(object.to_unknown())',
+};
 
 // GN-6bt: the host of the walks of a cycle in Node; the conversion in of a unit of the cycle takes the env_ when one
 // of the cycle reads it.
@@ -629,79 +570,28 @@ const nodeCycleHost = (model: Model, units: readonly Unit[]): CycleHost => {
 };
 
 // GN-6bt: the cycles of the records and variants whose conversions the crate holds.
-const nodeCycles = (model: Model): Cycle[] => cycles(model, [...model.resultRecords, ...model.variants.map((v) => v.unit)]);
+const nodeCycles = resultCycles;
 
 // T-9, GN-6v: a value of a variant is a plain object whose tag member is the text of one of its cases, with a member
 // per field of the case, judged as it enters (T-8); a value leaves as such an object, by a match without a wildcard.
 function variantRust(model: Model, variant: Variant): string {
   const cycle = cycleOf(nodeCycles(model), variant.unit);
-  if (cycle !== undefined) return cycleUnitRust(model, nodeCycleHost(model, cycle.units), variant.unit, cycle, 'Fail', (typed, mode) => variantParts(typed, variant, mode));
-  const name = recordFn(variant.unit);
-  const core = variant.unit.core_type ?? '';
-  const jsName = langName('node', variant.unit.name, 'class');
-  const tag = langName('node', variant.unit.tag ?? [], 'variable');
-  const { ins, outs } = variantParts(model, variant, 'in');
-  return `
-/// T-9: a value of the variant ${jsName} is an object whose member ${tag} is the text of one of its cases, with the fields of that case, judged as they enter (T-8).
-fn in_${name}(${envParam(model, variant.unit, undefined)}value: Unknown<'_>, subject: &str) -> Result<${core}, Fail> {
-${ins}
+  if (cycle !== undefined) return cycleUnitRust(model, nodeCycleHost(model, cycle.units), variant.unit, cycle, 'Fail', (typed, mode) => variantParts(typed, variant, mode, NODE_VARIANT));
+  return variantFns('node', variant, `${envParam(model, variant.unit, undefined)}value: Unknown<'_>`, `<'env>(env_: &'env Env, value: impl Borrow<${variant.unit.core_type ?? ''}>) -> Result<Unknown<'env>, Fail>`, variantParts(model, variant, 'in', NODE_VARIANT));
 }
 
-/// T-9: a value of the variant ${jsName} leaves as the object of its case.
-fn out_${name}<'env>(env_: &'env Env, value: impl Borrow<${core}>) -> Result<Unknown<'env>, Fail> {
-${outs}
-}
-`;
-}
-
-// The bodies of the conversions of a variant: in, or the walk of the places of units of its cycle (kids, GN-6bt), and
-// out.
-function variantParts(model: Model, variant: Variant, mode: 'in' | 'kids'): { ins: string; outs: string } {
-  const jsName = langName('node', variant.unit.name, 'class');
-  const tag = langName('node', variant.unit.tag ?? [], 'variable');
-  const kids = mode === 'kids';
-  const insArms = variant.cases.map((kase) => {
-    const fields = caseFields(model, variant, kase);
-    const reads = fields.map((f) => {
-      const memberName = langName('node', f.field.name, 'variable');
-      // GN-6v: a field that may be left out is null when its member is missing or undefined.
-      const read = caseLeftOut(f.field) ? `default_in(member(value, ${rustString(memberName)}, subject)?, |value| ${convertIn(model, f.field.type, 'value', rustString(memberName))}).map(Option::flatten)` : convertIn(model, f.field.type, `member(value, ${rustString(memberName)}, subject)?`, rustString(memberName));
-      const held = kids && model.cycleWalk !== undefined && holdsCycle(model, model.cycleWalk, f.field.type);
-      const variable = `${kids ? '_' : ''}${f.variable}`;
-      return `            let ${variable}${held ? '' : `: ${caseType(model, f)}`} = ${held ? `${read}?` : caseRead(f, `${read}?`)};${f.boxed === undefined && narrows(f.field.type) && !kids ? `\n            ${narrowed(variable, rustString(memberName), 'binding_error')}` : ''}`;
-    });
-    const built = kids ? 'Ok(())' : `Ok(${caseStruct(variant, kase, fields)})`;
-    return `        ${rustString(kase.value)} => ${reads.length === 0 ? `${built},` : `{\n${reads.join('\n')}\n            ${built}\n        }`}`;
-  });
-  const arms = variant.cases.map((kase) => {
-    const fields = caseFields(model, variant, kase);
-    const writes = [
-      `            object.set_named_property(${rustString(tag)}, text_out(env_, ${rustString(kase.value)})?).map_err(internal)?;`,
-      ...fields.map((f) => `            object.set_named_property(${rustString(langName('node', f.field.name, 'variable'))}, ${caseWritten(f, convertOut(model, f.field.type, caseValue(model, f)))}?).map_err(internal)?;`),
-    ];
-    return `${fields.length === 0 ? `        ${UNIT_CASE_ALLOW}\n` : ''}        ${caseStruct(variant, kase, fields)} => {\n${writes.join('\n')}\n        }`;
-  });
-  return {
-    ins: `    let tag = text_in(member(value, ${rustString(tag)}, subject)?, ${rustString(tag)})?;
-    match tag.as_str() {
-${insArms.join('\n')}
-        _ => Err(type_error(subject, ${rustString(jsName)})),
-    }`,
-    outs: `    let mut object = Object::new(env_).map_err(internal)?;
-    match value.borrow() {
-${arms.join('\n')}
-    }
-    Ok(object.to_unknown())`,
-  };
-}
-
-const fieldInit = (field: string, variable: string): string => (field === variable ? field : `${field}: ${variable}`);
+// T-9: a variant in Node reads and sets its members as a record does.
+const NODE_VARIANT: VariantForm = {
+  ...NODE_RECORD,
+  set: (key, value) => `            object.set_named_property(${rustString(key)}, ${value}?).map_err(internal)?;`,
+  field: (model, f) => caseWritten(f, convertOut(model, f.field.type, caseValue(model, f))),
+  text: (literal) => `text_out(env_, ${literal})`,
+};
 
 // N-4 iterate: the addon's __binding_iterate gives the items, or [key, value] for the entries, as an array converted when the
 // iteration starts (a snapshot of the class's value); the JavaScript entry makes it the class's Symbol.iterator.
 function iterateRust(model: Model, fn: Fn): string {
-  const yields = fn.yields ?? { value: 'none' };
-  const item = (type: Type, value: string): string => `${convertOut(model, type, borrowedItem(model, type, value))}?`;
+  const { yields, item } = iterateItems(model, fn, convertOut);
   const body = yields.key === undefined
     ? `                items.push(${item(yields.value, 'item')});`
     : `                let (key, value) = item;
@@ -740,25 +630,11 @@ function entryRust(model: Model, fn: Fn): string {
   const jsName = memberName('node', fn);
   const params = fn.params.map((p) => `, ${rustField(p.name)}: Unknown<'env>`).join('');
   const lines: string[] = [];
-  // U-2: an argument that may be left out is undefined when it is, and its variable an Option.
-  const converted = (arg: Arg | undefined, type: Type, raw: string, subject: string, typed = model): string =>
-    arg?.default === undefined ? convertIn(typed, type, raw, subject) : leftOut(arg, `default_in(${raw}, ${closure(['value'], convertIn(typed, type, 'value', subject))})`);
+  const converted = argIn(convertIn);
   for (const parameter of fn.params) {
     const variable = rustField(parameter.name);
     if (fn.record !== undefined && parameter === fn.record.param) {
-      // GN-6aa: the callbacks of the fields of a record parameter with keeps are held as Natives, and the record is 'static.
-      const typed = (fn.member.parameters ?? []).some((p) => p.name === parameter.name && p.keeps === true) ? keptModel(model) : model;
-      for (const field of fn.record.unit.fields ?? []) {
-        const name = langName('node', field.name, 'variable');
-        const arg = fn.args.find((a) => a.field && a.name === field.name);
-        const raw = `${parameter.default === undefined ? 'member' : 'member_or_undefined'}(${variable}, ${rustString(name)}, ${rustString(langName('node', parameter.name, 'variable'))})?`;
-        lines.push(`        let ${rustField(field.name)}: ${arg === undefined ? rustType(typed, field.type) : argType(typed, arg)} = ${boxed(typed, field.type, converted(arg, field.type, raw, placeSubject('node', model, fn, field.type, name), typed))}?;`);
-        if (narrows(field.type)) lines.push(`        ${narrowed(rustField(field.name), rustString(name), 'binding_error')}`);
-      }
-      const recordType = fn.record.unit.core_type ?? '';
-      const recordLet = rustType(typed, { unit: fn.record.unit.id });
-      const fields = (fn.record.unit.fields ?? []).map((f) => fieldInit(rustField(f.name), rustField(f.name))).join(', ');
-      lines.push(`        let ${variable}: ${recordLet} = ${recordType} { ${fields}${absentInits(fn.record.unit)} };`);
+      lines.push(...recordParamLines(model, fn, parameter, 'node', (name) => `${parameter.default === undefined ? 'member' : 'member_or_undefined'}(${variable}, ${rustString(name)}, ${rustString(langName('node', parameter.name, 'variable'))})?`, converted));
     } else if (machineFunction(parameter.type)) {
       // GN-6ae: a function parameter is the closure that the machine of the member calls.
       lines.push(...functionClosure(model, parameter.type, variable, placeSubject('node', model, fn, parameter.type, langName('node', parameter.name, 'variable'))));
@@ -774,7 +650,7 @@ function entryRust(model: Model, fn: Fn): string {
       lines.push(owned !== undefined
         ? `        let ${variable} = owned_${rustField(owned.unit.name)}(env_, ${variable}, ${subject})?;`
         : held === undefined
-        ? `        let ${variable}: ${arg === undefined ? rustType(typed, parameter.type) : argType(typed, arg)} = ${kept ? boxed(typed, parameter.type, convertIn(typed, parameter.type, variable, subject)) : converted(arg, parameter.type, variable, subject)}?;`
+        ? `        let ${variable}: ${arg === undefined ? rustType(typed, parameter.type) : argType(typed, arg)} = ${kept ? boxed(typed, parameter.type, convertIn(typed, parameter.type, variable, subject)) : converted(arg, parameter.type, variable, subject, model)}?;`
         : `        let ${variable} = held_${rustField(held.unit.name)}(env_, ${variable}, ${subject})?;`);
       if (held === undefined && arg?.default === undefined && narrows(parameter.type)) lines.push(`        ${narrowed(variable, subject, 'binding_error')}`);
     }
@@ -1061,9 +937,7 @@ impl Unarmed {
 // trait; an exception of the JavaScript code, or a failure of the binding in the callback, goes to the core as a Raised
 // that the generated caller throws again unchanged.
 function callbackRust(model: Model, cb: CallbackUnit): string {
-  const name = rustField(cb.unit.name);
-  const struct = callStruct(model, cb);
-  const jsName = langName('node', cb.unit.name, 'class');
+  const { name, struct, label: jsName } = callbackNames(model, cb, 'node');
   const failure = `binding_core::Failure<${cb.error ?? model.coreError ?? '()'}>`;
   const methods = cb.members.map((m) => {
     const method = langName('node', m.member.name, 'callable');
@@ -1093,14 +967,9 @@ ${m.params.length === 0 ? '' : `            let args: ${argsType} = FnArgs::from
         call().map_err(${m.recognized === undefined ? 'thrown' : `|error| ${recognizedFn(cb, m)}(self.env_, error)`}).map_err(|failure| kept(self.env_, failure))
     }`;
   }).join('\n');
-  // GN-6s: an error unit of the owner of a callback unit of another repository is registered after the library classes.
-  const ownerUnits = ownerRecognizedUnits(model);
-  const classIndex = (u: ErrorUnit): number => cb.library === undefined
-    ? model.classes.length + model.errorUnits.indexOf(u)
-    : model.classes.length + model.errorUnits.length + ownerUnits.findIndex((o) => o.library === cb.library && o.unit.id === u.unit.id);
-  const recognizing = cb.members.filter((m) => m.recognized !== undefined).map((m) => `
-/// U-3: an exception of ${m.member.id}: an instance of an error unit that it recognizes, with one of the kinds of that
-/// unit, is the core error of the kind (GN-6d); any other exception is pending again and goes back to the caller as it
+  const classIndex = recognizedClassIndex(model, cb);
+  const recognized = recognizing(cb, (m, doc) => `
+${doc} is pending again and goes back to the caller as it
 /// is.
 fn ${recognizedFn(cb, m)}(env_: &Env, error: Thrown) -> ${failure} {
     let Thrown::Js(js) = &error else {
@@ -1124,7 +993,7 @@ fn ${recognizedFn(cb, m)}(env_: &Env, error: Thrown) -> ${failure} {
     }
     thrown(error)
 }
-`).join('');
+`);
   const checks = cb.members.map((m) => {
     const method = langName('node', m.member.name, 'callable');
     // GN-6d: a member with a default may be left out, which the call answers with the default.
@@ -1162,36 +1031,20 @@ ${checks}
     Ok(${struct} { object, env_${cb.owner ? ', owner: std::thread::current().id()' : ''} })
 }
 
-${lentCallbacks(model).includes(cb) ? `impl<'env> ${cb.unit.core ?? ''} for ${struct}<'env> {` : `impl<'env> ${struct}<'env> {`}${methods}
-}
-${recognizing}${ownsCallback(model, cb) ? ownedCallbackRust(model, cb) : ''}`;
+${callbackImpl(model, cb, struct, "<'env>", methods)}
+${recognized}${ownsCallback(model, cb) ? ownedCallbackRust(model, cb) : ''}`;
 }
 
-// GN-6u, GN-6aa: whether the addon holds Natives: for a value alias, a function type or a callback that the core keeps.
-const holdsNative = (model: Model): boolean => usesNative(model) || keepsAny(model);
 
 // GN-6aa: a callback of a parameter with keeps, held as a Native of its owner thread, which the core may keep and call
 // after the call that gave it. A call on the owner thread borrows the object in the env_ of the owner and calls it as
 // the callback of a call does; a call on another thread is kind wrong_thread, and one after the cleanup of the env_ kind
 // internal, each a Raised of its BindingError.
 function keptCallbackRust(model: Model, cb: CallbackUnit): string {
-  const name = rustField(cb.unit.name);
-  const struct = callStruct(model, cb);
-  const jsName = langName('node', cb.unit.name, 'class');
-  const failure = `binding_core::Failure<${model.coreError ?? '()'}>`;
-  const methods = cb.members.map((m) => {
-    const params = m.params.map((p) => `, ${rustField(p.name)}: ${traitParam(model, p.type)}`).join('');
-    const passed = m.params.map((p) => rustField(p.name)).join(', ');
-    const result = m.returns === 'none' ? '()' : rustType(model, m.returns);
-    const mutable = m.receiver === '&mut self';
-    return `
-    fn ${rustField(m.member.name)}(${m.receiver}${params}) -> Result<${result}, ${failure}> {
-        let env_ = native_env(&self.native, ${rustString(`${jsName}.${langName('node', m.member.name, 'callable')}()`)}).map_err(thrown_elsewhere)?;
+  const { name, struct, label: jsName } = callbackNames(model, cb, 'node');
+  const methods = keptMethods(model, cb, (m, mutable) => `        let env_ = native_env(&self.native, ${rustString(`${jsName}.${langName('node', m.member.name, 'callable')}()`)}).map_err(thrown_elsewhere)?;
         let object = native_object(&env_, &self.native).and_then(|value| unsafe { value.cast::<Object<'_>>() }.map_err(internal)).map_err(|fail| thrown(Thrown::Binding(fail)))?;
-        let ${mutable ? 'mut ' : ''}borrowed = ${struct} { object, env_: &env_${cb.owner ? ', owner: std::thread::current().id()' : ''} };
-        ${lentCallbacks(model).includes(cb) ? cb.unit.core ?? '' : struct}::${rustField(m.member.name)}(&${mutable ? 'mut ' : ''}borrowed${passed === '' ? '' : `, ${passed}`})
-    }`;
-  }).join('\n');
+        let ${mutable}borrowed = ${struct} { object, env_: &env_${cb.owner ? ', owner: std::thread::current().id()' : ''} };`);
   return `
 /// GN-6aa: ${jsName}, held as a Native of its owner thread, which the core keeps after the call that gave it.
 pub struct Kept${struct} {
@@ -1209,20 +1062,15 @@ impl ${cb.unit.core ?? ''} for Kept${struct} {${methods}
 `;
 }
 
-// GN-6ae: whether a member takes a function parameter or returns passthrough, and whether a contract has such a member.
-const passes = (fn: Fn): boolean => fn.params.some((p) => machineFunction(p.type)) || (typeof fn.returns === 'object' && 'passthrough' in fn.returns);
-const passesAny = (model: Model): boolean => [...model.functions, ...model.objects.flatMap((o) => o.members)].some(passes);
 
 // GN-6ae: the lines that make the closure of a function parameter from a JavaScript function. The machine owns the
 // function (Owned), and its closure runs in Machine::call, on the JavaScript thread: each call makes the JavaScript
 // value of each argument, a class argument as a new instance of its class, and gives what the function returned as a
 // Passthrough, or its exception as a Raised.
 function functionClosure(model: Model, type: Type & { function: unknown }, name: string, subject: string): string[] {
-  const parts = (type as { function: { parameters: Type[] } }).function.parameters;
-  const failure = `binding_core::Failure<${model.coreError ?? '()'}>`;
+  const { parts, head } = functionClosureHead(model, type, name, `env_, ${name}`, subject);
   return [
-    `        let ${name} = callable_in(env_, ${name}, ${subject}, ${givenRust(functionGiven({ parameters: parts }))})?;`,
-    `        let ${name} = move |${parts.map((part, i) => `arg${i}: ${rustType(model, part)}`).join(', ')}| -> Result<binding_core::Passthrough, ${failure}> {`,
+    ...head,
     `            let env_ = &Env::from_raw(${name}.env_);`,
     '            let call = || -> Result<binding_core::Passthrough, Thrown> {',
     ...parts.map((part, i) => `                let arg${i} = ${convertOut(model, part, `arg${i}`)}.map_err(Thrown::Binding)?;`),
@@ -1349,16 +1197,11 @@ function ownedCallback(model: Model, type: Type): CallbackUnit | undefined {
 // GN-6ab: a callback that a machine owns outlives the call that made it, so it holds a reference of napi to its object
 // and makes the borrowed callback struct from it at each call.
 function ownedCallbackRust(model: Model, cb: CallbackUnit): string {
-  const name = rustField(cb.unit.name);
-  const struct = callStruct(model, cb);
-  const jsName = langName('node', cb.unit.name, 'class');
-  const failure = `binding_core::Failure<${model.coreError ?? '()'}>`;
+  const { name, struct, label: jsName } = callbackNames(model, cb, 'node');
   const methods = cb.members.map((m) => {
-    const params = m.params.map((p) => `, ${rustField(p.name)}: ${traitParam(model, p.type)}`).join('');
     const passed = m.params.map((p) => rustField(p.name)).join(', ');
-    const result = m.returns === 'none' ? '()' : rustType(model, m.returns);
     return `
-    fn ${rustField(m.member.name)}(${m.receiver}${params}) -> Result<${result}, ${failure}> {
+    ${callbackSignature(model, m)} {
         let env_ = Env::from_raw(self.object.env_);
         let object = self.object.object(&env_).map_err(|fail| thrown(Thrown::Binding(fail)))?;
         let mut borrowed = ${struct} { object, env_: &env_${cb.owner ? ', owner: self.owner' : ''} };
@@ -1453,26 +1296,13 @@ const failedFn = (model: Model, fn: Fn): string => (conversionsOf(model, fn).len
 // conversion of the member, and the conversion itself, which runs where the failure is thrown: the one place that
 // holds the environment and the pending exception.
 function convertedRust(model: Model): string {
-  const fns = [...model.functions, ...model.objects.flatMap((o) => o.members)].filter((fn) => conversionsOf(model, fn).length > 0);
-  if (fns.length === 0) return '';
-  const failure = `binding_core::Failure<${model.coreError ?? '()'}>`;
-  const unitIndex = (unit: ErrorUnit): number => model.classes.length + model.errorUnits.indexOf(unit);
-  const classIndex = (category: string): number => model.classes.findIndex((c) => c.category === category);
-  const tables = fns.map((fn) => {
-    const lookups = conversionsOf(model, fn).map((c) => {
-      const base = convertedClassBase(model, c.library, 'node');
-      const arms = c.rows.flatMap((row) => {
-        const target = row.kind.unit === undefined ? classIndex(row.kind.category) : unitIndex(row.kind.unit);
-        const properties = row.properties.map(({ property }) => rustString(langName('node', property.member.name, 'variable')));
-        return row.kinds.map((kind) => `            ${rustString(kind)} => Some((${target}, ${rustString(kind)}, &[${properties.join(', ')}])),`);
-      });
-      return `    if let Some(error) = converted_from(env_, value, ${base}..${base + ownerErrorClasses(c.owner, 'node').length}, |kind| match kind {
+  const lookup = (range: string, arms: string[]): string => `    if let Some(error) = converted_from(env_, value, ${range}, |kind| match kind {
 ${arms.join('\n')}
             _ => None,
         })? {
         return Ok(Some(error));
     }`;
-    });
+  const tables = convertedTables(model, 'node', lookup, (fn, lookups, failure) => {
     const name = convertedFn(fn).slice('converted_'.length);
     const libraries = conversionsOf(model, fn).map((c) => c.library).join(', ');
     return `
@@ -1492,7 +1322,8 @@ ${lookups.join('\n')}
 }
 `;
   });
-  return `${tables.join('')}
+  if (tables === undefined) return '';
+  return `${tables}
 /// B2.489: the row of a converted kind: the index of its class in CLASSES, the kind, and the name of each property,
 /// which the class of the other library and this one both define.
 type ConvertedRow = (usize, &'static str, &'static [&'static str]);
@@ -1605,7 +1436,7 @@ fn raised(error: Thrown) -> binding_core::Raised {
 `;
 
 function failureRust(model: Model): string {
-  if (!model.functions.some((f) => f.failure) && !model.objects.some((o) => o.members.some((f) => f.failure)) && model.aliases.length === 0) return '';
+  if (!convertsFailure(model)) return '';
   const failure = `binding_core::Failure<${model.coreError ?? '()'}>`;
   const passing = holdsThrown(model);
   // U-3, U-7: a callback and the walk of a value give an error of napi; a function of a machine gives none, because
@@ -1813,16 +1644,14 @@ fn held_${rustField(object.unit.name)}<'env>(env_: &'env Env, value: Unknown<'en
 
 // GN-5, GN-6h: the poison entry point of the B-5c test: a panic while the write guard of the instance is held.
 function poisonRust(model: Model): string {
-  const written = model.objects.filter((o) => o.lock?.writes === true);
-  if (written.length === 0) return '';
-  const arms = written.map((o) => {
-    const jsClass = langName('node', o.unit.name, 'class');
+  const arms = poisonArms(model, 'node', (o, jsClass) => {
     return `        // SAFETY: napi unwraps the native object of an instance of the class by its type tag and refuses any other value.
         if let Ok(instance) = unsafe { <ClassInstance<'_, class_${rustField(o.unit.name)}::${jsClass}> as FromNapiValue>::from_napi_value(env_.raw(), object.raw()) } {
             let _held = instance.inner.write(${rustString(jsClass)}).map_err(binding_error)?;
             panic!("panic-test");
         }`;
   }).join('\n');
+  if (arms === '') return '';
   return `
 /// B-5c: the entry point of the generated poison test, which panics while it holds the write guard of the instance.
 #[allow(clippy::panic, reason = "B-7: the entry point of the panic test panics on purpose, which its guard turns into kind internal")]
@@ -1905,15 +1734,13 @@ ${propertyArms}
 const PRELUDE: ReadonlySet<string> = new Set(['Array', 'BigInt', 'ClassInstance', 'FromNapiValue', 'Null', 'Object', 'JsObjectValue', 'ObjectFinalize', 'ToNapiValue', 'Uint8Array']);
 
 function libRust(model: Model): string {
-  const classIndex = (category: string): string => String(model.classes.findIndex((c) => c.category === category));
-  const constants = model.constants.map((c) => `const _: () = assert!(${c.member.core as string} == ${String(c.member.value)});`).join('\n') + defaultAsserts(model);
+  const classIndex = categoryIndex(model);
+  const constants = constantAsserts(model);
   const functions = model.functions.map((fn) => functionRust(model, fn)).join('') + model.objects.map((o) => objectRust(model, o)).join('') +
-    takenCallbacks(model).map((c) => callbackRust(model, c)).join('') + keptCallbacks(model).map((c) => keptCallbackRust(model, c)).join('') + model.interfaces.map((i) => interfaceRust(model, i)).join('') + (holdsThrown(model) ? owned(ownsAny(model)) : '') + passingRust(model) + (takenCallbacks(model).some((c) => c.members.some((m) => m.recognized !== undefined)) ? RECOGNIZED_KIND : '') + model.kept.map(keptCheckNode).join('') + failureRust(model) + convertedRust(model) + poisonRust(model) +
+    takenCallbacks(model).map((c) => callbackRust(model, c)).join('') + keptCallbacks(model).map((c) => keptCallbackRust(model, c)).join('') + model.interfaces.map((i) => interfaceRust(model, i)).join('') + (holdsThrown(model) ? owned(ownsAny(model)) : '') + passingRust(model) + (recognizesAny(model) ? RECOGNIZED_KIND : '') + model.kept.map(keptCheckNode).join('') + failureRust(model) + convertedRust(model) + poisonRust(model) +
     machineRust(model);
   const enums = [
-    ...model.enums.map(enumRust),
-    ...model.resultRecords.map((u) => recordRust(model, u)),
-    ...model.variants.map((v) => variantRust(model, v)),
+    ...resultUnits(model, enumRust, recordRust, variantRust),
     // U-7: the conversions of a value alias and what describes a JavaScript value, used as far as the functions use
     // them.
     ...model.aliases.filter((a) => a.library === undefined).map((a) => aliasNode(model, a)),
@@ -2148,42 +1975,10 @@ pub fn fault_left(env_: &Env, id: i64) -> napi::Result<Vec<String>> {
 
 // ---- JavaScript and declarations ----
 
-// GN-6ae: the type parameters of a member, one per name of a passthrough of its parameters and of its result.
-export const typeParameters = (fn: Fn): string => {
-  const names = [...new Set([...JSON.stringify([fn.params.map((p) => p.type), fn.returns]).matchAll(/\{"passthrough":"([^"]+)"\}/g)].map((found) => found[1] ?? ''))];
-  return names.length === 0 ? '' : `<${names.join(', ')}>`;
-};
+// GN-6ae: the type parameters of a member, which bindings_shared.ts writes for node and wasm.
+export { typeParameters };
 
-function tsType(model: Model, type: Type, input: boolean): string {
-  if (typeof type === 'string') {
-    const map: Record<string, string> = { text: 'string', latin1: 'string', bool: 'boolean', uint: 'number', int: 'number', float: 'number', int64: input ? 'number | bigint' : 'bigint', bytes: 'Uint8Array', source: 'string | Uint8Array', path: 'string | Uint8Array', cancel: 'AbortSignal', none: 'void', never: 'never' };
-    return map[type] ?? 'unknown';
-  }
-  // GN-6ae: a function of the caller takes the values that the core gives it, and a passthrough is a type parameter of
-  // the member.
-  if (machineFunction(type)) return `(${type.function.parameters.map((part, i) => `arg${i}: ${tsType(model, part, false)}`).join(', ')}) => ${tsType(model, type.function.returns, true)}`;
-  if ('passthrough' in type) return type.passthrough;
-  if ('list' in type) return input ? `Iterable<${tsType(model, type.list, input)}>` : `readonly (${tsType(model, type.list, input)})[]`;
-  if ('map' in type) return `ReadonlyMap<string, ${tsType(model, type.map, input)}>`;
-  if ('keyed_map' in type) return `ReadonlyMap<${type.key.map((k) => ({ int: 'number', text: 'string' })[k] ?? 'never').join(' | ')}, ${tsType(model, type.keyed_map, input)}>`;
-  if ('optional' in type) return `${tsType(model, type.optional, input)} | null`;
-  if ('tuple' in type) return `readonly [${type.tuple.map((t) => tsType(model, t, input)).join(', ')}]`;
-  // GN-6z: a function takes the arguments that the core gives and returns a value that the binding judges.
-  if ('function' in type) return `((${type.function.parameters.map((p, i) => `argument${String(i)}: ${tsType(model, p, false)}`).join(', ')}) => ${tsType(model, type.function.returns, true)})`;
-  const unit = unitOf(model, type);
-  // GN-6s: a callback unit of another repository is the interface that its package declares.
-  const library = libraryOf(type);
-  if (unit?.origin === 'callback' && library !== undefined) {
-    return `import(${JSON.stringify((model.foreign.get(library)?.packages['node'] as { package: string }).package)}).${langName('node', unit.name, 'class')}`;
-  }
-  // T-3: a record of another repository is a plain object, declared here by its fields.
-  if (unit?.kind === 'record' && libraryOf(type) !== undefined) {
-    return `{ ${(unit.fields ?? []).map((f) => `readonly ${langName('node', f.name, 'variable')}: ${tsType(model, f.type, input)}`).join('; ')} }`;
-  }
-  // U-7: a value alias is any value that its core judges.
-  if (unit === undefined || aliasOf(model, type) !== undefined) return 'unknown';
-  return langName('node', unit.name, 'class');
-}
+const tsType = (model: Model, type: Type, input: boolean): string => jsTsType(model, type, input, 'node');
 
 // E-2, GN-7a: the classes of the categories and the error units of the JavaScript entry of Node (export '') and of WASM
 // (export 'export '). The constructor of a category class, which every error unit calls, judges its arguments against
@@ -2217,10 +2012,6 @@ for (const made of [${[...model.classes.map((c) => c.name), ...model.errorUnits.
 }
 `;
 }
-
-// E-2, GN-7a, B2.514: the declaration of the constructor of a category class of jsErrorClasses, for Node and WASM. The
-// status and the errno may be left out, as checkError takes them absent, null or an integer.
-export const ERROR_CONSTRUCTOR_DTS = 'constructor(message: string, kind: string, status?: number | null, errno?: number | null);';
 
 export function jsErrorClasses(model: Model, lang: 'node' | 'wasm', exported: string, base: (category: string) => string): { classes: string; units: string } {
   const typeClass = categoryClass(model, 'type');
@@ -2292,16 +2083,11 @@ function indexCjs(model: Model): string {
   // GN-6m: the entry of a member that waits is an async function, so that every failure of the call, also one of its
   // arguments, rejects the promise.
   const checked = (fn: Fn, label: string, call: (passed: string) => string): string => {
-    const count = fn.params.length;
-    // U-2: the parameters that may be left out are the last ones, a record parameter with {empty: "object"} too.
-    const least = fn.params.filter((p) => p.default === undefined).length;
-    const takes = least === count ? `${count} argument${count === 1 ? '' : 's'}` : `${least} to ${count} arguments`;
-    const lines = [`  if (${least === count ? `args.length !== ${count}` : `args.length < ${least} || args.length > ${count}`}) {`, `    throw new TypeError(\`${label} takes ${takes}, \${args.length} given\`);`, '  }'];
+    const lines = countCheck(fn, label);
     const passed = fn.params.map((p, i) => {
       if (fn.record !== undefined && p === fn.record.param) {
         const record = langName('node', p.name, 'variable');
-        const names = (fn.record.unit.fields ?? []).map((f) => langName('node', f.name, 'variable'));
-        const required = (fn.record.unit.fields ?? []).filter((f) => f.default === undefined).map((f) => langName('node', f.name, 'variable'));
+        const { names, required } = recordMembers(fn.record.unit, 'node');
         lines.push(`  checkRecord(${jsString(label)}, ${jsString(record)}, args[${i}], [${names.map(jsString).join(', ')}], [${required.map(jsString).join(', ')}]);`);
         return `args[${i}]`;
       }
@@ -2369,14 +2155,7 @@ ${wraps.join('\n')}`;
   const kept = model.kept.map((k) => keptClassJs(k)).join('\n') + (model.kept.length === 0 || model.aliases.length === 0 ? '' : `
 addon.__registerValues([${model.kept.map((k) => `${langName('node', k.unit.name, 'class')}.prototype`).join(', ')}]);`);
   const constants = model.constants.map((c) => `const ${langName('node', c.member.name, 'constant')} = ${JSON.stringify(c.member.value)};`).join('\n');
-  const exports = [
-    ...model.classes.map((c) => c.name),
-    ...model.errorUnits.map((u) => langName('node', u.unit.name, 'class')),
-    ...model.functions.map((f) => langName('node', f.member.name, 'callable')),
-    ...model.objects.map((o) => langName('node', o.unit.name, 'class')),
-    ...model.kept.map((k) => langName('node', k.unit.name, 'class')),
-    ...model.constants.map((c) => langName('node', c.member.name, 'constant')),
-  ];
+  const exports = exportsOf(model);
   return `${header('//')}
 'use strict';
 
@@ -2451,145 +2230,41 @@ module.exports = { ${exports.join(', ')} };
 `;
 }
 
-// GN-6af: the class of the entry of a value class without core_type: the count of the arguments (G-7), the check of the
-// addon, and the kept values as own enumerable data properties. A keyed map crosses as the Map itself, which the addon
-// reads and judges (GN-12).
-export function keptClassJs(kept: KeptClass): string {
-  const cls = langName('node', kept.unit.name, 'class');
-  const count = kept.fields.length;
-  const least = kept.fields.filter((f) => f.default === undefined).length;
-  const takes = least === count ? `${count} argument${count === 1 ? '' : 's'}` : `${least} to ${count} arguments`;
-  const crossed = kept.fields.map((f, i) => {
-    return typeof f.type === 'object' && 'list' in f.type ? `toList(args[${i}])` : `args[${i}]`;
-  });
-  const empty = { null: 'null', map: 'new Map()', list: '[]' };
-  const defined = kept.fields.map((f, i) => {
-    const value = f.default === undefined ? `args[${i}]` : `args[${i}] === undefined ? ${empty[f.default]} : args[${i}]`;
-    return `    Object.defineProperty(this, ${jsString(langName('node', f.name, 'variable'))}, { value: ${value}, writable: ${String(f.writable)}, enumerable: true });`;
-  });
-  return `
-class ${cls} {
-  constructor(...args) {
-    if (${least === count ? `args.length !== ${count}` : `args.length < ${least} || args.length > ${count}`}) {
-      throw new TypeError(\`new ${cls}() takes ${takes}, \${args.length} given\`);
-    }
-    addon.__check${cls}(${crossed.join(', ')});
-${defined.join('\n')}
-  }
-}`;
-}
+// GN-6af: the class of the entry of a value class without core_type, which the addon checks.
+export const keptClassJs = (kept: KeptClass): string => keptClass(kept, 'node', '', (cls, crossed) => `addon.__check${cls}(${crossed})`);
 
-const nodeBase = (category: string): string => ({ value: 'RangeError', type: 'TypeError' })[category] ?? 'Error';
+const nodeBase = jsErrorBase;
+
+// The names that the package exports: the error classes, the functions, the classes and the constants.
+const exportsOf = (model: Model): string[] => [
+  ...model.classes.map((c) => c.name),
+  ...model.errorUnits.map((u) => langName('node', u.unit.name, 'class')),
+  ...model.functions.map((f) => langName('node', f.member.name, 'callable')),
+  ...model.objects.map((o) => langName('node', o.unit.name, 'class')),
+  ...model.kept.map((k) => langName('node', k.unit.name, 'class')),
+  ...model.constants.map((c) => langName('node', c.member.name, 'constant')),
+];
 
 function indexMjs(model: Model): string {
-  const exports = [
-    ...model.classes.map((c) => c.name),
-    ...model.errorUnits.map((u) => langName('node', u.unit.name, 'class')),
-    ...model.functions.map((f) => langName('node', f.member.name, 'callable')),
-    ...model.objects.map((o) => langName('node', o.unit.name, 'class')),
-    ...model.kept.map((k) => langName('node', k.unit.name, 'class')),
-    ...model.constants.map((c) => langName('node', c.member.name, 'constant')),
-  ];
   return `${header('//')}
 import entry from './index.cjs';
 
-export const { ${exports.join(', ')} } = entry;
+export const { ${exportsOf(model).join(', ')} } = entry;
 `;
 }
 
 function indexDts(model: Model): string {
-  // GN-6r: the JSDoc of a declaration of an internal unit holds @internal.
-  const tag = (unit: Unit): string => (isInternal(unit) ? ' @internal' : '');
-  // U-2: a parameter or a member that may be left out; the declaration shows a {literal} or {const} default.
-  const shown = (a: Arg | undefined): string => {
-    if (a?.default === undefined) return '';
-    const value = a === undefined ? undefined : declaredValue(model, a)?.value;
-    return value === undefined ? ' The core decides its value when it is left out (U-2).' : ` Its default is ${JSON.stringify(value)} (U-2).`;
-  };
-  // GN-6m: a member that waits returns a Promise of its result.
-  // GN-6ae: the promise of the entry takes the state of a result passthrough that is a thenable.
-  const returned = (fn: Fn): string => {
-    const result = typeof fn.returns === 'object' && 'passthrough' in fn.returns ? `Awaited<${fn.returns.passthrough}>` : tsType(model, fn.returns, false);
-    return awaits(fn) ? `Promise<${result}>` : result;
-  };
-  const param = (fn: Fn, p: Fn['params'][number]): string => `${langName('node', p.name, 'variable')}${p.default === undefined ? '' : '?'}: ${tsType(model, p.type, true)}`;
+  const { classes, errorUnits, enums, records, variants, objects, kept, callbacks, interfaces, constants, shown, param, returned } = declarations(model, 'node', nodeBase);
   const paramDocs = (fn: Fn, indent: string): string => {
     const lines = fn.args.filter((a) => !a.field && a.default !== undefined).map((a) => `${indent} * @param ${langName('node', a.name, 'variable')}${shown(a)}`);
     if (isInternal(fn.unit)) lines.push(`${indent} * @internal`);
     if (lines.length === 1 && isInternal(fn.unit)) return `${indent}/** @internal */\n`;
     return lines.length === 0 ? '' : `${indent}/**\n${lines.join('\n')}\n${indent} */\n`;
   };
-  const classes = model.classes.map((c) => `
-/** The errors of category ${c.category} (E-2). */
-export declare class ${c.name} extends ${nodeBase(c.category)} {
-  ${ERROR_CONSTRUCTOR_DTS}
-  readonly kind: string;
-  readonly status: number | null;
-  readonly errno: number | null;
-}`).join('\n');
-  const errorUnits = model.errorUnits.map((u) => `
-/** The errors of the unit ${u.unit.id} (E-2). */
-export declare class ${langName('node', u.unit.name, 'class')} extends ${u.parent === undefined ? categoryClass(model, u.category) : langName('node', u.parent.unit.name, 'class')} {${u.properties.map((p) => `\n  readonly ${langName('node', p.member.name, 'variable')}: ${tsType(model, p.returns, false)};`).join('')}
-}`).join('\n');
-  const enums = model.enums.map((u) => `
-/** T-6.${tag(u)} */
-export type ${langName('node', u.name, 'class')} = ${(u.variants ?? []).map((v) => jsString(v.value)).join(' | ')};`).join('\n');
-  // T-9, GN-6v: an interface per case, whose tag member is the text of the case, and the union of the cases.
-  const variants = model.variants.map((v) => `${v.cases.map((kase) => `
-/** T-9: the case ${kase.value} of the variant ${langName('node', v.unit.name, 'class')}. */
-export interface ${langName('node', kase.unit.name, 'class')} {
-  readonly ${langName('node', v.unit.tag ?? [], 'variable')}: ${jsString(kase.value)};
-${(kase.unit.fields ?? []).map((f) => `  readonly ${langName('node', f.name, 'variable')}${caseLeftOut(f) ? '?' : ''}: ${tsType(model, f.type, false)};\n`).join('')}}`).join('\n')}
-
-/** T-9. */
-export type ${langName('node', v.unit.name, 'class')} = ${v.cases.map((kase) => langName('node', kase.unit.name, 'class')).join(' | ')};`).join('\n');
-  const records = model.records.map((u) => `
-/** T-4: the options record; a member whose value is undefined is absent.${tag(u)} */
-export interface ${langName('node', u.name, 'class')} {
-${(u.fields ?? []).map((f) => `${f.default === undefined ? '' : `  /**${shown({ name: f.name, type: f.type, field: true, default: f.default })} */\n`}  readonly ${langName('node', f.name, 'variable')}${f.default === undefined ? '' : '?'}: ${tsType(model, f.type, true)};`).join('\n')}
-}`).join('\n');
   const fns = model.functions.map((fn) => {
     const params = fn.params.map((p) => param(fn, p));
     return `${paramDocs(fn, '')}export declare function ${langName('node', fn.member.name, 'callable')}${typeParameters(fn)}(${params.join(', ')}): ${returned(fn)};`;
   }).join('\n');
-  const constants = model.constants.map((c) => `${isInternal(c.unit) ? '/** @internal */\n' : ''}export declare const ${langName('node', c.member.name, 'constant')}: ${JSON.stringify(c.member.value)};`).join('\n');
-  const params = (fn: Fn): string => fn.params.map((p) => param(fn, p)).join(', ');
-  const objects = model.objects.map((o) => {
-    const lines = o.members.map((fn) => {
-      const name = memberName('node', fn);
-      if (fn.kind === 'constructor') return `  constructor(${params(fn)});`;
-      if (fn.kind === 'static') return `  static ${name}${typeParameters(fn)}(${params(fn)}): ${returned(fn)};`;
-      if (fn.kind === 'property') return `  get ${name}(): ${tsType(model, fn.returns, false)};`;
-      if (fn.kind === 'iterate') {
-        const yields = fn.yields ?? { value: 'none' };
-        const item = yields.key === undefined ? tsType(model, yields.value, false) : `[${tsType(model, yields.key, false)}, ${tsType(model, yields.value, false)}]`;
-        return `  [Symbol.iterator](): IterableIterator<${item}>;`;
-      }
-      return `  ${name}${typeParameters(fn)}(${params(fn)}): ${returned(fn)};`;
-    });
-    if (!o.constructible) lines.unshift('  private constructor();');
-    return `
-/** T-5.${tag(o.unit)} */
-export declare class ${langName('node', o.unit.name, 'class')}${implementsClause(model, o)} {
-${lines.join('\n')}
-}`;
-  }).join('\n');
-  // GN-6af: the constructor keeps its arguments, each an own property, which a writable property also sets.
-  const kept = model.kept.map((k) => `
-/** GN-6af: keeps the values that its constructor takes. */
-export declare class ${langName('node', k.unit.name, 'class')} {
-  constructor(${k.fields.map((f) => `${langName('node', f.name, 'variable')}${f.default === undefined ? '' : '?'}: ${tsType(model, f.type, true)}`).join(', ')});
-${k.fields.map((f) => `  ${f.writable ? '' : 'readonly '}${langName('node', f.name, 'variable')}: ${tsType(model, f.type, false)};`).join('\n')}
-}`).join('\n');
-  const callbacks = model.callbacks.map((cb) => `
-/** U-3: a callback that JavaScript code implements.${tag(cb.unit)} */
-export interface ${langName('node', cb.unit.name, 'class')} {
-${cb.members.map((m) => `  ${langName('node', m.member.name, 'callable')}${m.absent === undefined ? '' : '?'}(${m.params.map((p) => `${langName('node', p.name, 'variable')}: ${tsType(model, p.type, false)}`).join(', ')}): ${tsType(model, m.returns, true)};`).join('\n')}
-}`).join('\n');
-  // GN-6ap: a generated interface, which the classes that implement it name.
-  const interfaces = model.interfaces.map((i) => `
-/** GN-6ap: the interface of ${implementorsOf(model, i).map((o) => langName('node', o.unit.name, 'class')).join(', ')}; a parameter of it takes an instance of one of them.${tag(i)} */
-export interface ${langName('node', i.name, 'class')} {}`).join('\n');
   return `${header('//')}
 ${classes}${errorUnits === '' ? '' : `\n${errorUnits}`}
 ${enums}
