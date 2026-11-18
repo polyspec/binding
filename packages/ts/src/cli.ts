@@ -436,10 +436,12 @@ function scaffolded(): Map<string, unknown> {
     }
     const path = typeof spec === 'object' && spec !== null ? (spec as { path?: unknown }).path : undefined;
     // A contract that is not there is not found: the package that reads it is then named as not written (GN-3e), and
-    // the other packages are written.
-    const file = typeof path === 'string' ? join(dir, path, 'interface.json') : undefined;
-    if (file !== undefined && existsSync(file)) {
-      dirs.set(library, join(dir, path as string));
+    // the other packages are written. B2.548: a relative path is read from the directory of the core that names it and an
+    // absolute one as it is, as Cargo reads both.
+    const at = typeof path === 'string' ? resolve(dir, path) : undefined;
+    const file = at === undefined ? undefined : join(at, 'interface.json');
+    if (at !== undefined && file !== undefined && existsSync(file)) {
+      dirs.set(library, at);
       return JSON.parse(readFileSync(file, 'utf8')) as unknown;
     }
     if (typeof path !== 'string') others = true;
