@@ -14930,3 +14930,19 @@ test('B2.555: a callback that returns a record is written in the node tests as a
     }
   }
 });
+
+test('B2.556: a case of a callback that declares no parameter is no Go test, the compiler of Go having fixed the arguments of the func (GN-13w)', () => {
+  // The sample's member count takes a kept callback of the text; the case gives a callback that declares no parameter, and raises invalid_callback.
+  const contract = JSON.parse(readFileSync(fileURLToPath(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url)), 'utf8'));
+  const count = (contract.units as { members?: { id: string; parameters: unknown[] }[] }[]).flatMap((unit) => unit.members ?? []).find((member) => member.id === 'sample.count');
+  assert.ok(count !== undefined, 'tests/e2e/sample has the member sample.count');
+  count.parameters.push({ name: ['hook'], type: { function: { parameters: ['text'], returns: 'none', async_allowed: false } }, required: true, keeps: true });
+  const cases = structuredClone(JSON.parse(readFileSync(fileURLToPath(new URL('../../../tests/e2e/sample/contracts/cases.json', import.meta.url)), 'utf8'))) as Record<string, unknown>;
+  cases['count'] = [{ id: 'a_callback_that_declares_no_parameter', lookup: { callback: { 'lookup.find': [] }, calls: [] }, keys: ['a'], hook: { function: { names: [], calls: [], result: 'none' } }, raises: { kind: 'invalid_callback', status: null, category: 'type', message: 'invalid_callback: a callback that declares no parameter takes no transaction handle, so it is not called' } }];
+  const out = generateTargets({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: new Map([['contracts/cases.json', cases]]), foreign: new Map(), targets: ['go'] });
+  const goTests = text(out, 'packages/go/zz_generated_test.go');
+  // The case is named only by its skip line: no test function of the case is written.
+  const named = goTests.split('\n').filter((line) => /a_callback_that_declares_no_parameter/i.test(line) && !line.startsWith('// GN-13w'));
+  assert.deepEqual(named, [], 'the Go test writes a test function of the case');
+  assert.match(goTests, /GN-13w: the case a_callback_that_declares_no_parameter of sample\.count is no Go test/);
+});
