@@ -5,6 +5,8 @@
 
 ## Unreleased
 
+
+
 ## 0.0.24
 
 - A callback that returns a record is written in the generated node tests with the object in parentheses, so the test file parses (B2.555). What a repository does: nothing. Verified by the test of B2.555 in `packages/ts`, which failed before the change.
