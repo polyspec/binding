@@ -14878,15 +14878,15 @@ test('B2.528: the Python and PHP generators refuse a result of a scalar they do 
 });
 
 test('B2.554: a record that a callback takes as a parameter has its out conversion written, though no function returns it (GN-6a)', () => {
-  // The sample's member count takes a kept callback of the record supply, which no function returns or takes otherwise.
+  // The sample's member count takes a kept callback of the record tag_options, which no function returns or takes otherwise.
   const contract = JSON.parse(readFileSync(fileURLToPath(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url)), 'utf8'));
   const count = (contract.units as { members?: { id: string; parameters: unknown[] }[] }[]).flatMap((unit) => unit.members ?? []).find((member) => member.id === 'sample.count');
   assert.ok(count !== undefined, 'tests/e2e/sample has the member sample.count');
-  count.parameters.push({ name: ['hook'], type: { function: { parameters: [{ unit: 'supply' }], returns: 'none', async_allowed: false } }, required: true, keeps: true });
+  count.parameters.push({ name: ['hook'], type: { function: { parameters: [{ unit: 'tag_options' }], returns: 'none', async_allowed: false } }, required: true, keeps: true });
   const model = forLanguage(collectModel(contract, '0.0.0', 'x', new Map(), new Map(), new Map(), new Refusals()), 'node');
   const files = new Map<string, string>();
   node(model, files);
   const lib = files.get('packages/ts/generated/lib.rs') ?? '';
-  assert.ok(/\bout_supply\(/.test(lib), 'the callback converts its record argument out');
-  assert.match(lib, /\bfn out_supply\b/, 'the crate writes fn out_supply for the record of the callback');
+  assert.ok(/\bout_tag_options\(/.test(lib), 'the callback converts its record argument out');
+  assert.match(lib, /\bfn out_tag_options\b/, 'the crate writes fn out_tag_options for the record of the callback');
 });
