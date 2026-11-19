@@ -3,7 +3,7 @@
 // has exited (HR-87); a run never writes into the checkout because no directory was named.
 
 import assert from 'node:assert/strict';
-import { execFileSync, spawn, spawnSync } from 'node:child_process';
+import { execFileSync, spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { on, once } from 'node:events';
 import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -227,8 +227,22 @@ test('B2.529: a test of make unit-ts that is stopped before its finally leaves n
     const started = Date.now();
     while (checkouts().length === 0 && run.exitCode === null && Date.now() - started < 120_000) await new Promise((done) => setTimeout(done, 50));
     assert.ok(checkouts().length > 0, `the test made no checkout before it ended:\n${printed}`);
-    process.kill(-Number(run.pid), 'SIGTERM');
+    // The stop is for the test file, the child of the runner that holds the checkout and handles SIGTERM; a signal to
+    // the group does not reach it.
+    for (const child of execFileSync('pgrep', ['-P', String(run.pid)], { encoding: 'utf8' }).trim().split('\n')) process.kill(Number(child), 'SIGTERM');
     await closed;
+    // The close of the runner does not wait for the stopped test and its children, which still remove the TMPDIR: the
+    // group is gone before the check and the removal below.
+    const groupAlive = (): boolean => {
+      try {
+        process.kill(-Number(run.pid), 0);
+        return true;
+      } catch {
+        return false;
+      }
+    };
+    while (groupAlive() && Date.now() - started < 120_000) await new Promise((done) => setTimeout(done, 50));
+    assert.ok(!groupAlive(), `the group of the run did not end:\n${printed}`);
     assert.deepEqual(checkouts(), [], printed);
   } finally {
     rmSync(temporary, { recursive: true, force: true });
@@ -247,16 +261,27 @@ test('a run of scripts/e2e.mts without --work leaves its checkout as git status 
   // The checkout of the test: the tracked files of this working tree, committed in a repository of the test. Its
   // var/tools holds only an npm that installs nothing, so the script of the tree of the commit starts and fails when it
   // loads the generator, whose packages are not installed: the run has written the tree of the commit by then.
-  const checkout = mkdtempSync(join(tmpdir(), 'binding-checkout-'));
-  const temporary = mkdtempSync(join(tmpdir(), 'binding-tmp-'));
-  // B2.529: a test that is stopped does not reach its finally, so on SIGTERM it removes its checkout itself and ends.
-  const onStop = (): void => {
-    rmSync(checkout, { recursive: true, force: true });
-    rmSync(temporary, { recursive: true, force: true });
+  // B2.529: a test that is stopped does not reach its finally, so on SIGTERM it stops its run and removes what it made,
+  // once the run has closed, and ends. The handler is in place before the first directory is made, since the stopper
+  // acts as soon as a checkout is there.
+  const made: string[] = [];
+  let child: ChildProcess | undefined;
+  const cleanup = (): void => {
+    for (const path of made) rmSync(path, { recursive: true, force: true });
     process.exit(143);
+  };
+  const onStop = (): void => {
+    if (child !== undefined && child.exitCode === null && child.signalCode === null) {
+      child.once('close', cleanup);
+      child.kill('SIGTERM');
+    } else cleanup();
   };
   process.on('SIGTERM', onStop);
   try {
+    const checkout = mkdtempSync(join(tmpdir(), 'binding-checkout-'));
+    made.push(checkout);
+    const temporary = mkdtempSync(join(tmpdir(), 'binding-tmp-'));
+    made.push(temporary);
     const tracked = execFileSync('git', ['-C', root, 'ls-files', '-z'], { encoding: 'utf8' }).split('\0').filter((path) => path !== '');
     assert.ok(tracked.includes('scripts/e2e.mts'), 'git ls-files named no script of the run');
     for (const path of tracked.filter((file) => existsSync(join(root, file)))) {
@@ -276,6 +301,7 @@ test('a run of scripts/e2e.mts without --work leaves its checkout as git status 
     // The run as make e2e starts it without WORK: in the checkout, with no --work. Its own directory is made under the
     // temporary directory of the test, which is empty before the run and after it.
     const run = spawn(process.execPath, [join(checkout, 'scripts/e2e.mts'), '--binding', 'HEAD', '--repo', 'tests/e2e/variants'], { cwd: checkout, env: { ...process.env, TMPDIR: temporary }, stdio: ['ignore', 'pipe', 'pipe'] });
+    child = run;
     let printed = '';
     for (const stream of [run.stdout, run.stderr]) stream.setEncoding('utf8').on('data', (chunk: string) => (printed += chunk));
     const [code] = (await once(run, 'close')) as [number | null];
@@ -289,7 +315,6 @@ test('a run of scripts/e2e.mts without --work leaves its checkout as git status 
     assert.deepEqual(readdirSync(temporary), []);
   } finally {
     process.off('SIGTERM', onStop);
-    rmSync(checkout, { recursive: true, force: true });
-    rmSync(temporary, { recursive: true, force: true });
+    for (const path of made) rmSync(path, { recursive: true, force: true });
   }
 });
