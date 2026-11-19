@@ -14905,3 +14905,28 @@ test('B2.554: a record that a callback returns has its in conversion written, th
   assert.ok(/\bin_tag_options\(/.test(lib), 'the callback converts its returned record in');
   assert.match(lib, /\bfn in_tag_options\b/, 'the crate writes fn in_tag_options for the record that the callback returns');
 });
+
+test('B2.555: a callback that returns a record is written in the node tests as an arrow function with the object in parentheses, so the file parses', () => {
+  // The sample's member count takes a kept callback of the text that returns the record tag_options; the node tests call it with a placeholder.
+  const contract = JSON.parse(readFileSync(fileURLToPath(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url)), 'utf8'));
+  const count = (contract.units as { members?: { id: string; parameters: unknown[] }[] }[]).flatMap((unit) => unit.members ?? []).find((member) => member.id === 'sample.count');
+  assert.ok(count !== undefined, 'tests/e2e/sample has the member sample.count');
+  count.parameters.push({ name: ['hook'], type: { function: { parameters: ['text'], returns: { unit: 'tag_options' }, async_allowed: false } }, required: true, keeps: true });
+  const model = forLanguage(collectModel(contract, '0.0.0', 'x', new Map(), new Map(), new Map(), new Refusals()), 'node');
+  const files = new Map<string, string>();
+  node(model, files);
+  const tests = [...files].filter(([path]) => /\.test\.mjs$/.test(path));
+  assert.ok(tests.length > 0, 'the node generator writes a test file');
+  for (const [path, text] of tests) {
+    assert.doesNotMatch(text, /=> \{ (?:request|[a-z_]+): /, `${path} writes an object literal as the body of an arrow function`);
+    const dir = mkdtempSync(join(tmpdir(), 'binding-b2555-'));
+    try {
+      const file = join(dir, 'check.mjs');
+      writeFileSync(file, text);
+      const checked = spawnSync(process.execPath, ['--check', file], { encoding: 'utf8' });
+      assert.equal(checked.status, 0, `${path} does not parse:\n${checked.stderr}`);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+});
