@@ -5,7 +5,7 @@
 
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { test } from 'node:test';
@@ -761,6 +761,34 @@ test('B2.479: a rehearsal makes no commit and no tag in the repository, checks t
   // A present library that fails a check of a release fails the rehearsal too.
   const debug = rehearse(t, [{ tool: 'llvm-size', match: 'darwin_arm64', stdout: 'a.o:\nsection   size   addr\n__debug_info   340   0\n' }]);
   assert.deepEqual(refusal(() => releaseGoModule(debug.release)), [`${join(debug.release.libraries, 'darwin_arm64/libpolyspec_sample_go.a')}: the library of darwin_arm64 holds the debug sections __debug_info`]);
+});
+
+test('B2.553: a rehearsal in a shallow clone of depth 1 ends with no error, its repository of the proof reading the real Git (GN-19f)', (t) => {
+  const s = rehearse(t);
+  const real = spawnSync('sh', ['-c', 'command -v git'], { encoding: 'utf8' }).stdout.trim();
+  const env = { ...process.env, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null', GIT_AUTHOR_NAME: 'case', GIT_AUTHOR_EMAIL: 'case@example.invalid', GIT_COMMITTER_NAME: 'case', GIT_COMMITTER_EMAIL: 'case@example.invalid' };
+  const gitOf = (argv: string[]): void => {
+    const ran = spawnSync(real, argv, { env, encoding: 'utf8' });
+    assert.equal(ran.status, 0, ran.stderr);
+  };
+  // A repository of two commits, whose work tree holds the generated files untracked, and a clone of depth 1 of it.
+  const { root } = s.release;
+  const source = join(s.dir, 'source');
+  renameSync(root, source);
+  gitOf(['-C', source, 'init', '--quiet']);
+  gitOf(['-C', source, 'add', 'packages/go/go.mod']);
+  gitOf(['-C', source, 'commit', '--quiet', '-m', 'first']);
+  writeFileSync(join(source, 'packages/go/host/host.go'), 'package host\n');
+  gitOf(['-C', source, 'add', 'packages/go/host/host.go']);
+  gitOf(['-C', source, 'commit', '--quiet', '-m', 'second']);
+  gitOf(['clone', '--quiet', '--depth', '1', `file://${source}`, root]);
+  assert.ok(existsSync(join(root, '.git/shallow')));
+  cpSync(join(source, 'packages'), join(root, 'packages'), { recursive: true });
+  // Git is the real one; go, rustc and the LLVM tools stay the stand-ins of the case.
+  writeFileSync(join(s.dir, 'bin/git'), `#!/bin/sh\nexec '${real}' "$@"\n`);
+  const result = releaseGoModule(s.release);
+  assert.equal(result.reference, undefined);
+  assert.match(result.unseen?.at(-1) ?? '', /the rehearsal made none in the repository and pushed nothing/);
 });
 
 test('B2.479: a rehearsal without the library or the generated files of the platform of the run is refused, and so is one on a platform of no Go module (GN-19f)', (t) => {

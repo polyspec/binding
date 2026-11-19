@@ -28,6 +28,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { parse } from 'smol-toml';
+import { cargoMetadataFailure } from './cargo-metadata.ts';
 import { bindingCoreTagFinding, checkContract } from './check.ts';
 import { gitPinDiffers, ownCommit } from './commit.ts';
 import type { Contract, Lang } from './contract.ts';
@@ -81,10 +82,12 @@ function cargoContracts(contract: unknown, crateDir: string, cargo: readonly str
       // of the libraries to their linked checkouts, whose interface.json is then read.
       const [program = 'cargo', ...words] = cargo;
       const run = spawnSync(program, [...words, 'metadata', '--locked', '--offline', '--format-version', '1', '--manifest-path', join(crateDir, 'Cargo.toml')], {
-        stdio: ['ignore', fd, 'inherit'],
+        // B2.552: the error of Cargo is read so that the refusal gives it and names the fetch only for its cause.
+        stdio: ['ignore', fd, 'pipe'],
+        encoding: 'utf8',
       });
       if (run.error !== undefined) throw run.error;
-      if (run.status !== 0) return { found, failure: `cargo metadata failed with status ${String(run.status)}; run the install target of the repository that fetches the crates of its Cargo.lock (cargo fetch --locked), then run the command again` };
+      if (run.status !== 0) return { found, failure: cargoMetadataFailure(run.status, run.stderr) };
     } finally {
       closeSync(fd);
     }

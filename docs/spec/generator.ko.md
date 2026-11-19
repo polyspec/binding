@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: fa721e2f6f29d58f3206c2ecfc52ed0dcb2f54763f08aee6d8db3b740a60b846 -->
+<!-- source-sha256: f132cb3faaa7747aeb67aea36afc827e6bc776c09df9555de48d600597d7d434 -->
 # 생성기
 
 [English](generator.md)
@@ -525,7 +525,8 @@
 - **GN-6a** 함수가 돌려주거나 parameter의 원소인 record는 언어마다 결과 형태(T-4)를 갖는다: Python은 `<root>._types`의 frozen
   keyword-only `dataclass`, Node는 member의 plain object, PHP는 생성자가 모든 field를 이름으로 받는 public readonly 속성의
   final 클래스. 바인딩은 양방향으로 바꾸며(`in_<record>`, `out_<record>`), 그 자리의 다른 타입 값은 kind
-  `invalid_argument_type`이다.
+  `invalid_argument_type`이다. callback이 parameter로 받는 record는 호출마다 밖으로 바꾸므로, 어떤 함수도 돌려주지
+  않아도 `out_<record>` 변환을 가진다(B2.554).
   기본값이 `{literal: null}`인 `optional` field(T-4)는 variant의 case의 field(GN-6v)처럼 결과 형태에서 빠질 수 있다:
   Python은 dataclass field에 기본값 `None`을 주고, Node와 WASM은 없거나 `undefined`인 member를 null로 읽고 그 member를
   선택으로 선언하며, PHP는 생성자의 그 자리에서 null을 받고, Go는 그 field의 pointer를 nil로 두며, case 값은 그 key를 뺄 수
@@ -2147,7 +2148,9 @@
   곳에서 실패한다. 이 머신이 fetch한 적 없는 Git 의존을 network 없이 해석할 때, 또는 manifest가 더 이상 없는 crate를 적을
   때다. 그때 `scaffold`는 Go module을 쓰지 않은 것으로 이름하고(GN-3e), Cargo의 상태와 함께 레포의 `Cargo.lock`의 crate를
   fetch하는 install target(`cargo fetch --locked`)을 실행한 뒤 `scaffold`를 다시 실행하라는 안내를 적으며, 그 계약을 읽지 않는
-  다른 target의 package는 쓴다. `check`와 `generate`는 모든 target에서 그 계약을 읽으므로 같은 안내와 함께 실패한다. 계약이 record, 값 class(GN-6x), callback unit(GN-6s)이나 Go 행이 owner의 class를 이름하는 값 alias(GN-6ar)를 이름하거나 계약이 받는 다른 라이브러리의 callback unit의 member가 그것을 이름하는(GN-3e) 라이브러리마다
+  다른 target의 package는 쓴다. `check`와 `generate`는 모든 target에서 그 계약을 읽으므로 같은 안내와 함께 실패한다. 거부는 Cargo가 쓴 오류를 먼저 주고, 그 오류가 offline에서
+  crate가 없다고 말할 때(Cargo가 `--offline`이나 offline mode를 이름할 때)만 그 안내를 적는다. `Cargo.toml`이 없는 workspace
+  구성원 같은 다른 실패는 Cargo의 오류만 준다. crate를 fetch해도 고쳐지지 않기 때문이다(B2.552). 계약이 record, 값 class(GN-6x), callback unit(GN-6s)이나 Go 행이 owner의 class를 이름하는 값 alias(GN-6ar)를 이름하거나 계약이 받는 다른 라이브러리의 callback unit의 member가 그것을 이름하는(GN-3e) 라이브러리마다
   `go.mod`에 `require <module> <version>` 줄을 적는다. Go 바인딩이 그 각각의 패키지를 import하기 때문이다(B2.87). 코어의 `polyspec-<library>` 의존 줄이 버전 `=X.Y.Z`나 tag `vX.Y.Z`를 적으면
   버전은 `vX.Y.Z`다. 이 레포 안의 `path` 옆에 그 라이브러리의 한 버전 `X.Y.Z`가 있을 때에도 그렇고(GN-3e, B2.460), 이때
   `replace` 줄은 없다. Go module의 tag를 쓰는 소비자는 `replace`를 해석할 수 없기 때문이다(GN-19f). 그 밖의 `path` 의존은 `v0.0.0`과, 이 레포의 Go module에서 그 레포의 Go module로 가는
@@ -3743,7 +3746,10 @@
   `rehearsal.git`에 만들고, 그 저장소의 alternates는 레포의 object다(`objects/info/alternates`). object나 index를 쓰는 모든
   명령은 그 저장소의 `git --git-dir`로 실행하고, commit의 identity는 `binding rehearsal`, message는 `chore(release):
   Rehearse the Go module of vX.Y.Z`이며, `git update-ref`가 거기에 tag `<directory>/vX.Y.Z`를 둔다. 그 저장소는 실행
-  사이에 남고, `git prune`이 이전 rehearsal의 object를 거기서 지운다. 위 검사의 형제 모듈은 레포에 tag가 있으면 그
+  사이에 남고, `git prune`이 이전 rehearsal의 object를 거기서 지운다. rehearsal은 매번 그 저장소에 레포의 shallow
+  파일을 주고, 레포에 없으면 주지 않는다. alternates가 가진 history는 그 파일이 말하는 곳에서 끝나기 때문이다. 그래서
+  `git prune`은 그 파일의 commit에서 멈추고, `HEAD`만 읽는 rehearsal은 CI의 depth 1 checkout처럼 어떤 depth의 shallow
+  clone에서도 끝난다(B2.553). 위 검사의 형제 모듈은 레포에 tag가 있으면 그
   tag에서 가져오며, rehearsal은 그것을 이전 실행의 rehearsal 위에 그 저장소로 push한다. tag가 없는 형제, 곧 한 version의
   첫 release 전의 모든 형제는 같은 `--work`에 있는 그 모듈의 rehearsal에서 가져오되, 그 commit의 부모가 이 실행의
   `HEAD`일 때만 그렇다. 그래서 한 레포의 모듈들은 `--work` 하나로 require의 순서대로 rehearsal한다. 둘 다 없는 형제와
