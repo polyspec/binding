@@ -1153,9 +1153,11 @@ export function collectModel(
     if ('keyed_map' in type) return visit(type.keyed_map);
     if ('optional' in type) return visit(type.optional);
     if ('tuple' in type) return type.tuple.forEach(visit);
-    // B2.554: a callback converts each of its parameters out at a call, so its records have the result form.
+    // B2.554: a callback converts each of its parameters out and its returned value in, so its records have the result form.
     if ('function' in type) {
       type.function.parameters.forEach(visit);
+      const returns = type.function.returns;
+      if (typeof returns === 'object' && !('passthrough' in returns)) visit(returns);
       return functionParts(type);
     }
     if ('unit' in type && type.library === undefined) {
