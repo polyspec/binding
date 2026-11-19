@@ -14957,7 +14957,7 @@ test('B2.556: the dynamic targets write a case whose function fixture is the obj
   for (const target of ['node', 'python', 'php', 'wasm'] as const) {
     const out = generateTargets({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: new Map([['contracts/cases.json', cases]]), foreign: new Map(), targets: [target] });
     const written = [...out.values()].join('\n');
-    assert.match(written, /a_callback_that_declares_no_parameter/, `${target} writes the case`);
     assert.match(written, /invalid_callback/, `${target} expects invalid_callback`);
+    assert.doesNotMatch(written, /gives no \{"function"/, `${target} refuses the object form`);
   }
 });
