@@ -3809,6 +3809,10 @@ the design ids are those of the binding design.
   (B2.397), because every dynamic target converts an item, an entry and a field with the same conversion as an argument
   and refuses it with the same kind before the core runs, and session-store states that refusal for the uint fields of
   the record `options` of `redis_sessions.new`; Go wrote `[]uint64{2, -1}` for a list item, which its compiler refuses.
+  The number of arguments that a callback declares is the static type of a func in Go, so a case that gives a callback
+  which declares no parameter and raises `invalid_callback` is written the same way, with the reason that the func of Go
+  fixes its arguments: the compiler refuses such a callback, and no run-time refusal is left to test (B2.556). The dynamic
+  targets keep that case and refuse it at run time, as CORE-20 requires.
 - **GN-13x** The Go tests declare the type `fixture`, with the imports that it uses, whenever they declare the double
   `fixture<Name>` of a callback unit, which embeds it. Why: every callback unit of the contract has its doubles, also
   when no case of it names a fixture, and a double without its type does not compile.

@@ -880,6 +880,18 @@ function callArgs(v: Values, b: Body, fn: Fn, given: (arg: Arg) => string | unde
 }
 
 // The value of an argument in a case: undefined when the case leaves an argument with a default out (U-2).
+// GN-13w, B2.556: a case that gives a callback declaring no parameter, and raises invalid_callback, is no Go test: the
+// func of Go has its arguments in its static type, so the callback that a Go caller writes always takes them, and the
+// compiler refuses the one that takes none. Nothing of the binding is left to refuse at run time.
+function arityFixed(fn: Fn, kase: RaisingCase): string | undefined {
+  if (kase.raises.kind !== 'invalid_callback') return undefined;
+  const declaresNone = fn.args.some((a) => {
+    const json = kase.args.get(a) as { function?: { names?: unknown } } | undefined;
+    return typeof a.type === 'object' && 'function' in a.type && Array.isArray(json?.function?.names) && json.function.names.length === 0;
+  });
+  return declaresNone ? 'a callback declares no parameter, and the func of Go has its arguments in its static type (B2.556)' : undefined;
+}
+
 // GN-13w: why a case value is no value of its Go type, or undefined when it is one. Go is statically typed, so the
 // compiler refuses such a value at the call before the binding sees it; the case states the refusal of the binding
 // on the dynamic targets (GN-13d), and Go has no call to make for it.
@@ -1616,7 +1628,7 @@ ${indent([...b.lines, `if !reflect.DeepEqual(${got}, ${want}) || !sameFailure(er
     // GN-13w: a case whose argument is no value of its Go type is no Go test; the file names it and the reason.
     const notOf = (f: Fn, args: ReadonlyMap<Arg, unknown>): string | undefined => f.args.map((a) => (args.has(a) ? notGoValue(a.type, args.get(a), model) : undefined)).find((why) => why !== undefined);
     const ofReceiver = (r: Receiver | undefined): string | undefined => (r === undefined ? undefined : notOf(r.factory, r.args) ?? ofReceiver(r.on));
-    const foreign = notOf(fn, kase.args) ?? ofReceiver(kase.receiver);
+    const foreign = notOf(fn, kase.args) ?? ofReceiver(kase.receiver) ?? arityFixed(fn, kase);
     if (foreign !== undefined) {
       out.main.push(`\n// GN-13w: the case ${kase.id} of ${fn.member.id} is no Go test: ${foreign}, which the Go compiler refuses.`);
       continue;

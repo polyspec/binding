@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 9bd0c679382139f632850df340b0b5c676046caa66c1fb94a2788e9742b2ff5e -->
+<!-- source-sha256: 35aee79a68cc7eaa24e73579c67ee1408b35abf9de2fca50935904fc8f8c191a -->
 # 생성기
 
 [English](generator.md)
@@ -3134,6 +3134,9 @@
   값도 같이 판단한다(B2.397). 모든 동적 target은 항목, entry, field를 인자와 같은 변환으로 바꾸어 코어가 돌기 전에 같은
   kind로 거부하고, session-store는 `redis_sessions.new`의 record `options`의 uint field에 대해 그 거부를 말하기 때문이다.
   Go는 list 항목에 대해 `[]uint64{2, -1}`을 썼고 그 컴파일러는 그것을 거부한다.
+  callback이 선언하는 인자의 수는 Go에서 func의 정적 type이므로, 인자를 선언하지 않은 callback을 주고 `invalid_callback`을 raise하는
+  case도 같은 방식으로 쓴다. 이유: Go의 func는 인자를 그 type에 가지며 컴파일러가 인자 없는 callback을 거부하므로 런타임 거부가
+  남지 않는다(B2.556). 동적 target은 그 case를 두고 CORE-20이 요구하는 대로 런타임에 거부한다.
 - **GN-13x** Go 시험은 callback unit의 double `fixture<Name>`을 선언할 때마다, 그것이 품는 타입 `fixture`와 그 타입이
   쓰는 import를 함께 선언한다. 이유: 계약의 모든 callback unit은 fixture를 부르는 case가 없어도 double을 가지며,
   타입이 없는 double은 컴파일되지 않는다.
