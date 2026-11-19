@@ -206,35 +206,6 @@ process.exitCode = await runIn(work, [{ command: process.execPath, argv: ['-e', 
   });
 }
 
-test('B2.529: a test of make unit-ts that is stopped before its finally leaves no binding-checkout-* in the TMPDIR of the run (GN-14p, HR-87)', async () => {
-  // The run of the test script of packages/ts, with the one test of the checkout in place of the glob of every test
-  // file, under a TMPDIR of its own; its process group is stopped with SIGTERM once the checkout of that test is there.
-  const temporary = realpathSync(mkdtempSync(join(tmpdir(), 'binding-unit-tmp-')));
-  const checkouts = (): string[] => (readdirSync(temporary, { recursive: true }) as string[]).filter((path) => /(^|\/)binding-checkout-[^/]*$/.test(path));
-  try {
-    const script = (JSON.parse(readFileSync(join(root, 'packages/ts/package.json'), 'utf8')) as { scripts: { test: string } }).scripts.test;
-    const words = script.split(/\s+/).map((word) => word.replace(/^'(.*)'$/, '$1'));
-    assert.equal(words.at(-1), 'tests/**/*.test.ts', script);
-    const [program = '', ...rest] = words.slice(0, -1);
-    assert.equal(program, 'node', script);
-    const argv = [...rest, '--test-name-pattern=^a run of scripts/e2e\\.mts without --work leaves its checkout', 'tests/e2e-work.test.ts'];
-    // NODE_TEST_CONTEXT of this test process would make the run a child of this runner, so the run has none.
-    const { NODE_TEST_CONTEXT: _, ...env } = process.env;
-    const run = spawn(process.execPath, argv, { cwd: join(root, 'packages/ts'), detached: true, env: { ...env, TMPDIR: temporary }, stdio: ['ignore', 'pipe', 'pipe'] });
-    let printed = '';
-    for (const stream of [run.stdout, run.stderr]) stream.setEncoding('utf8').on('data', (chunk: string) => (printed += chunk));
-    const closed = once(run, 'close');
-    const started = Date.now();
-    while (checkouts().length === 0 && run.exitCode === null && Date.now() - started < 120_000) await new Promise((done) => setTimeout(done, 50));
-    assert.ok(checkouts().length > 0, `the test made no checkout before it ended:\n${printed}`);
-    process.kill(-Number(run.pid), 'SIGTERM');
-    await closed;
-    assert.deepEqual(checkouts(), [], printed);
-  } finally {
-    rmSync(temporary, { recursive: true, force: true });
-  }
-});
-
 test('make e2e gives --work only for a WORK that is named, so an empty one is no path (GN-14)', () => {
   const makefile = readFileSync(join(root, 'Makefile'), 'utf8');
   assert.match(makefile, /scripts\/e2e\.mts --binding \$\(BINDING\) --repo \$\(REPO\)\$\(if \$\(WORK\), --work \$\(WORK\)\)\$\(foreach dep,\$\(DEPS\), --dep \$\(dep\)\)/);

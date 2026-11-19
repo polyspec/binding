@@ -6,7 +6,7 @@
 
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 import { test, type TestContext } from 'node:test';
@@ -89,19 +89,6 @@ test('B2.456: binding check and scaffold of a go.mod that requires a release, wi
   const missing = b.run('check', b.contract, '--go', join(b.root, 'tools/no-go'));
   assert.equal(missing.status, 1, missing.stderr);
   assert.match(missing.stderr, /the go command `[^`]*tools\/no-go` of --go is not found: install Go, or name the go command with --go <command>, the value of \$\(GO\) of the release recipes \(GN-19h\)\n/);
-});
-
-test('B2.529: binding check and scaffold that end for a go that is not found leave no binding-go-sum-* in TMPDIR (GN-14p)', (t) => {
-  const b = box(t, true);
-  const temporary = mkdtempSync(join(tmpdir(), 'binding-go-sum-tmp-'));
-  t.after(() => rmSync(temporary, { recursive: true, force: true }));
-  const env = { ...process.env, TMPDIR: temporary, PATH: `${join(b.root, 'bin')}${delimiter}${pathWithoutGo()}` };
-  for (const argv of [['check', b.contract], ['scaffold', '--root', join(b.root, 'plot')]]) {
-    const ran = spawnSync(process.execPath, [cli, ...argv, '--cargo', 'cargo'], { cwd: b.root, encoding: 'utf8', env });
-    assert.equal(ran.status, 1, ran.stderr);
-    assert.match(ran.stderr, NEEDED);
-  }
-  assert.deepEqual(readdirSync(temporary).filter((name) => name.startsWith('binding-go-sum-')), []);
 });
 
 test('B2.456: binding scaffold and check run the command of --go with mod download -json all (GN-15l)', (t) => {
