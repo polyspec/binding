@@ -5,6 +5,7 @@
 
 ## Unreleased
 
+- The rehearsal of `binding release-go-module` ends in a shallow checkout, as a CI checkout of depth 1 is: its bare repository takes the shallow file of the checkout, so its final prune no longer fails with status 128 at a parent that is not there (B2.553). What a repository does: nothing. Verified by the test of B2.553 in `packages/ts`, which failed before the change.
 - When `cargo metadata` fails, the refusal gives the error of Cargo first and names the fetch of the crates of `Cargo.lock` only when Cargo says a crate is missing, so a missing workspace member manifest is no longer blamed on the fetch (B2.552). What a repository does: nothing; a repository whose `cargo metadata` failed on a member manifest sees the cause of Cargo. Verified by the tests of B2.552 in `packages/ts`, which failed before the change.
 
 ## 0.0.23

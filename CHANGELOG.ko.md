@@ -1,11 +1,12 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: d988e0191bfbff617e65afa0d6878e7c82fef24bb7db905b0205c8f5350da0c3 -->
+<!-- source-sha256: db15eb5f166c226f8f93808bdf2043e8a073450f3ec98dd9d77ec631edab89ff -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
 
+- `binding release-go-module`의 rehearsal은 CI의 depth 1 checkout처럼 shallow한 checkout에서도 끝난다: bare repository가 checkout의 shallow 파일을 가져가므로, 마지막 prune이 없는 부모에서 status 128로 실패하지 않는다(B2.553). 레포가 할 일: 없다. `packages/ts`의 B2.553 시험으로 검증했고, 그 시험은 변경 전에 실패했다.
 - `cargo metadata`가 실패하면 거절은 Cargo의 오류를 먼저 주고, Cargo가 crate가 없다고 할 때만 `Cargo.lock`의 crate를 받으라고 이름한다. 그래서 member manifest가 없는 실패를 받기 탓으로 돌리지 않는다(B2.552). 레포가 할 일: 없다. Cargo의 원인을 본다. `packages/ts`의 B2.552 시험으로 검증했고, 그 시험은 변경 전에 실패했다.
 
 ## 0.0.23
