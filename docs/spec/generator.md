@@ -634,7 +634,9 @@ the design ids are those of the binding design.
 - **GN-6a** A record that a function returns, or that is an element of a parameter, has its result form (T-4) in each
   language: Python a frozen keyword-only `dataclass` in `<root>._types`, Node a plain object of its members, PHP a
   final class of public readonly properties whose constructor takes every field by name. Each binding converts it both
-  ways (`in_<record>`, `out_<record>`); a value of another type in its place is kind `invalid_argument_type`.
+  ways (`in_<record>`, `out_<record>`); a value of another type in its place is kind `invalid_argument_type`. A record
+  that a callback takes as a parameter is converted out for each call of the callback, so it has its `out_<record>`
+  conversion as well, even when no function returns it (B2.554).
   An `optional` field whose default is `{literal: null}` (T-4) may be left out of the result form, as a field of a
   case of a variant (GN-6v): Python gives the dataclass field the default `None`, Node and WASM read a missing or
   `undefined` member as null and declare the member optional, PHP takes null at its place in the constructor, Go
@@ -2602,7 +2604,10 @@ the design ids are those of the binding design.
   then names the Go module as not written (GN-3e), with the status of Cargo and the instruction to run the install
   target of the repository that fetches the crates of its `Cargo.lock` (`cargo fetch --locked`) and to run `scaffold`
   again, and writes the packages of the other targets, which do not read those contracts; `check` and `generate` read
-  them for every target, so they fail with the same instruction. For
+  them for every target, so they fail with the same instruction. The refusal gives the error that Cargo wrote first,
+  and names that instruction only when that error says that a crate is missing offline (Cargo names `--offline` or the
+  offline mode); any other failure, such as a workspace member whose `Cargo.toml` does not exist, gets the error of
+  Cargo alone, since fetching crates does not fix it (B2.552). For
   each library whose records, value classes (GN-6x) or callback units (GN-6s) the contract names, or the value
   aliases whose Go rows name a class of their owner (GN-6ar), or the members of a callback unit of another library that
   the contract takes name (GN-3e), it writes a line `require <module> <version>`
