@@ -14,6 +14,7 @@ import { generateOnStack } from '../src/generate/stack.ts';
 import { checkContract } from '../src/index.ts';
 import { carriers, categoryClass, collectModel, forLanguage, Refusals } from '../src/generate/model.ts';
 import { foreignPhpClass, php } from '../src/generate/php.ts';
+import { node } from '../src/generate/node.ts';
 import { python } from '../src/generate/python.ts';
 import { CASE_JSON_STRING_GOLDENS, caseFilesOf, casePathOf, caseTextParts, fromJson } from '../src/generate/samples.ts';
 import { closure, featureItems, INTO_CORE, PARTS, jsString, phpText, pyString, usedHelpers, WIDEN } from '../src/generate/text.ts';
@@ -14875,4 +14876,32 @@ test('B2.528: the Python and PHP generators refuse a result of a scalar they do 
     assert.ok(thrown instanceof Error && thrown.constructor.name === 'Unsupported', `${lang} throws no Unsupported`);
     assert.match(thrown.message, new RegExp(`no ${shown} output conversion for decimal`));
   }
+});
+
+test('B2.554: a record that a callback takes as a parameter has its out conversion written, though no function returns it (GN-6a)', () => {
+  // The sample's member count takes a kept callback of the record tag_options, which no function returns or takes otherwise.
+  const contract = JSON.parse(readFileSync(fileURLToPath(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url)), 'utf8'));
+  const count = (contract.units as { members?: { id: string; parameters: unknown[] }[] }[]).flatMap((unit) => unit.members ?? []).find((member) => member.id === 'sample.count');
+  assert.ok(count !== undefined, 'tests/e2e/sample has the member sample.count');
+  count.parameters.push({ name: ['hook'], type: { function: { parameters: [{ unit: 'tag_options' }], returns: 'none', async_allowed: false } }, required: true, keeps: true });
+  const model = forLanguage(collectModel(contract, '0.0.0', 'x', new Map(), new Map(), new Map(), new Refusals()), 'node');
+  const files = new Map<string, string>();
+  node(model, files);
+  const lib = files.get('packages/ts/generated/lib.rs') ?? '';
+  assert.ok(/\bout_tag_options\(/.test(lib), 'the callback converts its record argument out');
+  assert.match(lib, /\bfn out_tag_options\b/, 'the crate writes fn out_tag_options for the record of the callback');
+});
+
+test('B2.554: a record that a callback returns has its in conversion written, though no function returns it (GN-6a)', () => {
+  // The sample's member count takes a kept callback of the text and returns the record tag_options, which no function returns otherwise.
+  const contract = JSON.parse(readFileSync(fileURLToPath(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url)), 'utf8'));
+  const count = (contract.units as { members?: { id: string; parameters: unknown[] }[] }[]).flatMap((unit) => unit.members ?? []).find((member) => member.id === 'sample.count');
+  assert.ok(count !== undefined, 'tests/e2e/sample has the member sample.count');
+  count.parameters.push({ name: ['hook'], type: { function: { parameters: ['text'], returns: { unit: 'tag_options' }, async_allowed: false } }, required: true, keeps: true });
+  const model = forLanguage(collectModel(contract, '0.0.0', 'x', new Map(), new Map(), new Map(), new Refusals()), 'node');
+  const files = new Map<string, string>();
+  node(model, files);
+  const lib = files.get('packages/ts/generated/lib.rs') ?? '';
+  assert.ok(/\bin_tag_options\(/.test(lib), 'the callback converts its returned record in');
+  assert.match(lib, /\bfn in_tag_options\b/, 'the crate writes fn in_tag_options for the record that the callback returns');
 });
