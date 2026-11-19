@@ -5,6 +5,8 @@
 
 ## Unreleased
 
+- When `cargo metadata` fails, the refusal gives the error of Cargo first and names the fetch of the crates of `Cargo.lock` only when Cargo says a crate is missing, so a missing workspace member manifest is no longer blamed on the fetch (B2.552). What a repository does: nothing; a repository whose `cargo metadata` failed on a member manifest sees the cause of Cargo. Verified by the tests of B2.552 in `packages/ts`, which failed before the change.
+
 ## 0.0.23
 
 - When `go mod download` cannot give a module, the refusal of a `go.sum` by `binding scaffold` and CK-19 names the module path and the version that Go was asked for, with the error of Go (B2.550, GN-15l). Before, it gave the error of Go alone: the release check of crud-ui failed with `go mod download gave no sum: module lookup disabled by GOPROXY=off`, which named no module. What a repository does: nothing; a failed check now names the module to download. Verified by the test of B2.550 in `packages/ts`, which failed before the change.

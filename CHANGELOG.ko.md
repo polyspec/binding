@@ -1,10 +1,12 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 889cfb341ae723a5be8cdbe99b4fde189f7e1505c67903dac14996f362080b4f -->
+<!-- source-sha256: d988e0191bfbff617e65afa0d6878e7c82fef24bb7db905b0205c8f5350da0c3 -->
 # 변경 기록
 
 [English](CHANGELOG.md)
 
 ## Unreleased
+
+- `cargo metadata`가 실패하면 거절은 Cargo의 오류를 먼저 주고, Cargo가 crate가 없다고 할 때만 `Cargo.lock`의 crate를 받으라고 이름한다. 그래서 member manifest가 없는 실패를 받기 탓으로 돌리지 않는다(B2.552). 레포가 할 일: 없다. Cargo의 원인을 본다. `packages/ts`의 B2.552 시험으로 검증했고, 그 시험은 변경 전에 실패했다.
 
 ## 0.0.23
 
