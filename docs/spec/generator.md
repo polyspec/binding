@@ -4297,15 +4297,6 @@ the design ids are those of the binding design.
   duplication passes and a copy that holds a piece of `packages/ts/src` twice fails. Why: a rule written twice, such
   as the two readings of the name of a Go test (B2.509), was found only by reading, and a baseline would allow
   today's duplications for good.
-- **GN-14p** A run leaves no temporary directory of its own in `TMPDIR` (B2.529, HR-87). A command of binding that
-  makes a directory under the temporary directory removes it on every way out, a refusal that ends the process among
-  them: the directory of `go mod download` (GN-15l) is made only after the go command is found, so a run whose go is
-  not found makes none. `make unit-ts` runs `node --test` through `scripts/unit-ts.mts`, which gives the tests a
-  directory of the run as `TMPDIR` and removes it when the tests end, when they fail and on SIGINT and SIGTERM, after
-  the process group of the tests has exited, so a test that is stopped before its `finally` leaves nothing in the
-  `TMPDIR` of the run. Why: runs left 45 empty `binding-go-sum-*` directories, each of a refusal that ended the process
-  inside the `try` whose `finally` removed it, and one `binding-checkout-*` of a test of `e2e-work.test.ts` whose
-  process ended before its `finally`.
 
 ## The release of a repository that holds a binding
 
