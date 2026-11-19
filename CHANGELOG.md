@@ -9,6 +9,7 @@
 
 ## 0.0.24
 
+- A callback that declares no parameter is refused before its call with `invalid_callback`; a Go test writes no case of it, since the func of Go fixes its arguments in its type (GN-13w), and the object form of a state-machine function's fixture is written by the node, python, php and wasm tests (B2.556). What a repository does: nothing.
 - A callback that returns a record is written in the generated node tests with the object in parentheses, so the test file parses (B2.555). What a repository does: nothing. Verified by the test of B2.555 in `packages/ts`, which failed before the change.
 - The rehearsal of `binding release-go-module` ends in a shallow checkout, as a CI checkout of depth 1 is: its bare repository takes the shallow file of the checkout, so its final prune no longer fails with status 128 at a parent that is not there (B2.553). What a repository does: nothing. Verified by the test of B2.553 in `packages/ts`, which failed before the change.
 - When `cargo metadata` fails, the refusal gives the error of Cargo first and names the fetch of the crates of `Cargo.lock` only when Cargo says a crate is missing, so a missing workspace member manifest is no longer blamed on the fetch (B2.552). What a repository does: nothing; a repository whose `cargo metadata` failed on a member manifest sees the cause of Cargo. Verified by the tests of B2.552 in `packages/ts`, which failed before the change.

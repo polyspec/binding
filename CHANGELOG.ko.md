@@ -1,5 +1,5 @@
 <!-- doc-id: changelog -->
-<!-- source-sha256: 13af5763780fee0b33b5461103e33c219d136e3228e320bd979cd60a402adbcb -->
+<!-- source-sha256: a3d86992e8998af67d4cf0816b6a38746336d6bde8c33fd84254c78a234a20ce -->
 # 변경 기록
 
 [English](CHANGELOG.md)
@@ -8,6 +8,7 @@
 
 ## 0.0.24
 
+- 인자를 선언하지 않은 callback은 호출 전에 `invalid_callback`으로 거부된다. Go 시험은 그 case를 쓰지 않는다. Go의 func가 인자를 type에 고정하기 때문이다(GN-13w). state machine 함수 fixture의 object 형식은 node, python, php, wasm 시험이 쓴다(B2.556). 레포가 할 일: 없다.
 - 레코드를 반환하는 callback은 생성된 node 시험에서 객체를 괄호로 감싸 쓰므로 시험 파일이 파싱된다(B2.555). 레포가 할 일: 없다. `packages/ts`의 B2.555 시험으로 검증했고, 그 시험은 변경 전에 실패했다.
 - `binding release-go-module`의 rehearsal은 CI의 depth 1 checkout처럼 shallow한 checkout에서도 끝난다: bare repository가 checkout의 shallow 파일을 가져가므로, 마지막 prune이 없는 부모에서 status 128로 실패하지 않는다(B2.553). 레포가 할 일: 없다. `packages/ts`의 B2.553 시험으로 검증했고, 그 시험은 변경 전에 실패했다.
 - `cargo metadata`가 실패하면 거절은 Cargo의 오류를 먼저 주고, Cargo가 crate가 없다고 할 때만 `Cargo.lock`의 crate를 받으라고 이름한다. 그래서 member manifest가 없는 실패를 받기 탓으로 돌리지 않는다(B2.552). 레포가 할 일: 없다. Cargo의 원인을 본다. `packages/ts`의 B2.552 시험으로 검증했고, 그 시험은 변경 전에 실패했다.
