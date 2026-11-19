@@ -6,7 +6,7 @@
 // work directory (GN-14f); both read the tag, the consumer, the debug sections and the test entry points from here.
 
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { GO_PLATFORMS, GO_TAG_GUARD_FILE, goLinkFile, goTestTagsOf } from '../generate/go.ts';
 import { isGoGenerated } from '../generate/index.ts';
@@ -620,6 +620,10 @@ export function releaseGoModule(release: GoModuleRelease): GoModuleReleased {
     if (!existsSync(bare)) initBare();
     mkdirSync(join(bare, 'objects/info'), { recursive: true });
     writeFileSync(join(bare, 'objects/info/alternates'), `${git(['rev-parse', '--path-format=absolute', '--git-path', 'objects'])}\n`);
+    // B2.553: a shallow checkout names the commits whose parents it lacks in its shallow file; the bare repository reads
+    // those objects through the alternates, so it takes the same file, or prune fails at a parent that is not there.
+    const shallow = git(['rev-parse', '--path-format=absolute', '--git-path', 'shallow']);
+    if (existsSync(shallow)) copyFileSync(shallow, join(bare, 'shallow'));
   } else {
     const tagged = named(`refs/tags/${tag}`);
     if (tagged === undefined) throw new Refused([`the repository has no tag ${tag}`]);
