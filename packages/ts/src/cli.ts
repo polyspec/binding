@@ -498,15 +498,12 @@ function withGoSum(t: Tracked): Tracked {
   if (goMod === undefined || releaseRequires(goMod).length === 0) return t;
   const goSumPath = `${goModuleDir(checked)}/go.sum`;
   const own = /^module (\S+)$/m.exec(goMod)?.[1] ?? '';
-  // B2.529: the directory is made once the go is found, so a refusal for a go that is not found, which ends the process
-  // without its finally, leaves none behind.
-  let dir: string | undefined;
+  const dir = mkdtempSync(join(tmpdir(), 'binding-go-sum-'));
   try {
     const download = (module: string): GoDownload[] => {
       const resolved = goCommand(go, process.env, `${join(root, goModPath)} requires the release ${sumRequires(module).join(', ')} of another polyspec Go module, so its go.sum is written from \`go mod download\` (GN-15l)`);
       if ('refusal' in resolved) fail(resolved.refusal);
       const [program, ...prefix] = resolved.command;
-      dir ??= mkdtempSync(join(tmpdir(), 'binding-go-sum-'));
       writeFileSync(join(dir, 'go.mod'), module);
       const ran = spawnSync(program, [...prefix, 'mod', 'download', '-json', 'all'], { cwd: dir, encoding: 'utf8', env: { ...process.env, GOWORK: 'off', GOFLAGS: '-mod=mod' } });
       if (ran.error !== undefined) throw new Error(`go mod download did not start: ${ran.error.message}`);
@@ -527,7 +524,7 @@ function withGoSum(t: Tracked): Tracked {
   } catch (error) {
     return { files: t.files, refused: [...t.refused, { path: goSumPath, message: error instanceof Error ? error.message : String(error) }] };
   } finally {
-    if (dir !== undefined) rmSync(dir, { recursive: true, force: true });
+    rmSync(dir, { recursive: true, force: true });
   }
 }
 const tracked: Tracked = command === 'generate' ? { files: new Map(), refused: [] } : withGoSum(trackedOf());
