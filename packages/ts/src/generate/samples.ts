@@ -144,7 +144,9 @@ export function placeholder(model: Model, ctx: Context, type: Type, rich = false
     const returns = type.function.returns;
     const value = returns === 'none' ? { python: 'None', node: 'undefined', php: 'null' }[ctx.lang] : placeholder(model, ctx, returns, rich);
     // GN-6bu: the JavaScript function declares the arguments that the binding calls it with.
-    return { python: `lambda *_arguments: ${value}`, node: `((${jsArguments(type.function.parameters.length)}) => ${value})`, php: `fn (...$arguments) => ${value}` }[ctx.lang];
+    // B2.555: an object literal is the body of the arrow function only in parentheses, or the body is a block.
+    const nodeValue = value.startsWith('{') ? `(${value})` : value;
+    return { python: `lambda *_arguments: ${value}`, node: `((${jsArguments(type.function.parameters.length)}) => ${nodeValue})`, php: `fn (...$arguments) => ${value}` }[ctx.lang];
   }
   // GN-6t: a value of a tuple is the sequence of the placeholders of its parts, a tuple in Python.
   if ('tuple' in type) {
