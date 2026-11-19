@@ -9,6 +9,7 @@
 
 ## 0.0.24
 
+- A test run that is stopped no longer leaves a `binding-checkout-*` directory in TMPDIR, and `binding check` and `scaffold` that end for a Go that is not found leave no `binding-go-sum-*` directory there (B2.529). What a repository does: nothing. Verified by the tests of B2.529 in `packages/ts`, which failed before the change.
 - A callback that declares no parameter is refused before its call with `invalid_callback`; a Go test writes no case of it, since the func of Go fixes its arguments in its type (GN-13w), and the object form of a state-machine function's fixture is written by the node, python, php and wasm tests (B2.556). What a repository does: nothing.
 - A callback that returns a record is written in the generated node tests with the object in parentheses, so the test file parses (B2.555). What a repository does: nothing. Verified by the test of B2.555 in `packages/ts`, which failed before the change.
 - The rehearsal of `binding release-go-module` ends in a shallow checkout, as a CI checkout of depth 1 is: its bare repository takes the shallow file of the checkout, so its final prune no longer fails with status 128 at a parent that is not there (B2.553). What a repository does: nothing. Verified by the test of B2.553 in `packages/ts`, which failed before the change.
