@@ -2826,16 +2826,6 @@ export function functionRows(model: Model, ctx: Context, type: { parameters: Typ
   const list = (items: string[]): string => (ctx.lang === 'python' ? `(${items.map((i) => `${i},`).join(' ')})` : `[${items.join(', ')}]`);
   const text = (name: string): string => (ctx.lang === 'python' ? pyString(name) : ctx.lang === 'php' ? phpText(name) : jsString(name));
   const rows = (value as { function?: unknown } | null)?.function;
-  // B2.556, GN-6ae: the object form of a function fixture, {"names", "calls", "result"}, that calls nothing and raises
-  // nothing is one row whose arguments are the placeholders of its parameters: a callback that the binding refuses
-  // before it calls it never takes them, and the row gives the result the function returns.
-  if (typeof rows === 'object' && rows !== null && !Array.isArray(rows)) {
-    const fixture = rows as Record<string, unknown>;
-    if ((Array.isArray(fixture['calls']) && fixture['calls'].length > 0) || fixture['raise'] !== undefined) throw new Error(`${what} gives a function fixture with calls or raise, which the rows of ${ctx.lang} do not hold yet (GN-6ae)`);
-    const values = type.parameters.map((p) => placeholder(model, ctx, p, true));
-    const result = fixture['result'] === undefined || fixture['result'] === null || type.returns === 'none' ? none : fromJson(model, ctx, type.returns, fixture['result']);
-    return [[text(call), list(values), result, flag(false), none]];
-  }
   if (!Array.isArray(rows)) throw new Error(`${what} gives no {"function": [...]} (G-5)`);
   return (rows as Record<string, unknown>[]).map((row) => {
     const given = (row['args'] ?? {}) as Record<string, unknown>;
