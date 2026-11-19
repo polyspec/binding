@@ -249,13 +249,6 @@ test('a run of scripts/e2e.mts without --work leaves its checkout as git status 
   // loads the generator, whose packages are not installed: the run has written the tree of the commit by then.
   const checkout = mkdtempSync(join(tmpdir(), 'binding-checkout-'));
   const temporary = mkdtempSync(join(tmpdir(), 'binding-tmp-'));
-  // B2.529: a test that is stopped does not reach its finally, so on SIGTERM it removes its checkout itself and ends.
-  const onStop = (): void => {
-    rmSync(checkout, { recursive: true, force: true });
-    rmSync(temporary, { recursive: true, force: true });
-    process.exit(143);
-  };
-  process.on('SIGTERM', onStop);
   try {
     const tracked = execFileSync('git', ['-C', root, 'ls-files', '-z'], { encoding: 'utf8' }).split('\0').filter((path) => path !== '');
     assert.ok(tracked.includes('scripts/e2e.mts'), 'git ls-files named no script of the run');
@@ -288,7 +281,6 @@ test('a run of scripts/e2e.mts without --work leaves its checkout as git status 
     assert.equal(status(), before);
     assert.deepEqual(readdirSync(temporary), []);
   } finally {
-    process.off('SIGTERM', onStop);
     rmSync(checkout, { recursive: true, force: true });
     rmSync(temporary, { recursive: true, force: true });
   }
