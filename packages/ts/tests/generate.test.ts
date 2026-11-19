@@ -14946,3 +14946,18 @@ test('B2.556: a case of a callback that declares no parameter is no Go test, the
   assert.deepEqual(named, [], 'the Go test writes a test function of the case');
   assert.match(goTests, /GN-13w: the case a_callback_that_declares_no_parameter of sample\.count is no Go test/);
 });
+
+test('B2.556: the dynamic targets write a case whose function fixture is the object form (names, calls, result, G-5), which declares no parameter and raises invalid_callback', () => {
+  const contract = JSON.parse(readFileSync(fileURLToPath(new URL('../../../tests/e2e/sample/packages/rust/interface.json', import.meta.url)), 'utf8'));
+  const count = (contract.units as { members?: { id: string; parameters: unknown[] }[] }[]).flatMap((unit) => unit.members ?? []).find((member) => member.id === 'sample.count');
+  assert.ok(count !== undefined, 'tests/e2e/sample has the member sample.count');
+  count.parameters.push({ name: ['hook'], type: { function: { parameters: ['text'], returns: 'none', async_allowed: false } }, required: true, keeps: true });
+  const cases = JSON.parse(readFileSync(fileURLToPath(new URL('../../../tests/e2e/sample/contracts/cases.json', import.meta.url)), 'utf8')) as Record<string, unknown>;
+  cases['count'] = [{ id: 'a_callback_that_declares_no_parameter', lookup: { callback: { 'lookup.find': [] }, calls: [] }, keys: ['a'], hook: { function: { names: [], calls: [], result: 'none' } }, raises: { kind: 'invalid_callback', status: null, category: 'type', message: 'invalid_callback: a callback that declares no parameter takes no transaction handle, so it is not called' } }];
+  for (const target of ['node', 'python', 'php', 'wasm'] as const) {
+    const out = generateTargets({ contract, version: '0.0.0', coreLib: 'polyspec_sample', caseFiles: new Map([['contracts/cases.json', cases]]), foreign: new Map(), targets: [target] });
+    const written = [...out.values()].join('\n');
+    assert.match(written, /a_callback_that_declares_no_parameter/, `${target} writes the case`);
+    assert.match(written, /invalid_callback/, `${target} expects invalid_callback`);
+  }
+});
