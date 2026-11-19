@@ -634,7 +634,9 @@ the design ids are those of the binding design.
 - **GN-6a** A record that a function returns, or that is an element of a parameter, has its result form (T-4) in each
   language: Python a frozen keyword-only `dataclass` in `<root>._types`, Node a plain object of its members, PHP a
   final class of public readonly properties whose constructor takes every field by name. Each binding converts it both
-  ways (`in_<record>`, `out_<record>`); a value of another type in its place is kind `invalid_argument_type`.
+  ways (`in_<record>`, `out_<record>`); a value of another type in its place is kind `invalid_argument_type`. A record
+  that a callback takes as a parameter is converted out for each call of the callback, so it has its `out_<record>`
+  conversion as well, even when no function returns it (B2.554).
   An `optional` field whose default is `{literal: null}` (T-4) may be left out of the result form, as a field of a
   case of a variant (GN-6v): Python gives the dataclass field the default `None`, Node and WASM read a missing or
   `undefined` member as null and declare the member optional, PHP takes null at its place in the constructor, Go

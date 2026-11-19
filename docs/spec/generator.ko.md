@@ -1,5 +1,5 @@
 <!-- doc-id: generator -->
-<!-- source-sha256: 90e999965d8d997d47365c8ceb0f6d8f2ef6c1d39e2d0a1065ca5a8a9819437a -->
+<!-- source-sha256: 002e33041d84e249c5af4032fc8be97d850856546c82806351b20c90099cded5 -->
 # 생성기
 
 [English](generator.md)
@@ -525,7 +525,8 @@
 - **GN-6a** 함수가 돌려주거나 parameter의 원소인 record는 언어마다 결과 형태(T-4)를 갖는다: Python은 `<root>._types`의 frozen
   keyword-only `dataclass`, Node는 member의 plain object, PHP는 생성자가 모든 field를 이름으로 받는 public readonly 속성의
   final 클래스. 바인딩은 양방향으로 바꾸며(`in_<record>`, `out_<record>`), 그 자리의 다른 타입 값은 kind
-  `invalid_argument_type`이다.
+  `invalid_argument_type`이다. callback이 parameter로 받는 record는 호출마다 밖으로 바꾸므로, 어떤 함수도 돌려주지
+  않아도 `out_<record>` 변환을 가진다(B2.554).
   기본값이 `{literal: null}`인 `optional` field(T-4)는 variant의 case의 field(GN-6v)처럼 결과 형태에서 빠질 수 있다:
   Python은 dataclass field에 기본값 `None`을 주고, Node와 WASM은 없거나 `undefined`인 member를 null로 읽고 그 member를
   선택으로 선언하며, PHP는 생성자의 그 자리에서 null을 받고, Go는 그 field의 pointer를 nil로 두며, case 값은 그 key를 뺄 수
