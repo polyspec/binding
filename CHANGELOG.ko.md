@@ -6,6 +6,8 @@
 
 ## Unreleased
 
+## 0.0.24
+
 - 레코드를 반환하는 callback은 생성된 node 시험에서 객체를 괄호로 감싸 쓰므로 시험 파일이 파싱된다(B2.555). 레포가 할 일: 없다. `packages/ts`의 B2.555 시험으로 검증했고, 그 시험은 변경 전에 실패했다.
 - 중단된 시험 실행은 TMPDIR에 `binding-checkout-*` 디렉터리를 남기지 않고, Go를 찾지 못해 끝나는 `binding check`와 `scaffold`는 거기에 `binding-go-sum-*` 디렉터리를 남기지 않는다(B2.529). 레포가 할 일: 없다. `packages/ts`의 B2.529 시험으로 검증했고, 그 시험은 변경 전에 실패했다.
 - `binding release-go-module`의 rehearsal은 CI의 depth 1 checkout처럼 shallow한 checkout에서도 끝난다: bare repository가 checkout의 shallow 파일을 가져가므로, 마지막 prune이 없는 부모에서 status 128로 실패하지 않는다(B2.553). 레포가 할 일: 없다. `packages/ts`의 B2.553 시험으로 검증했고, 그 시험은 변경 전에 실패했다.
